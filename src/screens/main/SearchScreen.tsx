@@ -4,8 +4,7 @@ import { View, Text, StyleSheet } from 'react-native';
 export const SearchScreen = () => {
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Search Screen</Text>
-      <Text>Search for activities will be here</Text>
+      <Text style={styles.title}>Экран поиска</Text>
     </View>
   );
 };
