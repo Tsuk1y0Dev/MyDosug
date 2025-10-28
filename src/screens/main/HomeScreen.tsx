@@ -6,24 +6,21 @@ import {
   ScrollView, 
   TouchableOpacity,
   SafeAreaView,
-  Alert,
-  Modal
+  Alert
 } from 'react-native';
 import { useAuth } from '../../services/auth/AuthContext';
-import { Activity, TimeSlot, FreeSlot } from '../../types/schedule';
+import { Activity, FreeSlot } from '../../types/schedule';
 import { ActivityBlock } from '../../components/ActivityBlock';
 import { AddSlotButton } from '../../components/AddSlotButton';
 import { Timeline } from '../../components/Timeline';
 import { Feather, MaterialIcons } from '@expo/vector-icons';
 
-const HOUR_HEIGHT = 80; // Высота одного часа в пикселях
+const HOUR_HEIGHT = 80;
 
 export const HomeScreen = () => {
   const { logout, user } = useAuth();
   const [selectedDate, setSelectedDate] = useState<string>('Четверг, 12 дек');
-  const [showAddModal, setShowAddModal] = useState(false);
 
-  // Пример данных расписания
   const [schedule, setSchedule] = useState<Activity[]>([
     {
       id: '1',
@@ -39,33 +36,15 @@ export const HomeScreen = () => {
       startTime: '10:30',
       endTime: '12:00',
       type: 'custom'
-    },
-    {
-      id: '3',
-      title: 'Прогулка в парке',
-      startTime: '17:00',
-      endTime: '18:30',
-      location: 'Центральный парк',
-      type: 'activity'
-    },
-    {
-      id: '4',
-      title: 'Ужин в ресторане "Z"',
-      startTime: '19:00',
-      endTime: '20:30',
-      location: 'Ресторан Z',
-      type: 'meal'
     }
   ]);
 
-  // Временные метки для шкалы
   const timeSlots = [
     '06:00', '07:00', '08:00', '09:00', '10:00', '11:00', 
     '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', 
     '18:00', '19:00', '20:00', '21:00', '22:00'
   ];
 
-  // Функции для конвертации времени в позицию и обратно
   const timeToPosition = (time: string): number => {
     const [hours, minutes] = time.split(':').map(Number);
     return (hours - 6) * HOUR_HEIGHT + (minutes / 60) * HOUR_HEIGHT;
@@ -78,73 +57,29 @@ export const HomeScreen = () => {
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
   };
 
-    // Вычисление свободных промежутков
-    const freeSlots = useMemo((): FreeSlot[] => {
-    const busySlots = schedule
-      .map(activity => ({
-        start: timeToPosition(activity.startTime),
-        end: timeToPosition(activity.endTime)
-      }))
-      .sort((a, b) => a.start - b.start);
-
-    const slots: FreeSlot[] = [];
-    let lastEnd = timeToPosition('06:00');
-
-    busySlots.forEach(slot => {
-      if (slot.start > lastEnd) {
-        const durationPixels = slot.start - lastEnd;
-        const durationMinutes = (durationPixels / HOUR_HEIGHT) * 60;
-        
-        if (durationMinutes >= 30) { // Минимальная продолжительность 30 минут
-          slots.push({
-            startTime: lastEnd, // number
-            endTime: slot.start, // number
-            duration: durationPixels, // number (в пикселях)
-            startTimeString: positionToTime(lastEnd), // string для временных меток
-            endTimeString: positionToTime(slot.start), // string для временных меток
-          });
-        }
+  const freeSlots = useMemo((): FreeSlot[] => {
+    // Упрощенная версия для тестирования
+    return [
+      {
+        startTime: timeToPosition('09:00'),
+        endTime: timeToPosition('10:30'),
+        duration: timeToPosition('10:30') - timeToPosition('09:00'),
+        startTimeString: '09:00',
+        endTimeString: '10:30'
       }
-      lastEnd = Math.max(lastEnd, slot.end);
-    });
-
-
-    // Добавляем слот после последней активности до конца дня
-    const dayEnd = timeToPosition('22:00');
-    if (lastEnd < dayEnd) {
-      const durationPixels = dayEnd - lastEnd;
-      const durationMinutes = (durationPixels / HOUR_HEIGHT) * 60;
-      
-      if (durationMinutes >= 30) {
-        slots.push({
-          startTime: lastEnd,
-          endTime: dayEnd,
-          duration: durationPixels,
-          startTimeString: positionToTime(lastEnd),
-          endTimeString: '22:00',
-        });
-      }
-    }
-
-    return slots;
-  }, [schedule]);
+    ];
+  }, []);
 
   const handleActivityPress = (activity: Activity) => {
     Alert.alert(
       activity.title,
       `${activity.startTime} - ${activity.endTime}\n${activity.location || ''}`,
-      [
-        { text: 'Закрыть', style: 'cancel' },
-        { 
-          text: 'Удалить', 
-          style: 'destructive',
-          onPress: () => handleDeleteActivity(activity.id)
-        }
-      ]
+      [{ text: 'Закрыть', style: 'cancel' }]
     );
   };
 
   const handleActivityDrag = (activityId: string, newStartTime: string, newEndTime: string) => {
+    console.log('Drag activity:', activityId, newStartTime, newEndTime);
     setSchedule(prev => prev.map(activity => 
       activity.id === activityId 
         ? { ...activity, startTime: newStartTime, endTime: newEndTime }
@@ -156,17 +91,12 @@ export const HomeScreen = () => {
     const newActivity: Activity = {
       id: Date.now().toString(),
       title: 'Новая активность',
-      startTime: slot?.startTimeString || '12:00', // используем строковое представление
-      endTime: slot?.endTimeString || '13:00', // используем строковое представление
+      startTime: slot?.startTimeString || '12:00',
+      endTime: slot?.endTimeString || '13:00',
       type: 'activity'
     };
     
     setSchedule(prev => [...prev, newActivity]);
-    setShowAddModal(false);
-  };
-
-  const handleDeleteActivity = (activityId: string) => {
-    setSchedule(prev => prev.filter(activity => activity.id !== activityId));
   };
 
   const handleLogout = () => {
@@ -182,7 +112,6 @@ export const HomeScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Заголовок */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Feather name="calendar" size={24} color="#3b82f6" />
@@ -193,28 +122,22 @@ export const HomeScreen = () => {
         </View>
         
         <View style={styles.headerRight}>
-          <TouchableOpacity style={styles.userButton}>
-            <Feather name="user" size={20} color="#6b7280" />
-          </TouchableOpacity>
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
             <Feather name="log-out" size={20} color="#ef4444" />
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Информация о пользователе */}
       <View style={styles.userInfo}>
         <Text style={styles.userGreeting}>Добро пожаловать!</Text>
         <Text style={styles.userEmail}>{user?.email}</Text>
       </View>
 
-      {/* Временная шкала */}
       <View style={styles.timelineContainer}>
         <Timeline timeSlots={timeSlots} hourHeight={HOUR_HEIGHT} />
         
         <ScrollView style={styles.activitiesColumn}>
           <View style={[styles.activitiesContent, { height: 16 * HOUR_HEIGHT }]}>
-            {/* Свободные слоты */}
             {freeSlots.map((slot, index) => (
               <AddSlotButton
                 key={index}
@@ -223,74 +146,24 @@ export const HomeScreen = () => {
               />
             ))}
             
-            {/* Активности */}
             {schedule.map((activity) => (
               <ActivityBlock
                 key={activity.id}
                 activity={activity}
                 onPress={handleActivityPress}
-                onDrag={handleActivityDrag}
                 timeToPosition={timeToPosition}
-                positionToTime={positionToTime}
-                hourHeight={HOUR_HEIGHT}
               />
             ))}
           </View>
         </ScrollView>
       </View>
 
-      {/* Плавающая кнопка добавления */}
       <TouchableOpacity 
         style={styles.floatingButton}
-        onPress={() => setShowAddModal(true)}
+        onPress={() => handleAddActivity()}
       >
         <Feather name="plus" size={24} color="white" />
       </TouchableOpacity>
-
-      {/* Модальное окно добавления */}
-      <Modal
-        visible={showAddModal}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowAddModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Добавить активность</Text>
-            <Text style={styles.modalSubtitle}>Выберите тип активности</Text>
-            
-            <View style={styles.activityTypes}>
-              <TouchableOpacity 
-                style={[styles.typeButton, { backgroundColor: '#e8f5e8' }]}
-                onPress={() => handleAddActivity()}
-              >
-                <Text style={[styles.typeText, { color: '#10b981' }]}>🍽️ Питание</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[styles.typeButton, { backgroundColor: '#fff3e0' }]}
-                onPress={() => handleAddActivity()}
-              >
-                <Text style={[styles.typeText, { color: '#f59e0b' }]}>⚙️ Кастомная</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[styles.typeButton, { backgroundColor: '#e3f2fd' }]}
-                onPress={() => handleAddActivity()}
-              >
-                <Text style={[styles.typeText, { color: '#3b82f6' }]}>🚶 Активность</Text>
-              </TouchableOpacity>
-            </View>
-            
-            <TouchableOpacity 
-              style={styles.cancelButton}
-              onPress={() => setShowAddModal(false)}
-            >
-              <Text style={styles.cancelButtonText}>Отмена</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 };
@@ -330,10 +203,6 @@ const styles = StyleSheet.create({
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  userButton: {
-    padding: 8,
-    marginRight: 8,
   },
   logoutButton: {
     padding: 8,
@@ -384,54 +253,5 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: 'white',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 24,
-    paddingBottom: 40,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1f2937',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  modalSubtitle: {
-    fontSize: 14,
-    color: '#6b7280',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  activityTypes: {
-    marginBottom: 24,
-  },
-  typeButton: {
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-    alignItems: 'center',
-  },
-  typeText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  cancelButton: {
-    padding: 16,
-    borderRadius: 12,
-    backgroundColor: '#f3f4f6',
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#374151',
   },
 });
