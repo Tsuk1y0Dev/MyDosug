@@ -1,35 +1,32 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   View, 
   Text, 
   StyleSheet, 
   ScrollView, 
   TouchableOpacity,
-  SafeAreaView 
+  SafeAreaView,
+  Alert
 } from 'react-native';
 import { useAuth } from '../../services/auth/AuthContext';
+import { Activity, FreeSlot } from '../../types/schedule';
+import { ActivityBlock } from '../../components/ActivityBlock';
+import { AddSlotButton } from '../../components/AddSlotButton';
+import { Timeline } from '../../components/Timeline';
+import { Feather, MaterialIcons } from '@expo/vector-icons';
 
-// Типы для данных
-interface Activity {
-  id: string;
-  title: string;
-  startTime: string;
-  endTime: string;
-  location?: string;
-  type: 'meal' | 'custom' | 'activity';
-}
+const HOUR_HEIGHT = 80;
 
 export const HomeScreen = () => {
   const { logout, user } = useAuth();
-  const [selectedDate, setSelectedDate] = useState<string>('Четверг');
+  const [selectedDate, setSelectedDate] = useState<string>('Четверг, 12 дек');
 
-  // Пример данных расписания
   const [schedule, setSchedule] = useState<Activity[]>([
     {
       id: '1',
       title: 'Завтрак в столовой "X"',
       startTime: '08:00',
-      endTime: '10:00',
+      endTime: '09:00',
       location: 'Столовая X',
       type: 'meal'
     },
@@ -39,111 +36,133 @@ export const HomeScreen = () => {
       startTime: '10:30',
       endTime: '12:00',
       type: 'custom'
-    },
-    {
-      id: '3',
-      title: 'Прогулка в парке',
-      startTime: '17:00',
-      endTime: '18:30',
-      location: 'Центральный парк',
-      type: 'activity'
-    },
-    {
-      id: '4',
-      title: 'Ужин в ресторане "Z"',
-      startTime: '19:00',
-      endTime: '21:00',
-      location: 'Ресторан Z',
-      type: 'meal'
     }
   ]);
 
-  // Временные метки для шкалы
   const timeSlots = [
     '06:00', '07:00', '08:00', '09:00', '10:00', '11:00', 
     '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', 
     '18:00', '19:00', '20:00', '21:00', '22:00'
   ];
 
-  const handleAddActivity = () => {
-    // Логика добавления новой активности
-    console.log('Добавить активность');
+  const timeToPosition = (time: string): number => {
+    const [hours, minutes] = time.split(':').map(Number);
+    return (hours - 6) * HOUR_HEIGHT + (minutes / 60) * HOUR_HEIGHT;
   };
 
-  // Функция для определения позиции активности на шкале
-  const getActivityPosition = (activity: Activity) => {
-    const startHour = parseInt(activity.startTime.split(':')[0]);
-    const startMinute = parseInt(activity.startTime.split(':')[1]);
-    const endHour = parseInt(activity.endTime.split(':')[0]);
-    const endMinute = parseInt(activity.endTime.split(':')[1]);
+  const positionToTime = (position: number): string => {
+    const totalMinutes = (position / HOUR_HEIGHT) * 60;
+    const hours = Math.floor(totalMinutes / 60) + 6;
+    const minutes = Math.round(totalMinutes % 60);
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+  };
+
+  const freeSlots = useMemo((): FreeSlot[] => {
+    // Упрощенная версия для тестирования
+    return [
+      {
+        startTime: timeToPosition('09:00'),
+        endTime: timeToPosition('10:30'),
+        duration: timeToPosition('10:30') - timeToPosition('09:00'),
+        startTimeString: '09:00',
+        endTimeString: '10:30'
+      }
+    ];
+  }, []);
+
+  const handleActivityPress = (activity: Activity) => {
+    Alert.alert(
+      activity.title,
+      `${activity.startTime} - ${activity.endTime}\n${activity.location || ''}`,
+      [{ text: 'Закрыть', style: 'cancel' }]
+    );
+  };
+
+  const handleActivityDrag = (activityId: string, newStartTime: string, newEndTime: string) => {
+    console.log('Drag activity:', activityId, newStartTime, newEndTime);
+    setSchedule(prev => prev.map(activity => 
+      activity.id === activityId 
+        ? { ...activity, startTime: newStartTime, endTime: newEndTime }
+        : activity
+    ));
+  };
+
+  const handleAddActivity = (slot?: FreeSlot) => {
+    const newActivity: Activity = {
+      id: Date.now().toString(),
+      title: 'Новая активность',
+      startTime: slot?.startTimeString || '12:00',
+      endTime: slot?.endTimeString || '13:00',
+      type: 'activity'
+    };
     
-    const startPosition = (startHour - 6) * 60 + startMinute; // Относительно 6:00
-    const duration = (endHour - startHour) * 60 + (endMinute - startMinute);
-    
-    return { startPosition, duration };
+    setSchedule(prev => [...prev, newActivity]);
+  };
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Выход',
+      'Вы уверены, что хотите выйти?',
+      [
+        { text: 'Отмена', style: 'cancel' },
+        { text: 'Выйти', style: 'destructive', onPress: logout }
+      ]
+    );
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Заголовок и навигация */}
       <View style={styles.header}>
-        <Text style={styles.title}>Расписание - {selectedDate}</Text>
+        <View style={styles.headerLeft}>
+          <Feather name="calendar" size={24} color="#3b82f6" />
+          <View style={styles.headerText}>
+            <Text style={styles.title}>Расписание</Text>
+            <Text style={styles.subtitle}>{selectedDate}</Text>
+          </View>
+        </View>
+        
+        <View style={styles.headerRight}>
+          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+            <Feather name="log-out" size={20} color="#ef4444" />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={styles.userInfo}>
+        <Text style={styles.userGreeting}>Добро пожаловать!</Text>
         <Text style={styles.userEmail}>{user?.email}</Text>
       </View>
 
-      {/* Временная шкала */}
-      <ScrollView style={styles.timelineContainer}>
-        <View style={styles.timeline}>
-          {/* Боковая панель с временными метками */}
-          <View style={styles.timeLabels}>
-            {timeSlots.map((time, index) => (
-              <View key={time} style={styles.timeLabel}>
-                <Text style={styles.timeText}>{time}</Text>
-                {index < timeSlots.length - 1 && (
-                  <View style={styles.timeLine} />
-                )}
-              </View>
+      <View style={styles.timelineContainer}>
+        <Timeline timeSlots={timeSlots} hourHeight={HOUR_HEIGHT} />
+        
+        <ScrollView style={styles.activitiesColumn}>
+          <View style={[styles.activitiesContent, { height: 16 * HOUR_HEIGHT }]}>
+            {freeSlots.map((slot, index) => (
+              <AddSlotButton
+                key={index}
+                slot={slot}
+                onPress={handleAddActivity}
+              />
+            ))}
+            
+            {schedule.map((activity) => (
+              <ActivityBlock
+                key={activity.id}
+                activity={activity}
+                onPress={handleActivityPress}
+                timeToPosition={timeToPosition}
+              />
             ))}
           </View>
+        </ScrollView>
+      </View>
 
-          {/* Основная область с активностями */}
-          <View style={styles.activitiesColumn}>
-            {schedule.map((activity) => {
-              const { startPosition, duration } = getActivityPosition(activity);
-              return (
-                <View
-                  key={activity.id}
-                  style={[
-                    styles.activityCard,
-                    {
-                      top: startPosition * 0.8, // Масштабирование для отображения
-                      height: duration * 0.8,
-                    },
-                    activity.type === 'meal' && styles.mealActivity,
-                    activity.type === 'custom' && styles.customActivity,
-                    activity.type === 'activity' && styles.generalActivity,
-                  ]}
-                >
-                  <Text style={styles.activityTitle}>{activity.title}</Text>
-                  <Text style={styles.activityTime}>
-                    {activity.startTime} - {activity.endTime}
-                  </Text>
-                  {activity.location && (
-                    <Text style={styles.activityLocation}>{activity.location}</Text>
-                  )}
-                </View>
-              );
-            })}
-          </View>
-        </View>
-      </ScrollView>
-
-      {/* Плавающая кнопка добавления */}
       <TouchableOpacity 
         style={styles.floatingButton}
-        onPress={handleAddActivity}
+        onPress={() => handleAddActivity()}
       >
-        <Text style={styles.floatingButtonText}>+</Text>
+        <Feather name="plus" size={24} color="white" />
       </TouchableOpacity>
     </SafeAreaView>
   );
@@ -152,133 +171,87 @@ export const HomeScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#ffffff',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     backgroundColor: 'white',
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: '#f1f5f9',
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerText: {
+    marginLeft: 12,
   },
   title: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#1f2937',
+  },
+  subtitle: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  logoutButton: {
+    padding: 8,
+  },
+  userInfo: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#f8fafc',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  userGreeting: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 4,
   },
   userEmail: {
     fontSize: 14,
-    color: '#666',
+    color: '#6b7280',
   },
   timelineContainer: {
     flex: 1,
-  },
-  timeline: {
     flexDirection: 'row',
-    flex: 1,
-  },
-  timeLabels: {
-    width: 80,
-    paddingVertical: 10,
-    backgroundColor: '#f8f8f8',
-    borderRightWidth: 1,
-    borderRightColor: '#e0e0e0',
-  },
-  timeLabel: {
-    height: 60,
-    paddingHorizontal: 8,
-    justifyContent: 'flex-start',
-  },
-  timeText: {
-    fontSize: 12,
-    color: '#666',
-    fontWeight: '500',
-  },
-  timeLine: {
-    height: 59,
-    borderLeftWidth: 1,
-    borderLeftColor: '#e0e0e0',
-    marginLeft: 4,
-    marginTop: 1,
   },
   activitiesColumn: {
     flex: 1,
-    position: 'relative',
     backgroundColor: 'white',
   },
-  activityCard: {
-    position: 'absolute',
-    left: 8,
-    right: 8,
-    backgroundColor: '#e3f2fd',
-    borderRadius: 8,
-    padding: 12,
-    marginVertical: 2,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  mealActivity: {
-    backgroundColor: '#e8f5e8',
-    borderLeftWidth: 4,
-    borderLeftColor: '#4caf50',
-  },
-  customActivity: {
-    backgroundColor: '#fff3e0',
-    borderLeftWidth: 4,
-    borderLeftColor: '#ff9800',
-  },
-  generalActivity: {
-    backgroundColor: '#e3f2fd',
-    borderLeftWidth: 4,
-    borderLeftColor: '#2196f3',
-  },
-  activityTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 4,
-  },
-  activityTime: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 2,
-  },
-  activityLocation: {
-    fontSize: 12,
-    color: '#888',
-    fontStyle: 'italic',
+  activitiesContent: {
+    position: 'relative',
   },
   floatingButton: {
     position: 'absolute',
     right: 20,
     bottom: 20,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#2196f3',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#3b82f6',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 4,
     },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  floatingButtonText: {
-    fontSize: 24,
-    color: 'white',
-    fontWeight: 'bold',
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
 });

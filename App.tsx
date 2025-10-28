@@ -3,6 +3,8 @@ import { NavigationContainer } from '@react-navigation/native';
 import { AuthProvider, useAuth } from './src/services/auth/AuthContext';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { LoadingScreen } from './src/screens/common/LoadingScreen';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+
 
 function AppContent() {
   const { isLoading } = useAuth();
@@ -16,10 +18,12 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <NavigationContainer>
-        <AppContent />
-      </NavigationContainer>
-    </AuthProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AuthProvider>
+        <NavigationContainer>
+          <AppContent />
+        </NavigationContainer>
+      </AuthProvider>
+    </GestureHandlerRootView>
   );
 }
