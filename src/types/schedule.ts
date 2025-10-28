@@ -6,6 +6,7 @@ export interface Activity {
   location?: string;
   type: 'meal' | 'custom' | 'activity';
   color?: string;
+  duration?: number; // Добавим длительность для удобства
 }
 
 export interface TimeSlot {
@@ -14,9 +15,17 @@ export interface TimeSlot {
 }
 
 export interface FreeSlot {
-  startTime: number; // Изменено на number для позиции
-  endTime: number;   // Изменено на number для позиции
+  startTime: number;
+  endTime: number;
   duration: number;
-  startTimeString?: string; // Добавлено для временных меток
-  endTimeString?: string;   // Добавлено для временных меток
+  startTimeString?: string;
+  endTimeString?: string;
+}
+
+// Новый тип для данных перетаскивания
+export interface DragEvent {
+  activityId: string;
+  newStartTime: string;
+  newEndTime: string;
+  targetActivityId?: string; // Для обмена с другим блоком
 }

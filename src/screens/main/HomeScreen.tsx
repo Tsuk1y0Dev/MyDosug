@@ -13,13 +13,14 @@ import { Activity, FreeSlot } from '../../types/schedule';
 import { ActivityBlock } from '../../components/ActivityBlock';
 import { AddSlotButton } from '../../components/AddSlotButton';
 import { Timeline } from '../../components/Timeline';
-import { Feather, MaterialIcons } from '@expo/vector-icons';
+import { Feather } from '@expo/vector-icons';
 
 const HOUR_HEIGHT = 80;
 
 export const HomeScreen = () => {
   const { logout, user } = useAuth();
   const [selectedDate, setSelectedDate] = useState<string>('Четверг, 12 дек');
+  const [draggingActivityId, setDraggingActivityId] = useState<string | null>(null);
 
   const [schedule, setSchedule] = useState<Activity[]>([
     {
@@ -36,6 +37,14 @@ export const HomeScreen = () => {
       startTime: '10:30',
       endTime: '12:00',
       type: 'custom'
+    },
+    {
+      id: '3',
+      title: 'Прогулка в парке',
+      startTime: '17:00',
+      endTime: '18:30',
+      location: 'Центральный парк',
+      type: 'activity'
     }
   ]);
 
@@ -58,33 +67,117 @@ export const HomeScreen = () => {
   };
 
   const freeSlots = useMemo((): FreeSlot[] => {
-    // Упрощенная версия для тестирования
-    return [
-      {
-        startTime: timeToPosition('09:00'),
-        endTime: timeToPosition('10:30'),
-        duration: timeToPosition('10:30') - timeToPosition('09:00'),
-        startTimeString: '09:00',
-        endTimeString: '10:30'
+    const busySlots = schedule
+      .map(activity => ({
+        start: timeToPosition(activity.startTime),
+        end: timeToPosition(activity.endTime)
+      }))
+      .sort((a, b) => a.start - b.start);
+
+    const slots: FreeSlot[] = [];
+    let lastEnd = timeToPosition('06:00');
+
+    busySlots.forEach(slot => {
+      if (slot.start > lastEnd) {
+        const durationPixels = slot.start - lastEnd;
+        const durationMinutes = (durationPixels / HOUR_HEIGHT) * 60;
+        
+        if (durationMinutes >= 30) {
+          slots.push({
+            startTime: lastEnd,
+            endTime: slot.start,
+            duration: durationPixels,
+            startTimeString: positionToTime(lastEnd),
+            endTimeString: positionToTime(slot.start),
+          });
+        }
       }
-    ];
-  }, []);
+      lastEnd = Math.max(lastEnd, slot.end);
+    });
+
+    const dayEnd = timeToPosition('22:00');
+    if (lastEnd < dayEnd) {
+      const durationPixels = dayEnd - lastEnd;
+      const durationMinutes = (durationPixels / HOUR_HEIGHT) * 60;
+      
+      if (durationMinutes >= 30) {
+        slots.push({
+          startTime: lastEnd,
+          endTime: dayEnd,
+          duration: durationPixels,
+          startTimeString: positionToTime(lastEnd),
+          endTimeString: '22:00',
+        });
+      }
+    }
+
+    return slots;
+  }, [schedule]);
 
   const handleActivityPress = (activity: Activity) => {
     Alert.alert(
       activity.title,
       `${activity.startTime} - ${activity.endTime}\n${activity.location || ''}`,
-      [{ text: 'Закрыть', style: 'cancel' }]
+      [
+        { text: 'Закрыть', style: 'cancel' },
+        { 
+          text: 'Удалить', 
+          style: 'destructive',
+          onPress: () => handleDeleteActivity(activity.id)
+        }
+      ]
     );
   };
 
-  const handleActivityDrag = (activityId: string, newStartTime: string, newEndTime: string) => {
-    console.log('Drag activity:', activityId, newStartTime, newEndTime);
+  const handleDragStart = (activityId: string) => {
+    setDraggingActivityId(activityId);
+  };
+
+  const handleDragEnd = (activityId: string, newStartTime: string, newEndTime: string) => {
     setSchedule(prev => prev.map(activity => 
       activity.id === activityId 
         ? { ...activity, startTime: newStartTime, endTime: newEndTime }
         : activity
     ));
+    setDraggingActivityId(null);
+  };
+
+  const handleActivitySwap = (draggedId: string, targetId: string) => {
+    setSchedule(prev => {
+      const draggedIndex = prev.findIndex(a => a.id === draggedId);
+      const targetIndex = prev.findIndex(a => a.id === targetId);
+      
+      if (draggedIndex === -1 || targetIndex === -1) return prev;
+      
+      const newSchedule = [...prev];
+      
+      // Сохраняем временные интервалы
+      const draggedTime = {
+        startTime: newSchedule[draggedIndex].startTime,
+        endTime: newSchedule[draggedIndex].endTime
+      };
+      
+      const targetTime = {
+        startTime: newSchedule[targetIndex].startTime,
+        endTime: newSchedule[targetIndex].endTime
+      };
+      
+      // Меняем временные интервалы местами
+      newSchedule[draggedIndex] = {
+        ...newSchedule[draggedIndex],
+        startTime: targetTime.startTime,
+        endTime: targetTime.endTime
+      };
+      
+      newSchedule[targetIndex] = {
+        ...newSchedule[targetIndex],
+        startTime: draggedTime.startTime,
+        endTime: draggedTime.endTime
+      };
+      
+      return newSchedule;
+    });
+    setDraggingActivityId(null);
   };
 
   const handleAddActivity = (slot?: FreeSlot) => {
@@ -97,6 +190,10 @@ export const HomeScreen = () => {
     };
     
     setSchedule(prev => [...prev, newActivity]);
+  };
+
+  const handleDeleteActivity = (activityId: string) => {
+    setSchedule(prev => prev.filter(activity => activity.id !== activityId));
   };
 
   const handleLogout = () => {
@@ -138,6 +235,13 @@ export const HomeScreen = () => {
         
         <ScrollView style={styles.activitiesColumn}>
           <View style={[styles.activitiesContent, { height: 16 * HOUR_HEIGHT }]}>
+            {/* Индикатор перетаскивания */}
+            {draggingActivityId && (
+              <View style={styles.dragOverlay}>
+                <Text style={styles.dragOverlayText}>Перетащите для обмена с другим блоком</Text>
+              </View>
+            )}
+            
             {freeSlots.map((slot, index) => (
               <AddSlotButton
                 key={index}
@@ -151,7 +255,14 @@ export const HomeScreen = () => {
                 key={activity.id}
                 activity={activity}
                 onPress={handleActivityPress}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+                onSwap={handleActivitySwap}
                 timeToPosition={timeToPosition}
+                positionToTime={positionToTime}
+                hourHeight={HOUR_HEIGHT}
+                isDragging={draggingActivityId === activity.id}
+                allActivities={schedule}
               />
             ))}
           </View>
@@ -234,6 +345,21 @@ const styles = StyleSheet.create({
   },
   activitiesContent: {
     position: 'relative',
+  },
+  dragOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    padding: 8,
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  dragOverlayText: {
+    color: '#3b82f6',
+    fontWeight: '600',
+    fontSize: 12,
   },
   floatingButton: {
     position: 'absolute',
