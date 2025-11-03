@@ -8,7 +8,7 @@ import Animated, {
   runOnJS,
   withSpring,
 } from 'react-native-reanimated';
-import { Activity } from '../types/schedule';
+import { Activity } from '../../types/schedule';
 import { MaterialIcons, Feather } from '@expo/vector-icons';
 
 interface ActivityBlockProps {

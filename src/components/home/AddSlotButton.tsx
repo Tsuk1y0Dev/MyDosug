@@ -1,7 +1,7 @@
 import React from 'react';
 import { TouchableOpacity, Text, StyleSheet, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { FreeSlot } from '../types/schedule';
+import { FreeSlot } from '../../types/schedule';
 
 interface AddSlotButtonProps {
   slot: FreeSlot;

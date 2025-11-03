@@ -1,23 +1,47 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
+import { PlannerProvider, usePlanner } from '../../services/planner/PlannerContext';
+import { TimeSelectionStep } from '../../components/planner/TimeSelectionStep';
+import { ParametersStep } from '../../components/planner/ParametersStep';
+import { SearchResultsStep } from '../../components/planner/SearchResultsStep';
+import { RoutePlanningStep } from '../../components/planner/RoutePlanningStep';
+
+const PlannerContent = () => {
+  const { currentStep } = usePlanner();
+
+  const renderStep = () => {
+    switch (currentStep) {
+      case 1:
+        return <TimeSelectionStep />;
+      case 2:
+        return <ParametersStep />;
+      case 3:
+        return <SearchResultsStep />;
+      case 4:
+        return <RoutePlanningStep />;
+      default:
+        return <TimeSelectionStep />;
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      {renderStep()}
+    </View>
+  );
+};
 
 export const PlannerScreen = () => {
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Planner Screen</Text>
-      <Text>Plan your route here</Text>
-    </View>
+    <PlannerProvider>
+      <PlannerContent />
+    </PlannerProvider>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  title: {
-    fontSize: 24,
-    marginBottom: 20,
+    backgroundColor: 'white',
   },
 });

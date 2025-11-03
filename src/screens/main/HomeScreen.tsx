@@ -10,9 +10,9 @@ import {
 } from 'react-native';
 import { useAuth } from '../../services/auth/AuthContext';
 import { Activity, FreeSlot } from '../../types/schedule';
-import { ActivityBlock } from '../../components/ActivityBlock';
-import { AddSlotButton } from '../../components/AddSlotButton';
-import { Timeline } from '../../components/Timeline';
+import { ActivityBlock } from '../../components/home/ActivityBlock';
+import { AddSlotButton } from '../../components/home/AddSlotButton';
+import { Timeline } from '../../components/home/Timeline';
 import { Feather } from '@expo/vector-icons';
 
 const HOUR_HEIGHT = 80;
