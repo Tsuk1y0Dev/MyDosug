@@ -12,7 +12,25 @@ export const mockPlaces: Place[] = [
     rating: 4.5,
     distance: 1200,
     travelTime: 15,
-    duration: 90,
+    durationSettings: {
+      baseDuration: 90, 
+      modifiers: {
+        company: {
+          solo: 0.7,    // один - 70% от базового времени
+          couple: 1.2,  // пара - +20%
+          friends: 1.5, // друзья - +50%
+          kids: 0.8,    // с детьми - 80%
+          colleagues: 1.1 // коллеги - +10%
+        },
+        mood: {
+          relax: 1.3,      // релакс - +30%
+          educational: 1.1, // познавательно - +10%
+          fun: 1.4,        // весело - +40%
+          romantic: 1.5,   // романтично - +50%
+          active: 0.8      // активно - 80%
+        }
+      }
+    },
     image: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=400',
     website: 'https://uyut-restaurant.ru',
     workingHours: '10:00-23:00',
@@ -35,7 +53,25 @@ export const mockPlaces: Place[] = [
     rating: 4.8,
     distance: 2500,
     travelTime: 25,
-    duration: 120,
+    durationSettings: {
+      baseDuration: 120, 
+      modifiers: {
+        company: {
+          solo: 0.7,    // один - 70% от базового времени
+          couple: 1.2,  // пара - +20%
+          friends: 1.5, // друзья - +50%
+          kids: 0.8,    // с детьми - 80%
+          colleagues: 1.1 // коллеги - +10%
+        },
+        mood: {
+          relax: 1.3,      // релакс - +30%
+          educational: 1.1, // познавательно - +10%
+          fun: 1.4,        // весело - +40%
+          romantic: 1.5,   // романтично - +50%
+          active: 0.8      // активно - 80%
+        }
+      }
+    },
     image: 'https://images.unsplash.com/photo-1572017932228-19de42fdb4a9?w=400',
     workingHours: 'круглосуточно',
     features: {
@@ -57,7 +93,25 @@ export const mockPlaces: Place[] = [
     rating: 4.3,
     distance: 1800,
     travelTime: 20,
-    duration: 105,
+    durationSettings: {
+      baseDuration: 105, 
+      modifiers: {
+        company: {
+          solo: 0.7,    // один - 70% от базового времени
+          couple: 1.2,  // пара - +20%
+          friends: 1.5, // друзья - +50%
+          kids: 0.8,    // с детьми - 80%
+          colleagues: 1.1 // коллеги - +10%
+        },
+        mood: {
+          relax: 1.3,      // релакс - +30%
+          educational: 1.1, // познавательно - +10%
+          fun: 1.4,        // весело - +40%
+          romantic: 1.5,   // романтично - +50%
+          active: 0.8      // активно - 80%
+        }
+      }
+    },
     image: 'https://images.unsplash.com/photo-1563089145-599997674d42?w=400',
     website: 'https://modern-art-museum.ru',
     workingHours: '11:00-20:00',
@@ -80,7 +134,25 @@ export const mockPlaces: Place[] = [
     rating: 4.6,
     distance: 800,
     travelTime: 10,
-    duration: 45,
+    durationSettings: {
+      baseDuration: 45,
+      modifiers: {
+        company: {
+          solo: 0.7,    // один - 70% от базового времени
+          couple: 1.2,  // пара - +20%
+          friends: 1.5, // друзья - +50%
+          kids: 0.8,    // с детьми - 80%
+          colleagues: 1.1 // коллеги - +10%
+        },
+        mood: {
+          relax: 1.3,      // релакс - +30%
+          educational: 1.1, // познавательно - +10%
+          fun: 1.4,        // весело - +40%
+          romantic: 1.5,   // романтично - +50%
+          active: 0.8      // активно - 80%
+        }
+      }
+    },
     image: 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=400',
     workingHours: '07:00-22:00',
     features: {
@@ -102,7 +174,25 @@ export const mockPlaces: Place[] = [
     rating: 4.2,
     distance: 4500,
     travelTime: 40,
-    duration: 180,
+    durationSettings: {
+      baseDuration: 180, 
+      modifiers: {
+        company: {
+          solo: 0.7,    // один - 70% от базового времени
+          couple: 1.2,  // пара - +20%
+          friends: 1.5, // друзья - +50%
+          kids: 0.8,    // с детьми - 80%
+          colleagues: 1.1 // коллеги - +10%
+        },
+        mood: {
+          relax: 1.3,      // релакс - +30%
+          educational: 1.1, // познавательно - +10%
+          fun: 1.4,        // весело - +40%
+          romantic: 1.5,   // романтично - +50%
+          active: 0.8      // активно - 80%
+        }
+      }
+    },
     image: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=400',
     website: 'https://mega-mall.ru',
     workingHours: '10:00-22:00',
@@ -125,7 +215,25 @@ export const mockPlaces: Place[] = [
     rating: 4.4,
     distance: 2200,
     travelTime: 22,
-    duration: 90,
+    durationSettings: {
+      baseDuration: 90, 
+      modifiers: {
+        company: {
+          solo: 0.7,    // один - 70% от базового времени
+          couple: 1.2,  // пара - +20%
+          friends: 1.5, // друзья - +50%
+          kids: 0.8,    // с детьми - 80%
+          colleagues: 1.1 // коллеги - +10%
+        },
+        mood: {
+          relax: 1.3,      // релакс - +30%
+          educational: 1.1, // познавательно - +10%
+          fun: 1.4,        // весело - +40%
+          romantic: 1.5,   // романтично - +50%
+          active: 0.8      // активно - 80%
+        }
+      }
+    },
     image: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=400',
     website: 'https://active-sport.ru',
     workingHours: '06:00-23:00',
@@ -140,34 +248,35 @@ export const mockPlaces: Place[] = [
 ];
 
 export const mockStartPoints = [
-  { type: 'home' as const, address: 'ул. Домовая, 1', label: '🏠 Дом' },
-  { type: 'work' as const, address: 'ул. Офисная, 15', label: '💼 Работа' },
-  { type: 'current' as const, address: 'Текущее местоположение', label: '📍 Текущее' },
+    { type: 'home' as const, address: 'ул. Домовая, 1', label: '🏠 Дом' },
+    { type: 'work' as const, address: 'ул. Офисная, 15', label: '💼 Работа' },
+    { type: 'current' as const, address: 'Текущее местоположение', label: '📍 Текущее' },
 ];
 
 export const activityTypes: { value: ActivityType; label: string; icon: string }[] = [
-  { value: 'food', label: '🍽️ Еда', icon: '🍽️' },
-  { value: 'entertainment', label: '🎭 Развлечения', icon: '🎭' },
-  { value: 'sports', label: '⚽ Спорт', icon: '⚽' },
-  { value: 'culture', label: '🎨 Культура', icon: '🎨' },
-  { value: 'walking', label: '🚶 Прогулка', icon: '🚶' },
-  { value: 'shopping', label: '🛍️ Шопинг', icon: '🛍️' },
-  { value: 'education', label: '📚 Образование', icon: '📚' },
-  { value: 'nature', label: '🌳 Природа', icon: '🌳' },
-];
+    { value: 'food', label: '🍽️ Еда', icon: '🍽️' },
+    { value: 'entertainment', label: '🎭 Развлечения', icon: '🎭' },
+    { value: 'sports', label: '⚽ Спорт', icon: '⚽' },
+    { value: 'culture', label: '🎨 Культура', icon: '🎨' },
+    { value: 'walking', label: '🚶 Прогулка', icon: '🚶' },
+    { value: 'shopping', label: '🛍️ Шопинг', icon: '🛍️' },
+    { value: 'education', label: '📚 Образование', icon: '📚' },
+    { value: 'nature', label: '🌳 Природа', icon: '🌳' },
+    { value: 'custom', label: '✏️ Своя активность', icon: '✏️' },
+    ];
 
 export const moodTypes: { value: MoodType; label: string; icon: string; color: string }[] = [
-  { value: 'relax', label: 'Релакс', icon: '😌', color: '#10b981' },
-  { value: 'educational', label: 'Познавательно', icon: '🧠', color: '#3b82f6' },
-  { value: 'fun', label: 'Весело', icon: '😄', color: '#f59e0b' },
-  { value: 'romantic', label: 'Романтично', icon: '❤️', color: '#ec4899' },
-  { value: 'active', label: 'Активно', icon: '💪', color: '#ef4444' },
-];
+    { value: 'relax', label: 'Релакс', icon: '😌', color: '#10b981' },
+    { value: 'educational', label: 'Познавательно', icon: '🧠', color: '#3b82f6' },
+    { value: 'fun', label: 'Весело', icon: '😄', color: '#f59e0b' },
+    { value: 'romantic', label: 'Романтично', icon: '❤️', color: '#ec4899' },
+    { value: 'active', label: 'Активно', icon: '💪', color: '#ef4444' },
+    ];
 
 export const companyTypes: { value: CompanyType; label: string; icon: string }[] = [
-  { value: 'solo', label: '👤 Один', icon: '👤' },
-  { value: 'couple', label: '👫 Пара', icon: '👫' },
-  { value: 'friends', label: '👥 Друзья', icon: '👥' },
-  { value: 'kids', label: '👨‍👩‍👧‍👦 Дети', icon: '👨‍👩‍👧‍👦' },
-  { value: 'colleagues', label: '💼 Коллеги', icon: '💼' },
+    { value: 'solo', label: '👤 Один', icon: '👤' },
+    { value: 'couple', label: '👫 Пара', icon: '👫' },
+    { value: 'friends', label: '👥 Друзья', icon: '👥' },
+    { value: 'kids', label: '👨‍👩‍👧‍👦 Дети', icon: '👨‍👩‍👧‍👦' },
+    { value: 'colleagues', label: '💼 Коллеги', icon: '💼' },
 ];

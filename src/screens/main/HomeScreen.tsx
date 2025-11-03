@@ -226,10 +226,15 @@ export const HomeScreen = () => {
 
       {/* Временная шкала */}
       <View style={styles.timelineContainer}>
-        <Timeline timeSlots={timeSlots} hourHeight={HOUR_HEIGHT} />
+        <Timeline 
+          timeSlots={timeSlots} 
+          hourHeight={HOUR_HEIGHT}
+          contentHeight={TOTAL_HOURS * HOUR_HEIGHT}
+        />
         
         <ScrollView 
           style={styles.activitiesColumn}
+          contentContainerStyle={{ height: TOTAL_HOURS * HOUR_HEIGHT }}
           showsVerticalScrollIndicator={false}
         >
           <View style={[styles.activitiesContent, { height: TOTAL_HOURS * HOUR_HEIGHT }]}>

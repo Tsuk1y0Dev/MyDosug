@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Dimensions
 import { usePlanner } from '../../services/planner/PlannerContext';
 import { Feather } from '@expo/vector-icons';
 import { Place } from '../../types/planner';
+import { calculateDuration } from '../../types/planner'; // ДОБАВЬТЕ ЭТОТ ИМПОРТ
 
 const { width } = Dimensions.get('window');
 
@@ -13,7 +14,8 @@ export const SearchResultsStep = () => {
     selectPlace, 
     addToPlan, 
     currentPlan,
-    setCurrentStep 
+    setCurrentStep,
+    planningRequest 
   } = usePlanner();
 
   const [showFilters, setShowFilters] = useState(false);
@@ -60,75 +62,85 @@ export const SearchResultsStep = () => {
     </TouchableOpacity>
   );
 
-  const PlaceDetails = ({ place }: { place: Place }) => (
-    <View style={styles.placeDetails}>
-      <Image source={{ uri: place.image }} style={styles.detailsImage} />
-      <ScrollView style={styles.detailsContent}>
-        <Text style={styles.detailsName}>{place.name}</Text>
-        <Text style={styles.detailsDescription}>{place.description}</Text>
-        
-        <View style={styles.detailsGrid}>
-          <View style={styles.detailItem}>
-            <Feather name="map-pin" size={16} color="#6b7280" />
-            <Text style={styles.detailText}>{place.address}</Text>
-          </View>
-          <View style={styles.detailItem}>
-            <Feather name="clock" size={16} color="#6b7280" />
-            <Text style={styles.detailText}>{place.workingHours}</Text>
-          </View>
-          <View style={styles.detailItem}>
-            <Feather name="star" size={16} color="#f59e0b" />
-            <Text style={styles.detailText}>Рейтинг: {place.rating}/5</Text>
-          </View>
-          <View style={styles.detailItem}>
-            <Feather name="watch" size={16} color="#6b7280" />
-            <Text style={styles.detailText}>~{place.duration} мин посещение</Text>
-          </View>
-        </View>
+  const PlaceDetails = ({ place }: { place: Place }) => {
+    // ВЫЧИСЛЯЕМ продолжительность и используем правильное имя переменной
+    const calculatedDuration = calculateDuration(
+      place.durationSettings,
+      planningRequest.company || 'friends',
+      planningRequest.mood || 'fun'
+    );
 
-        <View style={styles.features}>
-          {place.features.wheelchair && (
-            <View style={styles.featureTag}>
-              <Text style={styles.featureText}>♿ Доступно</Text>
-            </View>
-          )}
-          {place.features.vegetarian && (
-            <View style={styles.featureTag}>
-              <Text style={styles.featureText}>🌱 Вегетарианское</Text>
-            </View>
-          )}
-          {place.features.outdoor && (
-            <View style={styles.featureTag}>
-              <Text style={styles.featureText}>🌳 На улице</Text>
-            </View>
-          )}
-          {place.features.childFriendly && (
-            <View style={styles.featureTag}>
-              <Text style={styles.featureText}>👶 Для детей</Text>
-            </View>
-          )}
-        </View>
-
-        <View style={styles.actionButtons}>
-          <TouchableOpacity 
-            style={styles.saveButton}
-            onPress={() => {/* TODO: Добавить в избранное */}}
-          >
-            <Feather name="heart" size={20} color="#6b7280" />
-            <Text style={styles.saveButtonText}>В избранное</Text>
-          </TouchableOpacity>
+    return (
+      <View style={styles.placeDetails}>
+        <Image source={{ uri: place.image }} style={styles.detailsImage} />
+        <ScrollView style={styles.detailsContent}>
+          <Text style={styles.detailsName}>{place.name}</Text>
+          <Text style={styles.detailsDescription}>{place.description}</Text>
           
-          <TouchableOpacity 
-            style={styles.addButton}
-            onPress={() => addToPlan(place)}
-          >
-            <Feather name="plus" size={20} color="white" />
-            <Text style={styles.addButtonText}>Добавить в план</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </View>
-  );
+          <View style={styles.detailsGrid}>
+            <View style={styles.detailItem}>
+              <Feather name="map-pin" size={16} color="#6b7280" />
+              <Text style={styles.detailText}>{place.address}</Text>
+            </View>
+            <View style={styles.detailItem}>
+              <Feather name="clock" size={16} color="#6b7280" />
+              <Text style={styles.detailText}>{place.workingHours}</Text>
+            </View>
+            <View style={styles.detailItem}>
+              <Feather name="star" size={16} color="#f59e0b" />
+              <Text style={styles.detailText}>Рейтинг: {place.rating}/5</Text>
+            </View>
+            <View style={styles.detailItem}>
+              <Feather name="watch" size={16} color="#6b7280" />
+              {/* ИСПОЛЬЗУЕМ вычисленную продолжительность */}
+              <Text style={styles.detailText}>~{calculatedDuration} мин посещение</Text>
+            </View>
+          </View>
+
+          <View style={styles.features}>
+            {place.features.wheelchair && (
+              <View style={styles.featureTag}>
+                <Text style={styles.featureText}>♿ Доступно</Text>
+              </View>
+            )}
+            {place.features.vegetarian && (
+              <View style={styles.featureTag}>
+                <Text style={styles.featureText}>🌱 Вегетарианское</Text>
+              </View>
+            )}
+            {place.features.outdoor && (
+              <View style={styles.featureTag}>
+                <Text style={styles.featureText}>🌳 На улице</Text>
+              </View>
+            )}
+            {place.features.childFriendly && (
+              <View style={styles.featureTag}>
+                <Text style={styles.featureText}>👶 Для детей</Text>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.actionButtons}>
+            <TouchableOpacity 
+              style={styles.saveButton}
+              onPress={() => {/* TODO: Добавить в избранное */}}
+            >
+              <Feather name="heart" size={20} color="#6b7280" />
+              <Text style={styles.saveButtonText}>В избранное</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.addButton}
+              onPress={() => addToPlan(place)}
+            >
+              <Feather name="plus" size={20} color="white" />
+              <Text style={styles.addButtonText}>Добавить в план</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </View>
+    );
+  };
 
   return (
     <View style={styles.container}>

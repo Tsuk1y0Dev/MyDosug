@@ -11,6 +11,7 @@ import {
   AdditionalFilters
 } from '../../types/planner';
 import { mockPlaces, mockStartPoints } from '../../data/mockPlaces';
+import { calculateDuration } from '../../types/planner';
 
 interface PlannerContextType {
   currentStep: number;
@@ -137,6 +138,13 @@ export const PlannerProvider = ({ children, initialTimeSlot }: PlannerProviderPr
     const activities = [...currentPlan.activities];
     const lastActivity = activities[activities.length - 1];
     
+    const duration = calculateDuration(
+        place.durationSettings, 
+        planningRequest.company || 'friends', // значение по умолчанию
+        planningRequest.mood || 'fun' // значение по умолчанию
+    );
+
+
     let startTime = planningRequest.startTime;
     if (lastActivity) {
       const [prevHours, prevMinutes] = lastActivity.endTime.split(':').map(Number);
@@ -147,19 +155,19 @@ export const PlannerProvider = ({ children, initialTimeSlot }: PlannerProviderPr
     }
 
     const [startHours, startMinutes] = startTime.split(':').map(Number);
-    const endTotalMinutes = startHours * 60 + startMinutes + place.duration;
+    const endTotalMinutes = startHours * 60 + startMinutes + duration; // Используем вычисленную продолжительность
     const endHours = Math.floor(endTotalMinutes / 60);
     const endMinutes = endTotalMinutes % 60;
     const endTime = `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
 
     const newActivity: PlannedActivity = {
-      id: generateUniqueId(), // Используем уникальный ID
-      place,
-      startTime,
-      endTime,
-      travelTimeFromPrevious: lastActivity ? place.travelTime : 0,
-      order: activities.length,
-    };
+    id: generateUniqueId(),
+    place,
+    startTime,
+    endTime,
+    travelTimeFromPrevious: lastActivity ? place.travelTime : 0,
+    order: activities.length,
+  };
 
     const updatedActivities = [...activities, newActivity];
     const totalDuration = calculateTotalDuration(updatedActivities);
@@ -206,11 +214,17 @@ export const PlannerProvider = ({ children, initialTimeSlot }: PlannerProviderPr
         currentTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
       }
 
-      const [startHours, startMinutes] = currentTime.split(':').map(Number);
-      const endTotalMinutes = startHours * 60 + startMinutes + activity.place.duration;
-      const endHours = Math.floor(endTotalMinutes / 60);
-      const endMinutes = endTotalMinutes % 60;
-      const endTime = `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
+        const [startHours, startMinutes] = currentTime.split(':').map(Number);
+        const activityDuration = calculateDuration(
+            activity.place.durationSettings,
+            planningRequest.company || 'friends',
+            planningRequest.mood || 'fun'
+        );
+        const endTotalMinutes = startHours * 60 + startMinutes + activityDuration;
+
+        const endHours = Math.floor(endTotalMinutes / 60);
+        const endMinutes = endTotalMinutes % 60;
+        const endTime = `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
 
       return {
         ...activity,
@@ -249,11 +263,16 @@ export const PlannerProvider = ({ children, initialTimeSlot }: PlannerProviderPr
         currentTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
       }
 
-      const [startHours, startMinutes] = currentTime.split(':').map(Number);
-      const endTotalMinutes = startHours * 60 + startMinutes + activity.place.duration;
-      const endHours = Math.floor(endTotalMinutes / 60);
-      const endMinutes = endTotalMinutes % 60;
-      const endTime = `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
+        const [startHours, startMinutes] = currentTime.split(':').map(Number);
+        const activityDuration = calculateDuration(
+                activity.place.durationSettings,
+                planningRequest.company || 'friends',
+                planningRequest.mood || 'fun'
+        );
+        const endTotalMinutes = startHours * 60 + startMinutes + activityDuration;
+        const endHours = Math.floor(endTotalMinutes / 60);
+        const endMinutes = endTotalMinutes % 60;
+        const endTime = `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
 
       return {
         ...activity,

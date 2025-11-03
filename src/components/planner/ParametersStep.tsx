@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Switch
 import { usePlanner } from '../../services/planner/PlannerContext';
 import { Feather } from '@expo/vector-icons';
 import { mockStartPoints, activityTypes, moodTypes, companyTypes } from '../../data/mockPlaces';
+import { Platform } from 'react-native';
 
 export const ParametersStep = () => {
   const { planningRequest, updatePlanningRequest, searchPlaces, setCurrentStep } = usePlanner();
@@ -63,43 +64,45 @@ export const ParametersStep = () => {
 
         {/* Бюджет */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>💰 Бюджет</Text>
-          <Text style={styles.budgetValue}>До {planningRequest.budget} ₽</Text>
-          <View style={styles.sliderContainer}>
-            <View style={styles.sliderTrack}>
-              <View 
-                style={[
-                  styles.sliderProgress,
-                  { width: `${(planningRequest.budget / 5000) * 100}%` }
-                ]} 
-              />
-            </View>
-            <View style={styles.sliderLabels}>
-              <Text style={styles.sliderLabel}>0</Text>
-              <Text style={styles.sliderLabel}>2500</Text>
-              <Text style={styles.sliderLabel}>5000+</Text>
-            </View>
-          </View>
-          <View style={styles.budgetButtons}>
-            {[500, 1000, 2000, 3000].map((amount) => (
-              <TouchableOpacity
-                key={amount}
-                style={[
-                  styles.budgetButton,
-                  planningRequest.budget === amount && styles.budgetButtonSelected,
-                ]}
-                onPress={() => handleBudgetChange(amount)}
-              >
-                <Text style={[
-                  styles.budgetButtonText,
-                  planningRequest.budget === amount && styles.budgetButtonTextSelected,
-                ]}>
-                  {amount}₽
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+            <Text style={styles.sectionTitle}>💰 Бюджет</Text>
+            <Text style={styles.budgetValue}>До {planningRequest.budget} ₽</Text>
+            
+            {Platform.OS === 'web' ? (
+                <View style={styles.webSliderContainer}>
+                <input
+                    type="range"
+                    min="0"
+                    max="5000"
+                    step="100"
+                    value={planningRequest.budget}
+                    onChange={(e) => handleBudgetChange(Number(e.target.value))}
+                    style={styles.webSlider}
+                />
+                <View style={styles.sliderLabels}>
+                    <Text style={styles.sliderLabel}>0</Text>
+                    <Text style={styles.sliderLabel}>2500</Text>
+                    <Text style={styles.sliderLabel}>5000+</Text>
+                </View>
+                </View>
+            ) : (
+                <View style={styles.sliderContainer}>
+                <View style={styles.sliderTrack}>
+                    <View 
+                    style={[
+                        styles.sliderProgress,
+                        { width: `${(planningRequest.budget / 5000) * 100}%` }
+                    ]} 
+                    />
+                </View>
+                <View style={styles.sliderLabels}>
+                    <Text style={styles.sliderLabel}>0</Text>
+                    <Text style={styles.sliderLabel}>2500</Text>
+                    <Text style={styles.sliderLabel}>5000+</Text>
+                </View>
+                </View>
+            )}
         </View>
+
 
         {/* Тип активности */}
         <View style={styles.section}>
@@ -506,4 +509,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginRight: 8,
   },
+  webSliderContainer: {
+  marginBottom: 16,
+},
+webSlider: {
+  width: '100%',
+  marginBottom: 8,
+},
 });

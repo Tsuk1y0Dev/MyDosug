@@ -6,7 +6,8 @@ export interface Activity {
   location?: string;
   type: 'meal' | 'custom' | 'activity';
   color?: string;
-  duration?: number; // Добавим длительность для удобства
+  duration?: number;
+  description?: string; 
 }
 
 export interface TimeSlot {

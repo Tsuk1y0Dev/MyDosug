@@ -4,14 +4,16 @@ import { View, Text, ScrollView, StyleSheet } from 'react-native';
 interface TimelineProps {
   timeSlots: string[];
   hourHeight: number;
+  contentHeight: number; // Добавляем высоту контента
 }
 
-export const Timeline: React.FC<TimelineProps> = ({ timeSlots, hourHeight }) => {
+export const Timeline: React.FC<TimelineProps> = ({ timeSlots, hourHeight, contentHeight }) => {
   return (
     <View style={styles.timeLabels}>
       <ScrollView 
+        style={styles.scrollView}
+        contentContainerStyle={[styles.scrollContent, { height: contentHeight }]}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 20 }}
       >
         {timeSlots.map((time, index) => (
           <View 
@@ -38,6 +40,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc',
     borderRightWidth: 1,
     borderRightColor: '#e5e7eb',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    // Высота задается через пропс
   },
   timeLabel: {
     paddingHorizontal: 12,

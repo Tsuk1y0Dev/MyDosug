@@ -17,7 +17,13 @@ interface RoutePlanningStepProps {
 }
 
 export const RoutePlanningStep: React.FC<RoutePlanningStepProps> = ({ onPlanSaved }) => {
-  const { currentPlan, removeFromPlan, setCurrentStep, planningRequest } = usePlanner();
+    const { 
+    currentPlan, 
+    removeFromPlan, 
+    setCurrentStep, 
+    planningRequest,
+    resetPlanner
+  } = usePlanner();
   const { addPlannedActivities, schedule } = useSchedule();
 
   const formatDuration = (minutes: number) => {
@@ -75,37 +81,39 @@ export const RoutePlanningStep: React.FC<RoutePlanningStepProps> = ({ onPlanSave
   };
 
   const handleSavePlan = () => {
-    if (currentPlan.activities.length === 0) {
-      Alert.alert('Пустой план', 'Добавьте хотя бы одну активность в план');
-      return;
-    }
+  if (currentPlan.activities.length === 0) {
+    Alert.alert('Пустой план', 'Добавьте хотя бы одну активность в план');
+    return;
+  }
 
-    // Проверяем конфликты времени
-    const { hasConflicts, conflicts } = checkTimeConflicts(currentPlan.activities);
-    
-    if (hasConflicts) {
-      Alert.alert(
-        'Обнаружены конфликты времени',
-        `Некоторые активности пересекаются по времени:\n\n${conflicts.slice(0, 3).join('\n')}${conflicts.length > 3 ? '\n...и другие' : ''}\n\nВы можете:\n• Сохранить план и решить конфликты позже\n• Вернуться и изменить время`,
-        [
-          {
-            text: 'Отмена',
-            style: 'cancel'
-          },
-          {
-            text: 'Сохранить всё равно',
-            onPress: () => savePlanConfirmed()
-          }
-        ]
-      );
-    } else {
-      savePlanConfirmed();
-    }
-  };
+  const { hasConflicts, conflicts } = checkTimeConflicts(currentPlan.activities);
+  
+  if (hasConflicts) {
+    Alert.alert(
+      'Обнаружены конфликты времени',
+      `Некоторые активности пересекаются по времени:\n\n${conflicts.slice(0, 3).join('\n')}${conflicts.length > 3 ? '\n...и другие' : ''}\n\nВы можете:\n• Сохранить план и решить конфликты позже\n• Вернуться и изменить время`,
+      [
+        {
+          text: 'Отмена',
+          style: 'cancel'
+        },
+        {
+          text: 'Сохранить всё равно',
+          onPress: () => savePlanConfirmed()
+        }
+      ]
+    );
+  } else {
+    savePlanConfirmed();
+  }
+};
 
-  const savePlanConfirmed = () => {
+const savePlanConfirmed = () => {
     // Сохраняем план в глобальное состояние
     addPlannedActivities(currentPlan.activities);
+    
+    // Сбрасываем планировщик
+    resetPlanner(); // Теперь эта функция доступна
     
     // Показываем уведомление об успехе
     Alert.alert(
@@ -147,7 +155,9 @@ export const RoutePlanningStep: React.FC<RoutePlanningStepProps> = ({ onPlanSave
         <View style={styles.detailRow}>
           <Feather name="clock" size={14} color="#6b7280" />
           <Text style={styles.detailText}>
-            Продолжительность: {formatDuration(activity.place.duration)}
+            Продолжительность: {formatDuration(
+              timeToMinutes(activity.endTime) - timeToMinutes(activity.startTime)
+            )}
           </Text>
         </View>
         
