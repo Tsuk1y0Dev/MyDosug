@@ -2,7 +2,6 @@ import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { HomeScreen } from '../screens/main/HomeScreen';
 import { SearchScreen } from '../screens/main/SearchScreen';
-import { PlannerScreen } from '../screens/main/PlannerScreen';
 import { RoutesScreen } from '../screens/main/RoutesScreen';
 import { ProfileScreen } from '../screens/main/ProfileScreen';
 import { MainTabParamList } from './types';
@@ -24,9 +23,6 @@ export const MainNavigator = () => {
             case 'Search':
               iconName = 'search';
               break;
-            case 'Planner':
-              iconName = 'plus-circle';
-              break;
             case 'Routes':
               iconName = 'map';
               break;
@@ -42,19 +38,41 @@ export const MainNavigator = () => {
         tabBarActiveTintColor: '#3b82f6',
         tabBarInactiveTintColor: '#6b7280',
         headerShown: false,
+        tabBarStyle: {
+          backgroundColor: 'white',
+          borderTopWidth: 1,
+          borderTopColor: '#f1f5f9',
+        },
       })}
     >
-      <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Search" component={SearchScreen} />
       <Tab.Screen 
-        name="Planner" 
-        component={PlannerScreen}
+        name="Home" 
+        component={HomeScreen}
         options={{
-          title: 'Планировщик',
+          title: 'Главная',
         }}
       />
-      <Tab.Screen name="Routes" component={RoutesScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen 
+        name="Search" 
+        component={SearchScreen}
+        options={{
+          title: 'Поиск',
+        }}
+      />
+      <Tab.Screen 
+        name="Routes" 
+        component={RoutesScreen}
+        options={{
+          title: 'Маршруты',
+        }}
+      />
+      <Tab.Screen 
+        name="Profile" 
+        component={ProfileScreen}
+        options={{
+          title: 'Профиль',
+        }}
+      />
     </Tab.Navigator>
   );
 };

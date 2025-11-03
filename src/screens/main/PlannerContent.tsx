@@ -1,12 +1,16 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
-import { PlannerProvider, usePlanner } from '../../services/planner/PlannerContext';
+import { usePlanner } from '../../services/planner/PlannerContext';
 import { TimeSelectionStep } from '../../components/planner/TimeSelectionStep';
 import { ParametersStep } from '../../components/planner/ParametersStep';
 import { SearchResultsStep } from '../../components/planner/SearchResultsStep';
 import { RoutePlanningStep } from '../../components/planner/RoutePlanningStep';
 
-const PlannerContent = () => {
+interface PlannerContentProps {
+  onPlanSaved: () => void;
+}
+
+export const PlannerContent: React.FC<PlannerContentProps> = ({ onPlanSaved }) => {
   const { currentStep } = usePlanner();
 
   const renderStep = () => {
@@ -18,7 +22,7 @@ const PlannerContent = () => {
       case 3:
         return <SearchResultsStep />;
       case 4:
-        return <RoutePlanningStep />;
+        return <RoutePlanningStep onPlanSaved={onPlanSaved} />;
       default:
         return <TimeSelectionStep />;
     }
@@ -31,17 +35,10 @@ const PlannerContent = () => {
   );
 };
 
-export const PlannerScreen = () => {
-  return (
-    <PlannerProvider>
-      <PlannerContent />
-    </PlannerProvider>
-  );
-};
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: 'white',
+    paddingTop: 60, // Для кнопки закрытия
   },
 });

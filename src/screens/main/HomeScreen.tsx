@@ -9,64 +9,59 @@ import {
   Alert
 } from 'react-native';
 import { useAuth } from '../../services/auth/AuthContext';
+import { useSchedule } from '../../services/schedule/ScheduleContext';
 import { Activity, FreeSlot } from '../../types/schedule';
 import { ActivityBlock } from '../../components/home/ActivityBlock';
 import { AddSlotButton } from '../../components/home/AddSlotButton';
 import { Timeline } from '../../components/home/Timeline';
+import { PlannerModal } from './PlannerModal';
 import { Feather } from '@expo/vector-icons';
 
 const HOUR_HEIGHT = 80;
+const START_HOUR = 6;
+const END_HOUR = 22;
+const TOTAL_HOURS = END_HOUR - START_HOUR;
 
 export const HomeScreen = () => {
   const { logout, user } = useAuth();
-  const [selectedDate, setSelectedDate] = useState<string>('Четверг, 12 дек');
+  const { schedule, deleteActivity, updateActivity } = useSchedule();
+  const [selectedDate, setSelectedDate] = useState<string>('Сегодня');
   const [draggingActivityId, setDraggingActivityId] = useState<string | null>(null);
+  const [plannerVisible, setPlannerVisible] = useState(false);
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState<{startTime: string; endTime: string} | undefined>();
 
-  const [schedule, setSchedule] = useState<Activity[]>([
-    {
-      id: '1',
-      title: 'Завтрак в столовой "X"',
-      startTime: '08:00',
-      endTime: '09:00',
-      location: 'Столовая X',
-      type: 'meal'
-    },
-    {
-      id: '2',
-      title: '{кастомный модуль}',
-      startTime: '10:30',
-      endTime: '12:00',
-      type: 'custom'
-    },
-    {
-      id: '3',
-      title: 'Прогулка в парке',
-      startTime: '17:00',
-      endTime: '18:30',
-      location: 'Центральный парк',
-      type: 'activity'
+  const timeSlots = useMemo(() => {
+    const slots = [];
+    for (let hour = START_HOUR; hour <= END_HOUR; hour++) {
+      slots.push(`${hour.toString().padStart(2, '0')}:00`);
     }
-  ]);
-
-  const timeSlots = [
-    '06:00', '07:00', '08:00', '09:00', '10:00', '11:00', 
-    '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', 
-    '18:00', '19:00', '20:00', '21:00', '22:00'
-  ];
+    return slots;
+  }, []);
 
   const timeToPosition = (time: string): number => {
     const [hours, minutes] = time.split(':').map(Number);
-    return (hours - 6) * HOUR_HEIGHT + (minutes / 60) * HOUR_HEIGHT;
+    return (hours - START_HOUR) * HOUR_HEIGHT + (minutes / 60) * HOUR_HEIGHT;
   };
 
   const positionToTime = (position: number): string => {
     const totalMinutes = (position / HOUR_HEIGHT) * 60;
-    const hours = Math.floor(totalMinutes / 60) + 6;
+    const hours = Math.floor(totalMinutes / 60) + START_HOUR;
     const minutes = Math.round(totalMinutes % 60);
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
   };
 
   const freeSlots = useMemo((): FreeSlot[] => {
+    if (schedule.length === 0) {
+      // Если нет активностей, весь день свободен
+      return [{
+        startTime: timeToPosition('06:00'),
+        endTime: timeToPosition('22:00'),
+        duration: timeToPosition('22:00') - timeToPosition('06:00'),
+        startTimeString: '06:00',
+        endTimeString: '22:00',
+      }];
+    }
+
     const busySlots = schedule
       .map(activity => ({
         start: timeToPosition(activity.startTime),
@@ -123,7 +118,7 @@ export const HomeScreen = () => {
         { 
           text: 'Удалить', 
           style: 'destructive',
-          onPress: () => handleDeleteActivity(activity.id)
+          onPress: () => deleteActivity(activity.id)
         }
       ]
     );
@@ -134,66 +129,48 @@ export const HomeScreen = () => {
   };
 
   const handleDragEnd = (activityId: string, newStartTime: string, newEndTime: string) => {
-    setSchedule(prev => prev.map(activity => 
-      activity.id === activityId 
-        ? { ...activity, startTime: newStartTime, endTime: newEndTime }
-        : activity
-    ));
-    setDraggingActivityId(null);
-  };
-
-  const handleActivitySwap = (draggedId: string, targetId: string) => {
-    setSchedule(prev => {
-      const draggedIndex = prev.findIndex(a => a.id === draggedId);
-      const targetIndex = prev.findIndex(a => a.id === targetId);
-      
-      if (draggedIndex === -1 || targetIndex === -1) return prev;
-      
-      const newSchedule = [...prev];
-      
-      // Сохраняем временные интервалы
-      const draggedTime = {
-        startTime: newSchedule[draggedIndex].startTime,
-        endTime: newSchedule[draggedIndex].endTime
-      };
-      
-      const targetTime = {
-        startTime: newSchedule[targetIndex].startTime,
-        endTime: newSchedule[targetIndex].endTime
-      };
-      
-      // Меняем временные интервалы местами
-      newSchedule[draggedIndex] = {
-        ...newSchedule[draggedIndex],
-        startTime: targetTime.startTime,
-        endTime: targetTime.endTime
-      };
-      
-      newSchedule[targetIndex] = {
-        ...newSchedule[targetIndex],
-        startTime: draggedTime.startTime,
-        endTime: draggedTime.endTime
-      };
-      
-      return newSchedule;
+    updateActivity(activityId, { 
+      startTime: newStartTime, 
+      endTime: newEndTime 
     });
     setDraggingActivityId(null);
   };
 
-  const handleAddActivity = (slot?: FreeSlot) => {
-    const newActivity: Activity = {
-      id: Date.now().toString(),
-      title: 'Новая активность',
-      startTime: slot?.startTimeString || '12:00',
-      endTime: slot?.endTimeString || '13:00',
-      type: 'activity'
-    };
+  const handleActivitySwap = (draggedId: string, targetId: string) => {
+    const draggedActivity = schedule.find(a => a.id === draggedId);
+    const targetActivity = schedule.find(a => a.id === targetId);
     
-    setSchedule(prev => [...prev, newActivity]);
+    if (!draggedActivity || !targetActivity) return;
+
+    // Меняем временные интервалы местами
+    updateActivity(draggedId, {
+      startTime: targetActivity.startTime,
+      endTime: targetActivity.endTime
+    });
+    
+    updateActivity(targetId, {
+      startTime: draggedActivity.startTime,
+      endTime: draggedActivity.endTime
+    });
+    
+    setDraggingActivityId(null);
   };
 
-  const handleDeleteActivity = (activityId: string) => {
-    setSchedule(prev => prev.filter(activity => activity.id !== activityId));
+  const handleAddActivity = (slot?: FreeSlot) => {
+    if (slot) {
+      setSelectedTimeSlot({
+        startTime: slot.startTimeString!,
+        endTime: slot.endTimeString!
+      });
+    } else {
+      setSelectedTimeSlot(undefined);
+    }
+    setPlannerVisible(true);
+  };
+
+  const handlePlannerClose = () => {
+    setPlannerVisible(false);
+    setSelectedTimeSlot(undefined);
   };
 
   const handleLogout = () => {
@@ -207,8 +184,16 @@ export const HomeScreen = () => {
     );
   };
 
+  const getCurrentTimePosition = () => {
+    const now = new Date();
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+    return timeToPosition(`${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`);
+  };
+
   return (
     <SafeAreaView style={styles.container}>
+      {/* Заголовок */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Feather name="calendar" size={24} color="#3b82f6" />
@@ -219,29 +204,55 @@ export const HomeScreen = () => {
         </View>
         
         <View style={styles.headerRight}>
+          <TouchableOpacity style={styles.statsButton}>
+            <Feather name="bar-chart-2" size={20} color="#6b7280" />
+          </TouchableOpacity>
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
             <Feather name="log-out" size={20} color="#ef4444" />
           </TouchableOpacity>
         </View>
       </View>
 
+      {/* Информация о пользователе */}
       <View style={styles.userInfo}>
         <Text style={styles.userGreeting}>Добро пожаловать!</Text>
         <Text style={styles.userEmail}>{user?.email}</Text>
+        <View style={styles.scheduleStats}>
+          <Text style={styles.statsText}>
+            {schedule.length} активностей • {freeSlots.length} свободных окон
+          </Text>
+        </View>
       </View>
 
+      {/* Временная шкала */}
       <View style={styles.timelineContainer}>
         <Timeline timeSlots={timeSlots} hourHeight={HOUR_HEIGHT} />
         
-        <ScrollView style={styles.activitiesColumn}>
-          <View style={[styles.activitiesContent, { height: 16 * HOUR_HEIGHT }]}>
+        <ScrollView 
+          style={styles.activitiesColumn}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={[styles.activitiesContent, { height: TOTAL_HOURS * HOUR_HEIGHT }]}>
+            {/* Текущее время индикатор */}
+            <View 
+              style={[
+                styles.currentTimeLine,
+                { top: getCurrentTimePosition() }
+              ]}
+            >
+              <View style={styles.currentTimeDot} />
+              <View style={styles.currentTimeLineVertical} />
+            </View>
+
             {/* Индикатор перетаскивания */}
             {draggingActivityId && (
               <View style={styles.dragOverlay}>
-                <Text style={styles.dragOverlayText}>Перетащите для обмена с другим блоком</Text>
+                <Feather name="refresh-cw" size={16} color="#3b82f6" />
+                <Text style={styles.dragOverlayText}>Перетащите для обмена</Text>
               </View>
             )}
             
+            {/* Свободные слоты */}
             {freeSlots.map((slot, index) => (
               <AddSlotButton
                 key={index}
@@ -250,6 +261,7 @@ export const HomeScreen = () => {
               />
             ))}
             
+            {/* Активности */}
             {schedule.map((activity) => (
               <ActivityBlock
                 key={activity.id}
@@ -269,12 +281,20 @@ export const HomeScreen = () => {
         </ScrollView>
       </View>
 
+      {/* Плавающая кнопка добавления */}
       <TouchableOpacity 
         style={styles.floatingButton}
         onPress={() => handleAddActivity()}
       >
         <Feather name="plus" size={24} color="white" />
       </TouchableOpacity>
+
+      {/* Модальное окно планировщика */}
+      <PlannerModal
+        visible={plannerVisible}
+        onClose={handlePlannerClose}
+        initialTimeSlot={selectedTimeSlot}
+      />
     </SafeAreaView>
   );
 };
@@ -315,6 +335,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  statsButton: {
+    padding: 8,
+    marginRight: 8,
+  },
   logoutButton: {
     padding: 8,
   },
@@ -334,6 +358,16 @@ const styles = StyleSheet.create({
   userEmail: {
     fontSize: 14,
     color: '#6b7280',
+    marginBottom: 8,
+  },
+  scheduleStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statsText: {
+    fontSize: 12,
+    color: '#6b7280',
+    fontWeight: '500',
   },
   timelineContainer: {
     flex: 1,
@@ -346,6 +380,28 @@ const styles = StyleSheet.create({
   activitiesContent: {
     position: 'relative',
   },
+  currentTimeLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 2,
+    backgroundColor: '#ef4444',
+    zIndex: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  currentTimeDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ef4444',
+    marginLeft: -4,
+  },
+  currentTimeLineVertical: {
+    flex: 1,
+    height: 2,
+    backgroundColor: '#ef4444',
+  },
   dragOverlay: {
     position: 'absolute',
     top: 0,
@@ -353,13 +409,16 @@ const styles = StyleSheet.create({
     right: 0,
     backgroundColor: 'rgba(59, 130, 246, 0.1)',
     padding: 8,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     zIndex: 1000,
   },
   dragOverlayText: {
     color: '#3b82f6',
     fontWeight: '600',
     fontSize: 12,
+    marginLeft: 8,
   },
   floatingButton: {
     position: 'absolute',

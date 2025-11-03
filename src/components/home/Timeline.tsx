@@ -9,20 +9,25 @@ interface TimelineProps {
 export const Timeline: React.FC<TimelineProps> = ({ timeSlots, hourHeight }) => {
   return (
     <View style={styles.timeLabels}>
-      {timeSlots.map((time, index) => (
-        <View 
-          key={time} 
-          style={[
-            styles.timeLabel,
-            { height: hourHeight }
-          ]}
-        >
-          <Text style={styles.timeText}>{time}</Text>
-          {index < timeSlots.length - 1 && (
-            <View style={styles.timeLine} />
-          )}
-        </View>
-      ))}
+      <ScrollView 
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 20 }}
+      >
+        {timeSlots.map((time, index) => (
+          <View 
+            key={time} 
+            style={[
+              styles.timeLabel,
+              { height: hourHeight }
+            ]}
+          >
+            <Text style={styles.timeText}>{time}</Text>
+            {index < timeSlots.length - 1 && (
+              <View style={styles.timeLine} />
+            )}
+          </View>
+        ))}
+      </ScrollView>
     </View>
   );
 };
