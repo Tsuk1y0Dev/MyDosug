@@ -5,7 +5,11 @@ import { useSchedule } from '../../services/schedule/ScheduleContext';
 import { Activity } from '../../types/schedule';
 import { Feather } from '@expo/vector-icons';
 
-export const CustomActivityStep = () => {
+interface CustomActivityStepProps {
+  onPlanSaved?: () => void;
+}
+
+export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({ onPlanSaved }) => {
   const { planningRequest, setCurrentStep } = usePlanner();
   const { addActivity } = useSchedule();
   
@@ -38,7 +42,20 @@ export const CustomActivityStep = () => {
     Alert.alert(
       'Успешно!',
       'Кастомная активность добавлена в расписание',
-      [{ text: 'OK', onPress: () => setCurrentStep(1) }]
+      [
+        { 
+          text: 'OK', 
+          onPress: () => {
+            // Закрываем модальное окно через onPlanSaved
+            if (onPlanSaved) {
+              onPlanSaved();
+            } else {
+              // Или возвращаемся на предыдущий шаг
+              setCurrentStep(1);
+            }
+          }
+        }
+      ]
     );
   };
 
@@ -146,7 +163,7 @@ export const CustomActivityStep = () => {
       <View style={styles.buttons}>
         <TouchableOpacity 
           style={styles.backButton}
-          onPress={() => setCurrentStep(1)}
+          onPress={() => setCurrentStep(2)}
         >
           <Feather name="arrow-left" size={20} color="#3b82f6" />
           <Text style={styles.backButtonText}>Назад</Text>
@@ -161,7 +178,7 @@ export const CustomActivityStep = () => {
           onPress={handleSaveCustomActivity}
         >
           <Feather name="check" size={20} color="white" />
-          <Text style={styles.saveButtonText}>Сохранить</Text>
+          <Text style={styles.saveButtonText}>Сохранить активность</Text>
         </TouchableOpacity>
       </View>
     </View>

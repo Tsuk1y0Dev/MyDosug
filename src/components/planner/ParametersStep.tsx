@@ -18,11 +18,18 @@ export const ParametersStep = () => {
     updatePlanningRequest({ budget: value });
   };
 
+  // Функция для определения, показывать ли дополнительные фильтры
+  const shouldShowAdditionalFilters = planningRequest.activityType !== 'custom';
+
   return (
     <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Параметры активности</Text>
-        <Text style={styles.subtitle}>Настройте параметры для поиска подходящих мест</Text>
+        <Text style={styles.subtitle}>
+          {planningRequest.activityType === 'custom' 
+            ? 'Создайте свою уникальную активность' 
+            : 'Настройте параметры для поиска подходящих мест'}
+        </Text>
 
         {/* Точка старта */}
         <View style={styles.section}>
@@ -62,48 +69,6 @@ export const ParametersStep = () => {
           />
         </View>
 
-        {/* Бюджет */}
-        <View style={styles.section}>
-            <Text style={styles.sectionTitle}>💰 Бюджет</Text>
-            <Text style={styles.budgetValue}>До {planningRequest.budget} ₽</Text>
-            
-            {Platform.OS === 'web' ? (
-                <View style={styles.webSliderContainer}>
-                <input
-                    type="range"
-                    min="0"
-                    max="5000"
-                    step="100"
-                    value={planningRequest.budget}
-                    onChange={(e) => handleBudgetChange(Number(e.target.value))}
-                    style={styles.webSlider}
-                />
-                <View style={styles.sliderLabels}>
-                    <Text style={styles.sliderLabel}>0</Text>
-                    <Text style={styles.sliderLabel}>2500</Text>
-                    <Text style={styles.sliderLabel}>5000+</Text>
-                </View>
-                </View>
-            ) : (
-                <View style={styles.sliderContainer}>
-                <View style={styles.sliderTrack}>
-                    <View 
-                    style={[
-                        styles.sliderProgress,
-                        { width: `${(planningRequest.budget / 5000) * 100}%` }
-                    ]} 
-                    />
-                </View>
-                <View style={styles.sliderLabels}>
-                    <Text style={styles.sliderLabel}>0</Text>
-                    <Text style={styles.sliderLabel}>2500</Text>
-                    <Text style={styles.sliderLabel}>5000+</Text>
-                </View>
-                </View>
-            )}
-        </View>
-
-
         {/* Тип активности */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>🎯 Тип активности</Text>
@@ -131,120 +96,177 @@ export const ParametersStep = () => {
           </ScrollView>
         </View>
 
-        {/* Настроение */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>😊 Настроение</Text>
-          <View style={styles.moodContainer}>
-            {moodTypes.map((mood) => (
-              <TouchableOpacity
-                key={mood.value}
-                style={[
-                  styles.moodItem,
-                  planningRequest.mood === mood.value && { backgroundColor: mood.color },
-                  planningRequest.mood === mood.value && styles.moodItemSelected
-                ]}
-                onPress={() => {
-                  // Toggle: если уже выбрано это настроение, снимаем выбор
-                  if (planningRequest.mood === mood.value) {
-                    updatePlanningRequest({ mood: undefined });
-                  } else {
-                    updatePlanningRequest({ mood: mood.value });
-                  }
-                }}
-              >
-                <Text style={styles.moodIcon}>{mood.icon}</Text>
-                <Text style={[
-                  styles.moodText,
-                  planningRequest.mood === mood.value && styles.moodTextSelected,
-                ]}>
-                  {mood.label}
-                </Text>
-                {planningRequest.mood === mood.value && (
-                  <Feather name="check" size={16} color="white" style={styles.moodCheckIcon} />
-                )}
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
+        {/* Дополнительные параметры (только для не-custom активностей) */}
+        {shouldShowAdditionalFilters && (
+          <>
+            {/* Бюджет */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>💰 Бюджет</Text>
+              <Text style={styles.budgetValue}>До {planningRequest.budget} ₽</Text>
+              
+              {Platform.OS === 'web' ? (
+                <View style={styles.webSliderContainer}>
+                  <input
+                    type="range"
+                    min="0"
+                    max="5000"
+                    step="100"
+                    value={planningRequest.budget}
+                    onChange={(e) => handleBudgetChange(Number(e.target.value))}
+                    style={styles.webSlider}
+                  />
+                  <View style={styles.sliderLabels}>
+                    <Text style={styles.sliderLabel}>0</Text>
+                    <Text style={styles.sliderLabel}>2500</Text>
+                    <Text style={styles.sliderLabel}>5000+</Text>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.sliderContainer}>
+                  <View style={styles.sliderTrack}>
+                    <View 
+                      style={[
+                        styles.sliderProgress,
+                        { width: `${(planningRequest.budget / 5000) * 100}%` }
+                      ]} 
+                    />
+                  </View>
+                  <View style={styles.sliderLabels}>
+                    <Text style={styles.sliderLabel}>0</Text>
+                    <Text style={styles.sliderLabel}>2500</Text>
+                    <Text style={styles.sliderLabel}>5000+</Text>
+                  </View>
+                </View>
+              )}
+            </View>
 
-        {/* Компания */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>👥 Компания</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.companyTypes}>
-              {companyTypes.map((company) => (
-                <TouchableOpacity
-                  key={company.value}
-                  style={[
-                    styles.companyType,
-                    planningRequest.company === company.value && styles.companyTypeSelected,
-                  ]}
-                  onPress={() => updatePlanningRequest({ company: company.value })}
-                >
-                  <Text style={styles.companyIcon}>{company.icon}</Text>
-                  <Text style={[
-                    styles.companyText,
-                    planningRequest.company === company.value && styles.companyTextSelected,
-                  ]}>
-                    {company.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+            {/* Настроение */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>😊 Настроение</Text>
+              <View style={styles.moodContainer}>
+                {moodTypes.map((mood) => (
+                  <TouchableOpacity
+                    key={mood.value}
+                    style={[
+                      styles.moodItem,
+                      planningRequest.mood === mood.value && { backgroundColor: mood.color },
+                      planningRequest.mood === mood.value && styles.moodItemSelected
+                    ]}
+                    onPress={() => {
+                      // Toggle: если уже выбрано это настроение, снимаем выбор
+                      if (planningRequest.mood === mood.value) {
+                        updatePlanningRequest({ mood: undefined });
+                      } else {
+                        updatePlanningRequest({ mood: mood.value });
+                      }
+                    }}
+                  >
+                    <Text style={styles.moodIcon}>{mood.icon}</Text>
+                    <Text style={[
+                      styles.moodText,
+                      planningRequest.mood === mood.value && styles.moodTextSelected,
+                    ]}>
+                      {mood.label}
+                    </Text>
+                    {planningRequest.mood === mood.value && (
+                      <Feather name="check" size={16} color="white" style={styles.moodCheckIcon} />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
-          </ScrollView>
-        </View>
 
-        {/* Расширенные настройки */}
-        <TouchableOpacity 
-          style={styles.advancedHeader}
-          onPress={() => setShowAdvanced(!showAdvanced)}
-        >
-          <Text style={styles.advancedTitle}>⚙️ Расширенные настройки</Text>
-          <Feather 
-            name={showAdvanced ? "chevron-up" : "chevron-down"} 
-            size={20} 
-            color="#6b7280" 
-          />
-        </TouchableOpacity>
+            {/* Компания */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>👥 Компания</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={styles.companyTypes}>
+                  {companyTypes.map((company) => (
+                    <TouchableOpacity
+                      key={company.value}
+                      style={[
+                        styles.companyType,
+                        planningRequest.company === company.value && styles.companyTypeSelected,
+                      ]}
+                      onPress={() => updatePlanningRequest({ company: company.value })}
+                    >
+                      <Text style={styles.companyIcon}>{company.icon}</Text>
+                      <Text style={[
+                        styles.companyText,
+                        planningRequest.company === company.value && styles.companyTextSelected,
+                      ]}>
+                        {company.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+            </View>
 
-        {showAdvanced && (
-          <View style={styles.advancedSection}>
-            <View style={styles.filterRow}>
-              <Text style={styles.filterLabel}>♿ Доступно для инвалидов</Text>
-              <Switch
-                value={planningRequest.filters.wheelchairAccessible}
-                onValueChange={(value) => updatePlanningRequest({
-                  filters: { ...planningRequest.filters, wheelchairAccessible: value }
-                })}
+            {/* Расширенные настройки */}
+            <TouchableOpacity 
+              style={styles.advancedHeader}
+              onPress={() => setShowAdvanced(!showAdvanced)}
+            >
+              <Text style={styles.advancedTitle}>⚙️ Расширенные настройки</Text>
+              <Feather 
+                name={showAdvanced ? "chevron-up" : "chevron-down"} 
+                size={20} 
+                color="#6b7280" 
               />
-            </View>
-            <View style={styles.filterRow}>
-              <Text style={styles.filterLabel}>🌱 Вегетарианское меню</Text>
-              <Switch
-                value={planningRequest.filters.vegetarian}
-                onValueChange={(value) => updatePlanningRequest({
-                  filters: { ...planningRequest.filters, vegetarian: value }
-                })}
-              />
-            </View>
-            <View style={styles.filterRow}>
-              <Text style={styles.filterLabel}>🌳 На открытом воздухе</Text>
-              <Switch
-                value={planningRequest.filters.outdoor}
-                onValueChange={(value) => updatePlanningRequest({
-                  filters: { ...planningRequest.filters, outdoor: value }
-                })}
-              />
-            </View>
-            <View style={styles.filterRow}>
-              <Text style={styles.filterLabel}>👶 Подходит для детей</Text>
-              <Switch
-                value={planningRequest.filters.childFriendly}
-                onValueChange={(value) => updatePlanningRequest({
-                  filters: { ...planningRequest.filters, childFriendly: value }
-                })}
-              />
-            </View>
+            </TouchableOpacity>
+
+            {showAdvanced && (
+              <View style={styles.advancedSection}>
+                <View style={styles.filterRow}>
+                  <Text style={styles.filterLabel}>♿ Доступно для инвалидов</Text>
+                  <Switch
+                    value={planningRequest.filters.wheelchairAccessible}
+                    onValueChange={(value) => updatePlanningRequest({
+                      filters: { ...planningRequest.filters, wheelchairAccessible: value }
+                    })}
+                  />
+                </View>
+                <View style={styles.filterRow}>
+                  <Text style={styles.filterLabel}>🌱 Вегетарианское меню</Text>
+                  <Switch
+                    value={planningRequest.filters.vegetarian}
+                    onValueChange={(value) => updatePlanningRequest({
+                      filters: { ...planningRequest.filters, vegetarian: value }
+                    })}
+                  />
+                </View>
+                <View style={styles.filterRow}>
+                  <Text style={styles.filterLabel}>🌳 На открытом воздухе</Text>
+                  <Switch
+                    value={planningRequest.filters.outdoor}
+                    onValueChange={(value) => updatePlanningRequest({
+                      filters: { ...planningRequest.filters, outdoor: value }
+                    })}
+                  />
+                </View>
+                <View style={styles.filterRow}>
+                  <Text style={styles.filterLabel}>👶 Подходит для детей</Text>
+                  <Switch
+                    value={planningRequest.filters.childFriendly}
+                    onValueChange={(value) => updatePlanningRequest({
+                      filters: { ...planningRequest.filters, childFriendly: value }
+                    })}
+                  />
+                </View>
+              </View>
+            )}
+          </>
+        )}
+
+        {/* Секция для кастомной активности */}
+        {planningRequest.activityType === 'custom' && (
+          <View style={styles.customInfoSection}>
+            <Feather name="info" size={24} color="#3b82f6" />
+            <Text style={styles.customInfoText}>
+              Вы создаете свою активность. После нажатия кнопки "Создать активность" 
+              вы сможете указать название, местоположение и описание.
+            </Text>
           </View>
         )}
 
@@ -259,10 +281,23 @@ export const ParametersStep = () => {
 
           <TouchableOpacity 
             style={styles.searchButton}
-            onPress={searchPlaces}
+            onPress={() => {
+              if (planningRequest.activityType === 'custom') {
+                // Для кастомной активности переходим к созданию
+                setCurrentStep(3);
+              } else {
+                searchPlaces();
+              }
+            }}
           >
-            <Text style={styles.searchButtonText}>Найти места</Text>
-            <Feather name="search" size={20} color="white" />
+            <Text style={styles.searchButtonText}>
+              {planningRequest.activityType === 'custom' ? 'Создать активность' : 'Найти места'}
+            </Text>
+            <Feather 
+              name={planningRequest.activityType === 'custom' ? 'plus' : 'search'} 
+              size={20} 
+              color="white" 
+            />
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -355,26 +390,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6b7280',
   },
-  budgetButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  webSliderContainer: {
+    marginBottom: 16,
   },
-  budgetButton: {
-    backgroundColor: '#f8fafc',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  budgetButtonSelected: {
-    backgroundColor: '#10b981',
-  },
-  budgetButtonText: {
-    fontSize: 14,
-    color: '#374151',
-    fontWeight: '500',
-  },
-  budgetButtonTextSelected: {
-    color: 'white',
+  webSlider: {
+    width: '100%',
+    marginBottom: 8,
   },
   activityTypes: {
     flexDirection: 'row',
@@ -415,6 +436,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 8,
     width: '48%',
+    position: 'relative',
+  },
+  moodItemSelected: {
+    borderWidth: 2,
+    borderColor: '#3b82f6',
   },
   moodIcon: {
     fontSize: 20,
@@ -427,6 +453,11 @@ const styles = StyleSheet.create({
   },
   moodTextSelected: {
     color: 'white',
+  },
+  moodCheckIcon: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
   },
   companyTypes: {
     flexDirection: 'row',
@@ -483,6 +514,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#374151',
   },
+  customInfoSection: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#f0f9ff',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 30,
+  },
+  customInfoText: {
+    fontSize: 14,
+    color: '#0369a1',
+    marginLeft: 12,
+    flex: 1,
+    lineHeight: 20,
+  },
   buttons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -520,20 +566,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginRight: 8,
   },
-  webSliderContainer: {
-  marginBottom: 16,
-},
-webSlider: {
-  width: '100%',
-  marginBottom: 8,
-},
-moodItemSelected: {
-  borderWidth: 2,
-  borderColor: '#3b82f6',
-},
-moodCheckIcon: {
-  position: 'absolute',
-  top: 4,
-  right: 4,
-},
 });

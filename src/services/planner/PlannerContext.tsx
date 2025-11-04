@@ -74,7 +74,7 @@ type PlannerProviderProps = {
 };
 
 export const PlannerProvider = ({ children, initialTimeSlot }: PlannerProviderProps) => {
-  const [currentStep, setCurrentStep] = useState(1);
+  const [currentStep, setCurrentStep] = useState(0);
   const [planningRequest, setPlanningRequest] = useState<PlanningRequest>({
     ...defaultPlanningRequest,
     ...(initialTimeSlot && {
@@ -143,6 +143,12 @@ export const PlannerProvider = ({ children, initialTimeSlot }: PlannerProviderPr
   };
 
   const searchPlaces = () => {
+    // Если выбран тип "custom", сразу переходим к созданию кастомной активности
+    if (planningRequest.activityType === 'custom') {
+      setCurrentStep(3); // Переходим к шагу создания кастомной активности
+      return;
+    }
+
     let results = mockPlaces.filter(place => {
       if (place.type !== planningRequest.activityType) return false;
       

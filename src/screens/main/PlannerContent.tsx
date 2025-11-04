@@ -22,13 +22,16 @@ export const PlannerContent: React.FC<PlannerContentProps> = ({ onPlanSaved }) =
       case 1:
         return <TimeSelectionStep />;
       case 2:
-        // Используем тип активности для определения, показывать ли кастомную активность
-        // Добавляем проверку на существование planType
-        if (planningRequest.planType === 'single' && planningRequest.activityType === 'custom') {
-          return <CustomActivityStep />;
+        // Если выбран тип "custom", показываем CustomActivityStep
+        if (planningRequest.activityType === 'custom') {
+          return <CustomActivityStep onPlanSaved={onPlanSaved} />;
         }
         return <ParametersStep />;
       case 3:
+        // Если на шаге 3 и тип "custom", это значит мы создаем кастомную активность
+        if (planningRequest.activityType === 'custom') {
+          return <CustomActivityStep />;
+        }
         return <SearchResultsStep />;
       case 4:
         return <RoutePlanningStep onPlanSaved={onPlanSaved} />;

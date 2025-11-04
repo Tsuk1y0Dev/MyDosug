@@ -3,7 +3,8 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Dimensions
 import { usePlanner } from '../../services/planner/PlannerContext';
 import { Feather } from '@expo/vector-icons';
 import { Place } from '../../types/planner';
-import { calculateDuration } from '../../types/planner'; // ДОБАВЬТЕ ЭТОТ ИМПОРТ
+import { calculateDuration } from '../../types/planner';
+import { CustomActivityStep } from './CustomActivityStep'; // ДОБАВЬТЕ ЭТОТ ИМПОРТ
 
 const { width } = Dimensions.get('window');
 
@@ -22,6 +23,25 @@ export const SearchResultsStep = () => {
 
   const [showFilters, setShowFilters] = useState(false);
 
+  // Если тип активности - custom, показываем кастомный шаг
+  if (planningRequest.activityType === 'custom') {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={() => setCurrentStep(2)}
+          >
+            <Feather name="arrow-left" size={24} color="#374151" />
+          </TouchableOpacity>
+          <Text style={styles.title}>Создание своей активности</Text>
+          <View style={styles.placeholder} />
+        </View>
+        <CustomActivityStep />
+      </View>
+    );
+  }
+
   const FiltersPanel = () => (
     <View style={styles.filtersPanel}>
       <Text style={styles.filtersTitle}>Фильтры</Text>
@@ -37,7 +57,10 @@ export const SearchResultsStep = () => {
                 searchFilters.priceRange[0] <= level && searchFilters.priceRange[1] >= level && styles.priceFilterSelected
               ]}
               onPress={() => {
-                // Логика выбора ценового диапазона
+                setSearchFilters({
+                  ...searchFilters,
+                  priceRange: [level, level] as [number, number]
+                });
               }}
             >
               <Text style={[
@@ -54,7 +77,14 @@ export const SearchResultsStep = () => {
       <View style={styles.filterActions}>
         <TouchableOpacity 
           style={styles.resetButton}
-          onPress={() => setShowFilters(false)}
+          onPress={() => {
+            setSearchFilters({
+              priceRange: [1, 4] as [number, number],
+              rating: 3.0,
+              distance: 5000,
+            });
+            setShowFilters(false);
+          }}
         >
           <Text style={styles.resetButtonText}>Сбросить</Text>
         </TouchableOpacity>
@@ -111,6 +141,9 @@ export const SearchResultsStep = () => {
   );
 
   const Recommendations = () => {
+    // Показываем рекомендации только если в плане уже есть активности
+    if (currentPlan.activities.length === 0) return null;
+
     const remainingTime = 120; // Оставшееся время в минутах (пример)
     const recommendations = filteredResults.filter(place => {
       const duration = calculateDuration(
@@ -160,7 +193,6 @@ export const SearchResultsStep = () => {
   };
 
   const PlaceDetails = ({ place }: { place: Place }) => {
-    // ВЫЧИСЛЯЕМ продолжительность и используем правильное имя переменной
     const calculatedDuration = calculateDuration(
       place.durationSettings,
       planningRequest.company || 'friends',
@@ -189,7 +221,6 @@ export const SearchResultsStep = () => {
             </View>
             <View style={styles.detailItem}>
               <Feather name="watch" size={16} color="#6b7280" />
-              {/* ИСПОЛЬЗУЕМ вычисленную продолжительность */}
               <Text style={styles.detailText}>~{calculatedDuration} мин посещение</Text>
             </View>
           </View>
@@ -261,36 +292,41 @@ export const SearchResultsStep = () => {
 
       {showFilters && <FiltersPanel />}
 
-      <View style={styles.content}>
-        {/* Список мест */}
-        <ScrollView style={styles.placesList}>
-          {filteredResults.map((place) => (
-            <PlaceCard key={place.id} place={place} />
-          ))}
-        </ScrollView>
+      {/* Основной контент */}
+      <View style={styles.mainContent}>
+        {/* Левая колонка - список мест */}
+        <View style={styles.leftColumn}>
+          <ScrollView style={styles.placesList}>
+            {filteredResults.map((place) => (
+              <PlaceCard key={place.id} place={place} />
+            ))}
+          </ScrollView>
+        </View>
 
-        {/* Детали выбранного места */}
+        {/* Правая колонка - детали места */}
         {selectedPlace && (
-          <View style={styles.detailsPanel}>
+          <View style={styles.rightColumn}>
             <PlaceDetails place={selectedPlace} />
           </View>
         )}
-
-        {/* Текущий план (превью) */}
-        {currentPlan.activities.length > 0 && (
-          <View style={styles.planPreview}>
-            <Text style={styles.planTitle}>Ваш план ({currentPlan.activities.length})</Text>
-            <TouchableOpacity 
-              style={styles.viewPlanButton}
-              onPress={() => setCurrentStep(4)}
-            >
-              <Text style={styles.viewPlanText}>Посмотреть план</Text>
-              <Feather name="arrow-right" size={16} color="#3b82f6" />
-            </TouchableOpacity>
-          </View>
-        )}
       </View>
+
+      {/* Рекомендации - в самом низу */}
       <Recommendations />
+
+      {/* План превью - фиксированная кнопка внизу */}
+      {currentPlan.activities.length > 0 && (
+        <View style={styles.planPreview}>
+          <Text style={styles.planTitle}>Ваш план ({currentPlan.activities.length})</Text>
+          <TouchableOpacity 
+            style={styles.viewPlanButton}
+            onPress={() => setCurrentStep(4)}
+          >
+            <Text style={styles.viewPlanText}>Посмотреть план</Text>
+            <Feather name="arrow-right" size={16} color="#3b82f6" />
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 };
@@ -319,10 +355,22 @@ const styles = StyleSheet.create({
   },
   filterButton: {
     padding: 8,
+    position: 'relative',
   },
-  content: {
+  placeholder: {
+    width: 40,
+  },
+  mainContent: {
     flex: 1,
     flexDirection: 'row',
+  },
+  leftColumn: {
+    flex: 1,
+  },
+  rightColumn: {
+    width: 400,
+    borderLeftWidth: 1,
+    borderLeftColor: '#e5e7eb',
   },
   placesList: {
     flex: 1,
@@ -391,11 +439,6 @@ const styles = StyleSheet.create({
   priceLevel: {
     fontSize: 14,
     color: '#f59e0b',
-  },
-  detailsPanel: {
-    width: 400,
-    borderLeftWidth: 1,
-    borderLeftColor: '#e5e7eb',
   },
   placeDetails: {
     flex: 1,
@@ -487,18 +530,10 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   planPreview: {
-    position: 'absolute',
-    bottom: 20,
-    left: 20,
-    right: 20,
-    backgroundColor: 'white',
-    borderRadius: 12,
     padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
+    backgroundColor: 'white',
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
