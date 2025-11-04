@@ -14,6 +14,7 @@ export const CustomActivityStep = () => {
     location: '',
     description: '',
     duration: 60, // минуты
+    coordinates: { lat: 55.7558, lng: 37.6173 }, // Координаты по умолчанию (Москва)
   });
 
   const handleSaveCustomActivity = () => {
@@ -51,6 +52,23 @@ export const CustomActivityStep = () => {
 
   const durationOptions = [30, 60, 90, 120, 180];
 
+  // Заглушка для карты
+  const MapPlaceholder = () => (
+    <View style={styles.mapPlaceholder}>
+      <Feather name="map-pin" size={32} color="#6b7280" />
+      <Text style={styles.mapPlaceholderText}>Карта</Text>
+      <Text style={styles.mapDescription}>
+        Здесь будет отображаться выбранное местоположение
+      </Text>
+      <Text style={styles.coordinatesText}>
+        Координаты: {customActivity.coordinates.lat.toFixed(4)}, {customActivity.coordinates.lng.toFixed(4)}
+      </Text>
+      <TouchableOpacity style={styles.mapButton}>
+        <Text style={styles.mapButtonText}>Выбрать на карте</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Создать свою активность</Text>
@@ -75,6 +93,12 @@ export const CustomActivityStep = () => {
             value={customActivity.location}
             onChangeText={(text) => setCustomActivity(prev => ({ ...prev, location: text }))}
           />
+        </View>
+
+        {/* Заглушка карты */}
+        <View style={styles.field}>
+          <Text style={styles.label}>Местоположение на карте</Text>
+          <MapPlaceholder />
         </View>
 
         <View style={styles.field}>
@@ -184,6 +208,47 @@ const styles = StyleSheet.create({
   textArea: {
     height: 80,
     textAlignVertical: 'top',
+  },
+  mapPlaceholder: {
+    height: 200,
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#e5e7eb',
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  mapPlaceholderText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#374151',
+    marginTop: 8,
+  },
+  mapDescription: {
+    fontSize: 14,
+    color: '#6b7280',
+    textAlign: 'center',
+    marginTop: 8,
+    lineHeight: 20,
+  },
+  coordinatesText: {
+    fontSize: 12,
+    color: '#9ca3af',
+    marginTop: 8,
+  },
+  mapButton: {
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#3b82f6',
+    borderRadius: 8,
+  },
+  mapButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
   },
   durationOptions: {
     flexDirection: 'row',

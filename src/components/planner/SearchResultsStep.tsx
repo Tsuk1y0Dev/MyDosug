@@ -15,10 +15,58 @@ export const SearchResultsStep = () => {
     addToPlan, 
     currentPlan,
     setCurrentStep,
-    planningRequest 
+    planningRequest,
+    searchFilters,
+    setSearchFilters 
   } = usePlanner();
 
   const [showFilters, setShowFilters] = useState(false);
+
+  const FiltersPanel = () => (
+    <View style={styles.filtersPanel}>
+      <Text style={styles.filtersTitle}>Фильтры</Text>
+      
+      <View style={styles.filterSection}>
+        <Text style={styles.filterLabel}>Ценовой диапазон</Text>
+        <View style={styles.priceFilters}>
+          {[1, 2, 3, 4].map(level => (
+            <TouchableOpacity
+              key={level}
+              style={[
+                styles.priceFilter,
+                searchFilters.priceRange[0] <= level && searchFilters.priceRange[1] >= level && styles.priceFilterSelected
+              ]}
+              onPress={() => {
+                // Логика выбора ценового диапазона
+              }}
+            >
+              <Text style={[
+                styles.priceFilterText,
+                searchFilters.priceRange[0] <= level && searchFilters.priceRange[1] >= level && styles.priceFilterTextSelected
+              ]}>
+                {'$'.repeat(level)}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
+      <View style={styles.filterActions}>
+        <TouchableOpacity 
+          style={styles.resetButton}
+          onPress={() => setShowFilters(false)}
+        >
+          <Text style={styles.resetButtonText}>Сбросить</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.applyButton}
+          onPress={() => setShowFilters(false)}
+        >
+          <Text style={styles.applyButtonText}>Применить</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
 
   const PlaceCard = ({ place }: { place: Place }) => (
     <TouchableOpacity 
@@ -61,6 +109,55 @@ export const SearchResultsStep = () => {
       </View>
     </TouchableOpacity>
   );
+
+  const Recommendations = () => {
+    const remainingTime = 120; // Оставшееся время в минутах (пример)
+    const recommendations = filteredResults.filter(place => {
+      const duration = calculateDuration(
+        place.durationSettings,
+        planningRequest.company || 'friends',
+        planningRequest.mood || 'fun'
+      );
+      return duration <= remainingTime;
+    }).slice(0, 3);
+
+    if (recommendations.length === 0) return null;
+
+    return (
+      <View style={styles.recommendations}>
+        <Text style={styles.recommendationsTitle}>💡 Оставшееся время можно провести здесь:</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={styles.recommendationsList}>
+            {recommendations.map(place => (
+              <TouchableOpacity 
+                key={place.id}
+                style={styles.recommendationCard}
+                onPress={() => selectPlace(place)}
+              >
+                <Image source={{ uri: place.image }} style={styles.recommendationImage} />
+                <View style={styles.recommendationInfo}>
+                  <Text style={styles.recommendationName}>{place.name}</Text>
+                  <Text style={styles.recommendationDescription} numberOfLines={2}>
+                    {place.description}
+                  </Text>
+                  <View style={styles.recommendationMeta}>
+                    <Feather name="clock" size={12} color="#6b7280" />
+                    <Text style={styles.recommendationMetaText}>
+                      {calculateDuration(
+                        place.durationSettings,
+                        planningRequest.company || 'friends',
+                        planningRequest.mood || 'fun'
+                      )} мин
+                    </Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </ScrollView>
+      </View>
+    );
+  };
 
   const PlaceDetails = ({ place }: { place: Place }) => {
     // ВЫЧИСЛЯЕМ продолжительность и используем правильное имя переменной
@@ -158,8 +255,11 @@ export const SearchResultsStep = () => {
           onPress={() => setShowFilters(!showFilters)}
         >
           <Feather name="filter" size={20} color="#374151" />
+          {showFilters && <View style={styles.filterIndicator} />}
         </TouchableOpacity>
       </View>
+
+      {showFilters && <FiltersPanel />}
 
       <View style={styles.content}>
         {/* Список мест */}
@@ -190,6 +290,7 @@ export const SearchResultsStep = () => {
           </View>
         )}
       </View>
+      <Recommendations />
     </View>
   );
 };
@@ -416,5 +517,148 @@ const styles = StyleSheet.create({
     color: '#3b82f6',
     fontWeight: '600',
     marginRight: 4,
+  },
+  recommendations: {
+    padding: 16,
+    backgroundColor: '#f8fafc',
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+  },
+  recommendationsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 12,
+  },
+  recommendationsList: {
+    flexDirection: 'row',
+  },
+  recommendationCard: {
+    width: 200,
+    backgroundColor: 'white',
+    borderRadius: 12,
+    marginRight: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    overflow: 'hidden',
+  },
+  recommendationImage: {
+    width: '100%',
+    height: 100,
+  },
+  recommendationInfo: {
+    padding: 12,
+  },
+  recommendationName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 4,
+  },
+  recommendationDescription: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginBottom: 8,
+    lineHeight: 16,
+  },
+  recommendationMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  recommendationMetaText: {
+    fontSize: 11,
+    color: '#6b7280',
+    marginLeft: 4,
+  },
+  filtersPanel: {
+    backgroundColor: 'white',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  filtersTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 16,
+  },
+  filterSection: {
+    marginBottom: 16,
+  },
+  filterLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  priceFilters: {
+    flexDirection: 'row',
+  },
+  priceFilter: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#f8fafc',
+    borderRadius: 8,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  priceFilterSelected: {
+    backgroundColor: '#3b82f6',
+    borderColor: '#3b82f6',
+  },
+  priceFilterText: {
+    fontSize: 14,
+    color: '#374151',
+    fontWeight: '500',
+  },
+  priceFilterTextSelected: {
+    color: 'white',
+  },
+  filterActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
+  },
+  resetButton: {
+    flex: 1,
+    padding: 12,
+    backgroundColor: '#f8fafc',
+    borderRadius: 8,
+    marginRight: 8,
+    alignItems: 'center',
+  },
+  resetButtonText: {
+    color: '#374151',
+    fontWeight: '500',
+  },
+  applyButton: {
+    flex: 1,
+    padding: 12,
+    backgroundColor: '#3b82f6',
+    borderRadius: 8,
+    marginLeft: 8,
+    alignItems: 'center',
+  },
+  applyButtonText: {
+    color: 'white',
+    fontWeight: '500',
+  },
+  filterIndicator: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#ef4444',
   },
 });

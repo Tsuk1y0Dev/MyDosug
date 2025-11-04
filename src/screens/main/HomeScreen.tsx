@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -30,6 +30,10 @@ export const HomeScreen = () => {
   const [plannerVisible, setPlannerVisible] = useState(false);
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<{startTime: string; endTime: string} | undefined>();
 
+  // Refs для синхронного скролла
+  const timelineScrollRef = useRef<ScrollView>(null);
+  const activitiesScrollRef = useRef<ScrollView>(null);
+
   const timeSlots = useMemo(() => {
     const slots = [];
     for (let hour = START_HOUR; hour <= END_HOUR; hour++) {
@@ -48,6 +52,21 @@ export const HomeScreen = () => {
     const hours = Math.floor(totalMinutes / 60) + START_HOUR;
     const minutes = Math.round(totalMinutes % 60);
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+  };
+
+    // Обработчики синхронного скролла
+  const handleTimelineScroll = (event: any) => {
+    const { y } = event.nativeEvent.contentOffset;
+    if (activitiesScrollRef.current) {
+      activitiesScrollRef.current.scrollTo({ y, animated: false });
+    }
+  };
+
+  const handleActivitiesScroll = (event: any) => {
+    const { y } = event.nativeEvent.contentOffset;
+    if (timelineScrollRef.current) {
+      timelineScrollRef.current.scrollTo({ y, animated: false });
+    }
   };
 
 const freeSlots = useMemo((): FreeSlot[] => {
@@ -152,15 +171,8 @@ const freeSlots = useMemo((): FreeSlot[] => {
     setSelectedTimeSlot(undefined);
   };
 
-  const [timelineScrollRef] = useState(React.createRef<ScrollView>());
-  const [activitiesScrollRef] = useState(React.createRef<ScrollView>());
 
-  const handleActivitiesScroll = (event: any) => {
-    const { y } = event.nativeEvent.contentOffset;
-    if (timelineScrollRef.current) {
-      timelineScrollRef.current.scrollTo({ y, animated: false });
-    }
-  };
+
 
   const handleLogout = () => {
     Alert.alert(
@@ -181,7 +193,7 @@ const freeSlots = useMemo((): FreeSlot[] => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+     <SafeAreaView style={styles.container}>
       {/* Заголовок */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -213,74 +225,76 @@ const freeSlots = useMemo((): FreeSlot[] => {
         </View>
       </View>
 
-      {/* Временная шкала */}
-<View style={styles.timelineContainer}>
-  <Timeline 
-    timeSlots={timeSlots} 
-    hourHeight={HOUR_HEIGHT}
-    contentHeight={TOTAL_HOURS * HOUR_HEIGHT}
-  />
+      {/* Временная шкала и активности */}
+      <View style={styles.timelineContainer}>
+        <Timeline 
+          timeSlots={timeSlots} 
+          hourHeight={HOUR_HEIGHT}
+          contentHeight={TOTAL_HOURS * HOUR_HEIGHT}
+          scrollRef={timelineScrollRef}
+          onScroll={handleTimelineScroll}
+        />
   
-  <View style={styles.activitiesColumn}>
-    <ScrollView 
-      style={styles.activitiesScrollView}
-      contentContainerStyle={{ height: TOTAL_HOURS * HOUR_HEIGHT }}
-      showsVerticalScrollIndicator={false}
-      ref={activitiesScrollRef}
-      onScroll={handleActivitiesScroll}
-      scrollEventThrottle={16}
-    >
-      <View style={[styles.activitiesContent, { height: TOTAL_HOURS * HOUR_HEIGHT }]}>
-        {/* Текущее время индикатор */}
-        <View 
-          style={[
-            styles.currentTimeLine,
-            { top: getCurrentTimePosition() }
-          ]}
-        >
-          <View style={styles.currentTimeDot} />
-          <View style={styles.currentTimeLineVertical} />
+   <View style={styles.activitiesColumn}>
+          <ScrollView 
+            style={styles.activitiesScrollView}
+            contentContainerStyle={{ height: TOTAL_HOURS * HOUR_HEIGHT }}
+            showsVerticalScrollIndicator={false}
+            ref={activitiesScrollRef}
+            onScroll={handleActivitiesScroll}
+            scrollEventThrottle={16}
+          >
+            <View style={[styles.activitiesContent, { height: TOTAL_HOURS * HOUR_HEIGHT }]}>
+              {/* Текущее время индикатор */}
+              <View 
+                style={[
+                  styles.currentTimeLine,
+                  { top: getCurrentTimePosition() }
+                ]}
+              >
+                <View style={styles.currentTimeDot} />
+                <View style={styles.currentTimeLineVertical} />
+              </View>
+
+              {/* Индикатор перетаскивания */}
+              {draggingActivityId && (
+                <View style={styles.dragOverlay}>
+                  <Feather name="refresh-cw" size={16} color="#3b82f6" />
+                  <Text style={styles.dragOverlayText}>Перетащите для обмена</Text>
+                </View>
+              )}
+              
+              {/* Свободные слоты ТОЛЬКО между активностями */}
+              {freeSlots.map((slot, index) => (
+                <AddSlotButton
+                  key={index}
+                  slot={slot}
+                  onPress={handleAddActivity}
+                />
+              ))}
+              
+              {/* Активности */}
+              {schedule.map((activity) => (
+                <ActivityBlock
+                  key={activity.id}
+                  activity={activity}
+                  onPress={handleActivityPress}
+                  onDragStart={handleDragStart}
+                  onDragEnd={handleDragEnd}
+                  onSwap={handleActivitySwap}
+                  timeToPosition={timeToPosition}
+                  positionToTime={positionToTime}
+                  hourHeight={HOUR_HEIGHT}
+                  isDragging={draggingActivityId === activity.id}
+                  allActivities={schedule}
+                />
+              ))}
+            </View>
+          </ScrollView>
         </View>
-
-        {/* Индикатор перетаскивания */}
-        {draggingActivityId && (
-          <View style={styles.dragOverlay}>
-            <Feather name="refresh-cw" size={16} color="#3b82f6" />
-            <Text style={styles.dragOverlayText}>Перетащите для обмена</Text>
-          </View>
-        )}
-        
-        {/* Свободные слоты ТОЛЬКО между активностями */}
-        {freeSlots.map((slot, index) => (
-          <AddSlotButton
-            key={index}
-            slot={slot}
-            onPress={handleAddActivity}
-          />
-        ))}
-        
-        {/* Активности */}
-        {schedule.map((activity) => (
-          <ActivityBlock
-            key={activity.id}
-            activity={activity}
-            onPress={handleActivityPress}
-            onDragStart={handleDragStart}
-            onDragEnd={handleDragEnd}
-            onSwap={handleActivitySwap}
-            timeToPosition={timeToPosition}
-            positionToTime={positionToTime}
-            hourHeight={HOUR_HEIGHT}
-            isDragging={draggingActivityId === activity.id}
-            allActivities={schedule}
-          />
-        ))}
       </View>
-    </ScrollView>
-  </View>
-</View>
 
-      {/* Плавающая кнопка добавления */}
+       {/* Плавающая кнопка добавления */}
       <TouchableOpacity 
         style={styles.floatingButton}
         onPress={() => handleAddActivity()}
@@ -312,6 +326,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   headerLeft: {
     flexDirection: 'row',
@@ -337,44 +356,55 @@ const styles = StyleSheet.create({
   statsButton: {
     padding: 8,
     marginRight: 8,
+    backgroundColor: '#f8fafc',
+    borderRadius: 8,
   },
   logoutButton: {
     padding: 8,
+    backgroundColor: '#fef2f2',
+    borderRadius: 8,
   },
   userInfo: {
     paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#f8fafc',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    paddingVertical: 20,
+    backgroundColor: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
   },
   userGreeting: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
-    color: '#374151',
+    color: 'white',
     marginBottom: 4,
   },
   userEmail: {
     fontSize: 14,
-    color: '#6b7280',
-    marginBottom: 8,
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginBottom: 12,
   },
   scheduleStats: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
   },
   statsText: {
     fontSize: 12,
-    color: '#6b7280',
+    color: 'white',
     fontWeight: '500',
   },
   timelineContainer: {
     flex: 1,
     flexDirection: 'row',
+    backgroundColor: '#fafafa',
   },
   activitiesColumn: {
     flex: 1,
     backgroundColor: 'white',
+  },
+  activitiesScrollView: {
+    flex: 1,
   },
   activitiesContent: {
     position: 'relative',
@@ -437,8 +467,5 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
-  },
-    activitiesScrollView: {
-    flex: 1,
   },
 });

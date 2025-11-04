@@ -5,7 +5,7 @@ interface TimelineProps {
   timeSlots: string[];
   hourHeight: number;
   contentHeight: number;
-  scrollRef?: React.RefObject<ScrollView>;
+  scrollRef?: React.RefObject<ScrollView | null>; // ИЗМЕНИТЕ ТИП НА ScrollView | null
   onScroll?: (event: any) => void;
 }
 
@@ -66,7 +66,7 @@ const styles = StyleSheet.create({
   },
   timeText: {
     fontSize: 12,
-    color: '#64748b', // Серый цвет для цифр времени
+    color: '#64748b',
     fontWeight: '600',
     marginTop: 8,
   },
