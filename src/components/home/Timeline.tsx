@@ -4,16 +4,27 @@ import { View, Text, ScrollView, StyleSheet } from 'react-native';
 interface TimelineProps {
   timeSlots: string[];
   hourHeight: number;
-  contentHeight: number; // Добавляем высоту контента
+  contentHeight: number;
+  scrollRef?: React.RefObject<ScrollView>;
+  onScroll?: (event: any) => void;
 }
 
-export const Timeline: React.FC<TimelineProps> = ({ timeSlots, hourHeight, contentHeight }) => {
+export const Timeline: React.FC<TimelineProps> = ({ 
+  timeSlots, 
+  hourHeight, 
+  contentHeight,
+  scrollRef,
+  onScroll 
+}) => {
   return (
     <View style={styles.timeLabels}>
       <ScrollView 
         style={styles.scrollView}
         contentContainerStyle={[styles.scrollContent, { height: contentHeight }]}
         showsVerticalScrollIndicator={false}
+        ref={scrollRef}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
       >
         {timeSlots.map((time, index) => (
           <View 
@@ -55,7 +66,7 @@ const styles = StyleSheet.create({
   },
   timeText: {
     fontSize: 12,
-    color: '#64748b',
+    color: '#64748b', // Серый цвет для цифр времени
     fontWeight: '600',
     marginTop: 8,
   },

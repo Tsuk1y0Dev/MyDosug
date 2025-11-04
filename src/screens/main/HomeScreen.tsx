@@ -50,64 +50,43 @@ export const HomeScreen = () => {
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
   };
 
-  const freeSlots = useMemo((): FreeSlot[] => {
-    if (schedule.length === 0) {
-      // Если нет активностей, весь день свободен
-      return [{
-        startTime: timeToPosition('06:00'),
-        endTime: timeToPosition('22:00'),
-        duration: timeToPosition('22:00') - timeToPosition('06:00'),
-        startTimeString: '06:00',
-        endTimeString: '22:00',
-      }];
-    }
+const freeSlots = useMemo((): FreeSlot[] => {
+  if (schedule.length === 0) {
+    return []; // Не показываем окна, если нет активностей
+  }
 
-    const busySlots = schedule
-      .map(activity => ({
-        start: timeToPosition(activity.startTime),
-        end: timeToPosition(activity.endTime)
-      }))
-      .sort((a, b) => a.start - b.start);
+  const busySlots = schedule
+    .map(activity => ({
+      start: timeToPosition(activity.startTime),
+      end: timeToPosition(activity.endTime)
+    }))
+    .sort((a, b) => a.start - b.start);
 
-    const slots: FreeSlot[] = [];
-    let lastEnd = timeToPosition('06:00');
+  const slots: FreeSlot[] = [];
 
-    busySlots.forEach(slot => {
-      if (slot.start > lastEnd) {
-        const durationPixels = slot.start - lastEnd;
-        const durationMinutes = (durationPixels / HOUR_HEIGHT) * 60;
-        
-        if (durationMinutes >= 30) {
-          slots.push({
-            startTime: lastEnd,
-            endTime: slot.start,
-            duration: durationPixels,
-            startTimeString: positionToTime(lastEnd),
-            endTimeString: positionToTime(slot.start),
-          });
-        }
-      }
-      lastEnd = Math.max(lastEnd, slot.end);
-    });
-
-    const dayEnd = timeToPosition('22:00');
-    if (lastEnd < dayEnd) {
-      const durationPixels = dayEnd - lastEnd;
+  // Только между активностями, не в начале/конце дня
+  for (let i = 0; i < busySlots.length - 1; i++) {
+    const currentSlot = busySlots[i];
+    const nextSlot = busySlots[i + 1];
+    
+    if (nextSlot.start > currentSlot.end) {
+      const durationPixels = nextSlot.start - currentSlot.end;
       const durationMinutes = (durationPixels / HOUR_HEIGHT) * 60;
       
-      if (durationMinutes >= 30) {
+      if (durationMinutes >= 30) { // Минимум 30 минут
         slots.push({
-          startTime: lastEnd,
-          endTime: dayEnd,
+          startTime: currentSlot.end,
+          endTime: nextSlot.start,
           duration: durationPixels,
-          startTimeString: positionToTime(lastEnd),
-          endTimeString: '22:00',
+          startTimeString: positionToTime(currentSlot.end),
+          endTimeString: positionToTime(nextSlot.start),
         });
       }
     }
+  }
 
-    return slots;
-  }, [schedule]);
+  return slots;
+}, [schedule]);
 
   const handleActivityPress = (activity: Activity) => {
     Alert.alert(
@@ -173,6 +152,16 @@ export const HomeScreen = () => {
     setSelectedTimeSlot(undefined);
   };
 
+  const [timelineScrollRef] = useState(React.createRef<ScrollView>());
+  const [activitiesScrollRef] = useState(React.createRef<ScrollView>());
+
+  const handleActivitiesScroll = (event: any) => {
+    const { y } = event.nativeEvent.contentOffset;
+    if (timelineScrollRef.current) {
+      timelineScrollRef.current.scrollTo({ y, animated: false });
+    }
+  };
+
   const handleLogout = () => {
     Alert.alert(
       'Выход',
@@ -225,66 +214,71 @@ export const HomeScreen = () => {
       </View>
 
       {/* Временная шкала */}
-      <View style={styles.timelineContainer}>
-        <Timeline 
-          timeSlots={timeSlots} 
-          hourHeight={HOUR_HEIGHT}
-          contentHeight={TOTAL_HOURS * HOUR_HEIGHT}
-        />
-        
-        <ScrollView 
-          style={styles.activitiesColumn}
-          contentContainerStyle={{ height: TOTAL_HOURS * HOUR_HEIGHT }}
-          showsVerticalScrollIndicator={false}
+<View style={styles.timelineContainer}>
+  <Timeline 
+    timeSlots={timeSlots} 
+    hourHeight={HOUR_HEIGHT}
+    contentHeight={TOTAL_HOURS * HOUR_HEIGHT}
+  />
+  
+  <View style={styles.activitiesColumn}>
+    <ScrollView 
+      style={styles.activitiesScrollView}
+      contentContainerStyle={{ height: TOTAL_HOURS * HOUR_HEIGHT }}
+      showsVerticalScrollIndicator={false}
+      ref={activitiesScrollRef}
+      onScroll={handleActivitiesScroll}
+      scrollEventThrottle={16}
+    >
+      <View style={[styles.activitiesContent, { height: TOTAL_HOURS * HOUR_HEIGHT }]}>
+        {/* Текущее время индикатор */}
+        <View 
+          style={[
+            styles.currentTimeLine,
+            { top: getCurrentTimePosition() }
+          ]}
         >
-          <View style={[styles.activitiesContent, { height: TOTAL_HOURS * HOUR_HEIGHT }]}>
-            {/* Текущее время индикатор */}
-            <View 
-              style={[
-                styles.currentTimeLine,
-                { top: getCurrentTimePosition() }
-              ]}
-            >
-              <View style={styles.currentTimeDot} />
-              <View style={styles.currentTimeLineVertical} />
-            </View>
+          <View style={styles.currentTimeDot} />
+          <View style={styles.currentTimeLineVertical} />
+        </View>
 
-            {/* Индикатор перетаскивания */}
-            {draggingActivityId && (
-              <View style={styles.dragOverlay}>
-                <Feather name="refresh-cw" size={16} color="#3b82f6" />
-                <Text style={styles.dragOverlayText}>Перетащите для обмена</Text>
-              </View>
-            )}
-            
-            {/* Свободные слоты */}
-            {freeSlots.map((slot, index) => (
-              <AddSlotButton
-                key={index}
-                slot={slot}
-                onPress={handleAddActivity}
-              />
-            ))}
-            
-            {/* Активности */}
-            {schedule.map((activity) => (
-              <ActivityBlock
-                key={activity.id}
-                activity={activity}
-                onPress={handleActivityPress}
-                onDragStart={handleDragStart}
-                onDragEnd={handleDragEnd}
-                onSwap={handleActivitySwap}
-                timeToPosition={timeToPosition}
-                positionToTime={positionToTime}
-                hourHeight={HOUR_HEIGHT}
-                isDragging={draggingActivityId === activity.id}
-                allActivities={schedule}
-              />
-            ))}
+        {/* Индикатор перетаскивания */}
+        {draggingActivityId && (
+          <View style={styles.dragOverlay}>
+            <Feather name="refresh-cw" size={16} color="#3b82f6" />
+            <Text style={styles.dragOverlayText}>Перетащите для обмена</Text>
           </View>
-        </ScrollView>
+        )}
+        
+        {/* Свободные слоты ТОЛЬКО между активностями */}
+        {freeSlots.map((slot, index) => (
+          <AddSlotButton
+            key={index}
+            slot={slot}
+            onPress={handleAddActivity}
+          />
+        ))}
+        
+        {/* Активности */}
+        {schedule.map((activity) => (
+          <ActivityBlock
+            key={activity.id}
+            activity={activity}
+            onPress={handleActivityPress}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onSwap={handleActivitySwap}
+            timeToPosition={timeToPosition}
+            positionToTime={positionToTime}
+            hourHeight={HOUR_HEIGHT}
+            isDragging={draggingActivityId === activity.id}
+            allActivities={schedule}
+          />
+        ))}
       </View>
+    </ScrollView>
+  </View>
+</View>
 
       {/* Плавающая кнопка добавления */}
       <TouchableOpacity 
@@ -443,5 +437,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
+  },
+    activitiesScrollView: {
+    flex: 1,
   },
 });

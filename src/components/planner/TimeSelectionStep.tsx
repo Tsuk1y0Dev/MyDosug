@@ -34,53 +34,51 @@ export const TimeSelectionStep = () => {
   }, [schedule]);
 
   // Проверяем, свободен ли временной интервал
-  const isTimeSlotAvailable = (startTime: string, endTime: string): boolean => {
-    const start = timeToMinutes(startTime);
-    const end = timeToMinutes(endTime);
-    
-    for (const slot of busySlots) {
-      if ((start < slot.end && end > slot.start)) {
-        return false; // Найдено пересечение
-      }
+const isTimeSlotAvailable = (startTime: string, endTime: string): boolean => {
+  const start = timeToMinutes(startTime);
+  const end = timeToMinutes(endTime);
+  
+  // Проверяем пересечение с каждой существующей активностью
+  for (const slot of busySlots) {
+    if ((start < slot.end && end > slot.start)) {
+      return false; // Найдено пересечение
     }
-    return true;
-  };
+  }
+  return true;
+};
 
   // Находим ближайшее свободное время
-  const findNextAvailableSlot = (desiredStart: string, duration: number): string => {
-    let currentTime = timeToMinutes(desiredStart);
-    const desiredEnd = currentTime + duration;
+const findNextAvailableSlot = (desiredStart: string, duration: number): string => {
+  let currentTime = timeToMinutes(desiredStart);
+  const desiredEnd = currentTime + duration;
 
-    // Проверяем желаемый слот
-    if (isTimeSlotAvailable(minutesToTime(currentTime), minutesToTime(desiredEnd))) {
-      return desiredStart;
-    }
-
-    // Ищем следующий свободный слот
-    for (const slot of busySlots) {
-      if (slot.end > currentTime) {
-        // Проверяем интервал после текущей занятости
-        const gapStart = slot.end;
-        const gapEnd = gapStart + duration;
-        
-        // Проверяем, не пересекается ли этот интервал с другими занятиями
-        let isGapFree = true;
-        for (const otherSlot of busySlots) {
-          if (otherSlot.start >= gapStart && otherSlot.start < gapEnd) {
-            isGapFree = false;
-            break;
-          }
-        }
-        
-        if (isGapFree) {
-          return minutesToTime(gapStart);
-        }
-      }
-    }
-
-    // Если не нашли, возвращаем исходное время (пользователь сам решит конфликт)
+  // Проверяем желаемый слот
+  if (isTimeSlotAvailable(desiredStart, minutesToTime(desiredEnd))) {
     return desiredStart;
-  };
+  }
+
+  // Ищем следующий свободный слот после всех существующих активностей
+  let earliestAvailable = currentTime;
+  
+  // Находим конец последней активности в этот день
+  for (const slot of busySlots) {
+    if (slot.end > earliestAvailable) {
+      earliestAvailable = slot.end;
+    }
+  }
+
+  // Проверяем слот после последней активности
+  const availableStart = minutesToTime(earliestAvailable);
+  const availableEnd = minutesToTime(earliestAvailable + duration);
+  
+  if (isTimeSlotAvailable(availableStart, availableEnd)) {
+    return availableStart;
+  }
+
+  // Если не нашли подходящий слот, возвращаем исходное время
+  // (пользователь сам решит конфликт)
+  return desiredStart;
+};
 
   const parseTime = (timeString: string): Date => {
     const [hours, minutes] = timeString.split(':').map(Number);

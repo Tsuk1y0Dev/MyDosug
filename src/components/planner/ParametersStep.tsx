@@ -141,8 +141,16 @@ export const ParametersStep = () => {
                 style={[
                   styles.moodItem,
                   planningRequest.mood === mood.value && { backgroundColor: mood.color },
+                  planningRequest.mood === mood.value && styles.moodItemSelected
                 ]}
-                onPress={() => updatePlanningRequest({ mood: mood.value })}
+                onPress={() => {
+                  // Toggle: если уже выбрано это настроение, снимаем выбор
+                  if (planningRequest.mood === mood.value) {
+                    updatePlanningRequest({ mood: undefined });
+                  } else {
+                    updatePlanningRequest({ mood: mood.value });
+                  }
+                }}
               >
                 <Text style={styles.moodIcon}>{mood.icon}</Text>
                 <Text style={[
@@ -151,6 +159,9 @@ export const ParametersStep = () => {
                 ]}>
                   {mood.label}
                 </Text>
+                {planningRequest.mood === mood.value && (
+                  <Feather name="check" size={16} color="white" style={styles.moodCheckIcon} />
+                )}
               </TouchableOpacity>
             ))}
           </View>
@@ -515,5 +526,14 @@ const styles = StyleSheet.create({
 webSlider: {
   width: '100%',
   marginBottom: 8,
+},
+moodItemSelected: {
+  borderWidth: 2,
+  borderColor: '#3b82f6',
+},
+moodCheckIcon: {
+  position: 'absolute',
+  top: 4,
+  right: 4,
 },
 });
