@@ -1,16 +1,20 @@
-import React from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { 
   View, 
   Text, 
   StyleSheet, 
   ScrollView, 
   TouchableOpacity,
-  Alert 
+  Alert,
+  Platform
 } from 'react-native';
 import { usePlanner } from '../../services/planner/PlannerContext';
 import { useSchedule } from '../../services/schedule/ScheduleContext';
+import { useFavorites } from '../../services/favorites/FavoritesContext';
 import { Feather } from '@expo/vector-icons';
 import { PlannedActivity } from '../../types/planner';
+import { formatDuration, timeToMinutes } from '../../utils/timingUtils';
+import { YandexMap } from '../maps/YandexMap';
 
 interface RoutePlanningStepProps {
   onPlanSaved: () => void;
@@ -22,18 +26,14 @@ export const RoutePlanningStep: React.FC<RoutePlanningStepProps> = ({ onPlanSave
     removeFromPlan, 
     setCurrentStep, 
     planningRequest,
-    resetPlanner
+    resetPlanner,
+    planningDate,
+    updatePlanningRequest,
+    searchPlaces
   } = usePlanner();
   const { addPlannedActivities, schedule } = useSchedule();
+  const { addSavedRoute } = useFavorites();
 
-  const formatDuration = (minutes: number) => {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    if (hours > 0) {
-      return mins > 0 ? `${hours}ч ${mins}мин` : `${hours}ч`;
-    }
-    return `${mins}мин`;
-  };
 
   // Функция для проверки конфликтов времени
   const checkTimeConflicts = (activities: PlannedActivity[]): { hasConflicts: boolean; conflicts: string[] } => {
@@ -67,18 +67,14 @@ export const RoutePlanningStep: React.FC<RoutePlanningStepProps> = ({ onPlanSave
     return { hasConflicts: conflicts.length > 0, conflicts };
   };
 
-  const timeToMinutes = (time: string): number => {
-    const [hours, minutes] = time.split(':').map(Number);
-    return hours * 60 + minutes;
-  };
 
-  const calculateTotalStats = () => {
+  const calculateTotalStats = useMemo(() => {
     const totalDuration = currentPlan.totalDuration;
     const totalCost = currentPlan.totalCost;
     const activityCount = currentPlan.activities.length;
 
     return { totalDuration, totalCost, activityCount };
-  };
+  }, [currentPlan.totalDuration, currentPlan.totalCost, currentPlan.activities.length]);
 
   const handleSavePlan = () => {
   if (currentPlan.activities.length === 0) {
@@ -109,8 +105,17 @@ export const RoutePlanningStep: React.FC<RoutePlanningStepProps> = ({ onPlanSave
 };
 
 const savePlanConfirmed = () => {
-    // Сохраняем план в глобальное состояние
-    addPlannedActivities(currentPlan.activities);
+    // Сохраняем план в глобальное состояние с выбранной датой
+    addPlannedActivities(currentPlan.activities, planningDate);
+    
+    // Сохраняем маршрут в избранное, если это цепочка мероприятий
+    if (planningRequest.planType === 'chain' && currentPlan.activities.length > 1) {
+      const routeToSave = {
+        ...currentPlan,
+        id: `route-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      };
+      addSavedRoute(routeToSave);
+    }
     
     // Сбрасываем планировщик
     resetPlanner(); // Теперь эта функция доступна
@@ -214,7 +219,7 @@ const savePlanConfirmed = () => {
     </View>
   );
 
-  const { totalDuration, totalCost, activityCount } = calculateTotalStats();
+  const { totalDuration, totalCost, activityCount } = calculateTotalStats;
 
   return (
     <View style={styles.container}>
@@ -264,44 +269,52 @@ const savePlanConfirmed = () => {
             </Text>
           </View>
         ) : (
-          currentPlan.activities.map((activity, index) => (
-            <PlanActivity 
-              key={activity.id} // Используем уникальный ID активности
-              activity={activity} 
-              index={index} 
-            />
-          ))
+          [...currentPlan.activities]
+            .sort((a, b) => {
+              const aTime = timeToMinutes(a.startTime);
+              const bTime = timeToMinutes(b.startTime);
+              return aTime - bTime;
+            })
+            .map((activity, index) => (
+              <PlanActivity 
+                key={activity.id}
+                activity={activity} 
+                index={index} 
+              />
+            ))
         )}
       </ScrollView>
 
       {currentPlan.activities.length > 0 && (
-        <View style={styles.mapContainer}>
-          <View style={styles.mapHeader}>
-            <Feather name="map" size={20} color="#374151" />
-            <Text style={styles.mapTitle}>Маршрут на карте</Text>
-          </View>
-          <View style={styles.mapPlaceholder}>
-            <Feather name="map-pin" size={32} color="#3b82f6" />
-            <Text style={styles.mapPlaceholderText}>
-              {currentPlan.activities.length} точек на карте
-            </Text>
-            <Text style={styles.mapDescription}>
-              Здесь будет отображаться оптимизированный маршрут между всеми выбранными местами
-            </Text>
-          </View>
+        <View style={styles.mapButtonContainer}>
+          <TouchableOpacity
+            style={styles.viewMapRouteButton}
+            onPress={() => {
+              Alert.alert(
+                'Маршрут на карте',
+                `Маршрут включает ${currentPlan.activities.length} мест:\n\n${currentPlan.activities.map((a, i) => `${i + 1}. ${a.place.name} (${a.startTime} - ${a.endTime})`).join('\n')}\n\nОбщее время: ${formatDuration(currentPlan.totalDuration)}\nПримерная стоимость: ${currentPlan.totalCost}₽`,
+                [{ text: 'ОК' }]
+              );
+            }}
+          >
+            <Feather name="map" size={20} color="#3b82f6" />
+            <Text style={styles.viewMapRouteText}>Маршрут на карте</Text>
+          </TouchableOpacity>
         </View>
       )}
 
       <View style={styles.actionButtons}>
-        <TouchableOpacity 
-          style={styles.addMoreButton}
-          onPress={() => setCurrentStep(3)}
-        >
-          <Feather name="plus" size={20} color="#3b82f6" />
-          <Text style={styles.addMoreText}>
-            {currentPlan.activities.length > 0 ? 'Добавить ещё' : 'Добавить места'}
-          </Text>
-        </TouchableOpacity>
+        {planningRequest.planType !== 'single' && (
+          <TouchableOpacity 
+            style={styles.addMoreButton}
+            onPress={() => setCurrentStep(3)}
+          >
+            <Feather name="plus" size={20} color="#3b82f6" />
+            <Text style={styles.addMoreText}>
+              {currentPlan.activities.length > 0 ? 'Добавить ещё' : 'Добавить места'}
+            </Text>
+          </TouchableOpacity>
+        )}
         
         {currentPlan.activities.length > 0 && (
           <TouchableOpacity 
@@ -320,7 +333,7 @@ const savePlanConfirmed = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'white',
+    backgroundColor: '#f8fafc',
   },
   header: {
     flexDirection: 'row',
@@ -381,14 +394,20 @@ const styles = StyleSheet.create({
   },
   activityItem: {
     backgroundColor: 'white',
-    borderRadius: 12,
+    borderRadius: 16,
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    ...(Platform.OS === 'web' ? {
+      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+    } : {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.08,
+      shadowRadius: 8,
+      elevation: 3,
+    }),
   },
   activityHeader: {
     flexDirection: 'row',
@@ -494,49 +513,27 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     paddingHorizontal: 40,
   },
-  mapContainer: {
-    margin: 20,
-    borderRadius: 12,
-    overflow: 'hidden',
+  mapButtonContainer: {
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
     backgroundColor: 'white',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
   },
-  mapHeader: {
+  viewMapRouteButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#f8fafc',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  mapTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#374151',
-    marginLeft: 8,
-  },
-  mapPlaceholder: {
-    padding: 40,
-    alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f1f5f9',
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#3b82f6',
+    gap: 8,
   },
-  mapPlaceholderText: {
+  viewMapRouteText: {
     fontSize: 16,
+    color: '#3b82f6',
     fontWeight: '600',
-    color: '#374151',
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  mapDescription: {
-    fontSize: 14,
-    color: '#6b7280',
-    textAlign: 'center',
-    lineHeight: 20,
   },
   actionButtons: {
     flexDirection: 'row',
@@ -546,30 +543,41 @@ const styles = StyleSheet.create({
     borderTopColor: '#f1f5f9',
     backgroundColor: 'white',
   },
-  addMoreButton: {
+  actionButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+  actionButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
+    padding: 18,
+    borderRadius: 16,
+  },
+  addMoreButton: {
+    backgroundColor: 'white',
+    borderWidth: 2,
     borderColor: '#3b82f6',
   },
-  addMoreText: {
-    fontSize: 16,
+  addMoreButtonText: {
     color: '#3b82f6',
+    fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,
   },
   savePlanButton: {
-    flex: 2,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-    borderRadius: 12,
     backgroundColor: '#10b981',
+    ...(Platform.OS === 'web' ? {
+      boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
+    } : {
+      shadowColor: '#10b981',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 12,
+      elevation: 5,
+    }),
   },
   savePlanText: {
     fontSize: 16,

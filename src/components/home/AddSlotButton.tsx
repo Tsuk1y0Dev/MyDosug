@@ -9,7 +9,10 @@ interface AddSlotButtonProps {
 }
 
 export const AddSlotButton: React.FC<AddSlotButtonProps> = ({ slot, onPress }) => {
-  const formatDuration = (durationMinutes: number) => {
+  // Конвертируем пиксели в минуты (80px = 1 час = 60 минут)
+  const HOUR_HEIGHT = 80;
+  const formatDuration = (durationPixels: number) => {
+    const durationMinutes = Math.round((durationPixels / HOUR_HEIGHT) * 60);
     const hours = Math.floor(durationMinutes / 60);
     const minutes = durationMinutes % 60;
     

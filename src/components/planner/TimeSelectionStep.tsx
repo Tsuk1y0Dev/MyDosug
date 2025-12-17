@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform } from 'react-native';
+import React, { useState, useMemo, useCallback } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, Alert } from 'react-native';
 import { usePlanner } from '../../services/planner/PlannerContext';
 import { useSchedule } from '../../services/schedule/ScheduleContext';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Feather } from '@expo/vector-icons';
+import { timeToMinutes, minutesToTime } from '../../utils/timingUtils';
 
 export const TimeSelectionStep = () => {
   const { planningRequest, updatePlanningRequest, setCurrentStep } = usePlanner();
@@ -11,18 +12,6 @@ export const TimeSelectionStep = () => {
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
 
-  // Функция для преобразования времени в минуты
-  const timeToMinutes = (time: string): number => {
-    const [hours, minutes] = time.split(':').map(Number);
-    return hours * 60 + minutes;
-  };
-
-  // Функция для преобразования минут в время
-  const minutesToTime = (totalMinutes: number): string => {
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = totalMinutes % 60;
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-  };
 
   // Получаем занятые временные интервалы
   const busySlots = useMemo(() => {
@@ -123,7 +112,11 @@ const findNextAvailableSlot = (desiredStart: string, duration: number): string =
       
       // Проверяем доступность
       if (!isTimeSlotAvailable(newStartTime, newEndTime)) {
-        alert('Это время уже занято другой активностью. Пожалуйста, выберите другое время.');
+        Alert.alert(
+          'Время занято',
+          'Это время уже занято другой активностью. Пожалуйста, выберите другое время.',
+          [{ text: 'OK' }]
+        );
         return;
       }
       
@@ -269,6 +262,11 @@ const findNextAvailableSlot = (desiredStart: string, duration: number): string =
               <input
                 type="time"
                 value={planningRequest.startTime}
+                style={{
+                  ...styles.webTimeInput,
+                  outline: 'none',
+                  cursor: 'pointer',
+                } as any}
                 onChange={(e) => {
                   const newStartTime = e.target.value;
                   const currentDuration = timeToMinutes(planningRequest.endTime) - timeToMinutes(planningRequest.startTime);
@@ -315,15 +313,23 @@ const findNextAvailableSlot = (desiredStart: string, duration: number): string =
               <input
                 type="time"
                 value={planningRequest.endTime}
+                style={{
+                  ...styles.webTimeInput,
+                  outline: 'none',
+                  cursor: 'pointer',
+                } as any}
                 onChange={(e) => {
                   const newEndTime = e.target.value;
                   if (!isTimeSlotAvailable(planningRequest.startTime, newEndTime)) {
-                    alert('Это время уже занято другой активностью. Пожалуйста, выберите другое время.');
+                    Alert.alert(
+                      'Время занято',
+                      'Это время уже занято другой активностью. Пожалуйста, выберите другое время.',
+                      [{ text: 'OK' }]
+                    );
                     return;
                   }
                   updatePlanningRequest({ endTime: newEndTime });
                 }}
-                style={styles.webTimeInput}
               />
             ) : (
               <DateTimePicker
@@ -353,7 +359,7 @@ const findNextAvailableSlot = (desiredStart: string, duration: number): string =
             const minutes = duration % 60;
             return `${hours}ч ${minutes}мин`;
           })()}
-          {!isSlotAvailable && ' ⚠️ Время занято'}
+          {!isSlotAvailable && ' Время занято'}
         </Text>
       </View>
 
@@ -374,11 +380,11 @@ const findNextAvailableSlot = (desiredStart: string, duration: number): string =
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
-    backgroundColor: 'white',
+    padding: 24,
+    backgroundColor: '#f8fafc',
   },
   title: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
     color: '#1f2937',
     marginBottom: 8,
@@ -386,15 +392,18 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: '#6b7280',
-    marginBottom: 30,
+    marginBottom: 32,
+    lineHeight: 22,
   },
   warningBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#fef3c7',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 20,
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#fcd34d',
   },
   warningText: {
     marginLeft: 8,
@@ -403,7 +412,19 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   timeSection: {
-    marginBottom: 30,
+    marginBottom: 28,
+    backgroundColor: 'white',
+    padding: 16,
+    borderRadius: 16,
+    ...(Platform.OS === 'web' ? {
+      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+    } : {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.08,
+      shadowRadius: 8,
+      elevation: 3,
+    }),
   },
   sectionTitle: {
     fontSize: 18,
@@ -419,10 +440,17 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     marginRight: 12,
-    minWidth: 100,
+    minWidth: 110,
     alignItems: 'center',
     borderWidth: 2,
     borderColor: 'transparent',
+    ...(Platform.OS === 'web' ? {} : {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 2,
+      elevation: 1,
+    }),
   },
   quickSlotBusy: {
     backgroundColor: '#fef2f2',
@@ -513,12 +541,15 @@ const styles = StyleSheet.create({
     borderColor: '#e5e7eb',
     borderRadius: 8,
     fontSize: 16,
-  },
+    backgroundColor: 'white',
+  } as any, // Web-specific styles (outline, cursor) not supported in React Native StyleSheet
   duration: {
     backgroundColor: '#f0f9ff',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 30,
+    padding: 18,
+    borderRadius: 16,
+    marginBottom: 32,
+    borderWidth: 1,
+    borderColor: '#bae6fd',
   },
   durationWarning: {
     backgroundColor: '#fef3c7',
@@ -537,8 +568,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 16,
-    borderRadius: 12,
+    padding: 18,
+    borderRadius: 16,
+    ...(Platform.OS === 'web' ? {
+      boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
+    } : {
+      shadowColor: '#3b82f6',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 12,
+      elevation: 5,
+    }),
   },
   nextButtonWarning: {
     backgroundColor: '#f59e0b',

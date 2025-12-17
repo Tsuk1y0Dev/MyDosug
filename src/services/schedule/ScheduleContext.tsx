@@ -6,7 +6,7 @@ interface ScheduleContextType {
   schedule: Activity[];
   plannedActivities: PlannedActivity[];
   addActivity: (activity: Activity) => void;
-  addPlannedActivities: (activities: PlannedActivity[]) => void;
+  addPlannedActivities: (activities: PlannedActivity[], date?: Date) => void;
   updateActivity: (activityId: string, updates: Partial<Activity>) => void;
   deleteActivity: (activityId: string) => void;
   clearSchedule: () => void;
@@ -26,17 +26,19 @@ export const ScheduleProvider = ({ children }: ScheduleProviderProps) => {
     setSchedule(prev => [...prev, activity]);
   };
 
-  const addPlannedActivities = (activities: PlannedActivity[]) => {
+  const addPlannedActivities = (activities: PlannedActivity[], date?: Date) => {
     setPlannedActivities(prev => [...prev, ...activities]);
     
     // Конвертируем PlannedActivity в Activity для основного расписания
+    const targetDate = date ? date.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
     const newActivities: Activity[] = activities.map(planned => ({
       id: planned.id,
       title: planned.place.name,
       startTime: planned.startTime,
       endTime: planned.endTime,
       location: planned.place.address,
-      type: 'activity' as const
+      type: 'activity' as const,
+      date: targetDate
     }));
     
     setSchedule(prev => [...prev, ...newActivities]);

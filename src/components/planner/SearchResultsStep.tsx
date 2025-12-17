@@ -1,10 +1,14 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Dimensions } from 'react-native';
+import React, { useState, useMemo, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Dimensions, Alert, Platform, Modal } from 'react-native';
 import { usePlanner } from '../../services/planner/PlannerContext';
+import { useFavorites } from '../../services/favorites/FavoritesContext';
+import { useAuth } from '../../services/auth/AuthContext';
 import { Feather } from '@expo/vector-icons';
 import { Place } from '../../types/planner';
 import { calculateDuration } from '../../types/planner';
-import { CustomActivityStep } from './CustomActivityStep'; // ДОБАВЬТЕ ЭТОТ ИМПОРТ
+import { CustomActivityStep } from './CustomActivityStep';
+import { YandexMap } from '../maps/YandexMap';
+import { TimeSelectionModal } from './TimeSelectionModal';
 
 const { width } = Dimensions.get('window');
 
@@ -20,8 +24,16 @@ export const SearchResultsStep = () => {
     searchFilters,
     setSearchFilters 
   } = usePlanner();
+  const { addFavoritePlace, removeFavoritePlace, isFavorite } = useFavorites();
+  const { user } = useAuth();
 
   const [showFilters, setShowFilters] = useState(false);
+  const [mapView, setMapView] = useState(false);
+  const [showPlaceModal, setShowPlaceModal] = useState(false);
+  const [showTimeModal, setShowTimeModal] = useState(false);
+  const [placeToAdd, setPlaceToAdd] = useState<Place | null>(null);
+  const [suggestedStartTime, setSuggestedStartTime] = useState('');
+  const [suggestedEndTime, setSuggestedEndTime] = useState('');
 
   // Если тип активности - custom, показываем кастомный шаг
   if (planningRequest.activityType === 'custom') {
@@ -98,13 +110,16 @@ export const SearchResultsStep = () => {
     </View>
   );
 
-  const PlaceCard = ({ place }: { place: Place }) => (
+  const PlaceCard = ({ place, onPress }: { place: Place; onPress?: () => void }) => (
     <TouchableOpacity 
       style={[
         styles.placeCard,
         selectedPlace?.id === place.id && styles.placeCardSelected
       ]}
-      onPress={() => selectPlace(place)}
+      onPress={onPress || (() => {
+        selectPlace(place);
+        setShowPlaceModal(true);
+      })}
     >
       <Image source={{ uri: place.image }} style={styles.placeImage} />
       <View style={styles.placeInfo}>
@@ -140,7 +155,7 @@ export const SearchResultsStep = () => {
     </TouchableOpacity>
   );
 
-  const Recommendations = () => {
+  const Recommendations = useMemo(() => {
     // Показываем рекомендации только если в плане уже есть активности
     if (currentPlan.activities.length === 0) return null;
 
@@ -158,7 +173,7 @@ export const SearchResultsStep = () => {
 
     return (
       <View style={styles.recommendations}>
-        <Text style={styles.recommendationsTitle}>💡 Оставшееся время можно провести здесь:</Text>
+        <Text style={styles.recommendationsTitle}>Оставшееся время можно провести здесь:</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={styles.recommendationsList}>
             {recommendations.map(place => (
@@ -190,7 +205,7 @@ export const SearchResultsStep = () => {
         </ScrollView>
       </View>
     );
-  };
+  }, [currentPlan.activities.length, filteredResults, planningRequest.company, planningRequest.mood, selectPlace]);
 
   const PlaceDetails = ({ place }: { place: Place }) => {
     const calculatedDuration = calculateDuration(
@@ -228,42 +243,64 @@ export const SearchResultsStep = () => {
           <View style={styles.features}>
             {place.features.wheelchair && (
               <View style={styles.featureTag}>
-                <Text style={styles.featureText}>♿ Доступно</Text>
+                <Text style={styles.featureText}>Доступно</Text>
               </View>
             )}
             {place.features.vegetarian && (
               <View style={styles.featureTag}>
-                <Text style={styles.featureText}>🌱 Вегетарианское</Text>
+                <Text style={styles.featureText}>Вегетарианское</Text>
               </View>
             )}
             {place.features.outdoor && (
               <View style={styles.featureTag}>
-                <Text style={styles.featureText}>🌳 На улице</Text>
+                <Text style={styles.featureText}>На улице</Text>
               </View>
             )}
             {place.features.childFriendly && (
               <View style={styles.featureTag}>
-                <Text style={styles.featureText}>👶 Для детей</Text>
+                <Text style={styles.featureText}>Для детей</Text>
               </View>
             )}
           </View>
 
           <View style={styles.actionButtons}>
             <TouchableOpacity 
-              style={styles.saveButton}
-              onPress={() => {/* TODO: Добавить в избранное */}}
+              style={[
+                styles.saveButton,
+                isFavorite(place.id) && styles.saveButtonActive,
+                !user && styles.saveButtonDisabled
+              ]}
+              onPress={() => {
+                if (!user) {
+                  Alert.alert(
+                    'Требуется авторизация',
+                    'Войдите в аккаунт, чтобы добавлять места в избранное',
+                    [{ text: 'OK' }]
+                  );
+                  return;
+                }
+                if (isFavorite(place.id)) {
+                  removeFavoritePlace(place.id);
+                } else {
+                  addFavoritePlace(place);
+                }
+              }}
             >
-              <Feather name="heart" size={20} color="#6b7280" />
-              <Text style={styles.saveButtonText}>В избранное</Text>
+              <Feather 
+                name={isFavorite(place.id) ? "heart" : "heart"} 
+                size={20} 
+                color={isFavorite(place.id) ? "#ef4444" : "#6b7280"} 
+                fill={isFavorite(place.id) ? "#ef4444" : "none"}
+              />
+              <Text style={[
+                styles.saveButtonText,
+                isFavorite(place.id) && styles.saveButtonTextActive
+              ]}>
+                {isFavorite(place.id) ? 'В избранном' : 'В избранное'}
+              </Text>
             </TouchableOpacity>
             
-            <TouchableOpacity 
-              style={styles.addButton}
-              onPress={() => addToPlan(place)}
-            >
-              <Feather name="plus" size={20} color="white" />
-              <Text style={styles.addButtonText}>Добавить в план</Text>
-            </TouchableOpacity>
+            {/* Кнопка "Добавить в план" удалена из списка - используется только в модальном окне */}
           </View>
         </ScrollView>
       </View>
@@ -288,31 +325,152 @@ export const SearchResultsStep = () => {
           <Feather name="filter" size={20} color="#374151" />
           {showFilters && <View style={styles.filterIndicator} />}
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.viewToggle, mapView && styles.viewToggleActive]}
+          onPress={() => setMapView(!mapView)}
+        >
+          <Feather name={mapView ? "list" : "map"} size={20} color={mapView ? "white" : "#374151"} />
+          <Text style={[styles.viewToggleText, mapView && styles.viewToggleTextActive]}>
+            {mapView ? "Список" : "Карта"}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {showFilters && <FiltersPanel />}
 
       {/* Основной контент */}
       <View style={styles.mainContent}>
-        {/* Левая колонка - список мест */}
-        <View style={styles.leftColumn}>
-          <ScrollView style={styles.placesList}>
-            {filteredResults.map((place) => (
-              <PlaceCard key={place.id} place={place} />
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* Правая колонка - детали места */}
-        {selectedPlace && (
-          <View style={styles.rightColumn}>
-            <PlaceDetails place={selectedPlace} />
+        {mapView ? (
+          /* Режим карты */
+          <View style={styles.mapFullContainer}>
+            {filteredResults.length > 0 ? (
+              <YandexMap
+                center={filteredResults[0].coordinates}
+                markers={filteredResults.map(place => ({
+                  id: place.id,
+                  lat: place.coordinates.lat,
+                  lng: place.coordinates.lng,
+                  title: place.name,
+                  rating: place.rating,
+                  priceLevel: place.priceLevel,
+                }))}
+                onMarkerPress={(markerId) => {
+                  const place = filteredResults.find(p => p.id === markerId);
+                  if (place) {
+                    selectPlace(place);
+                    setShowPlaceModal(true);
+                  }
+                }}
+                height={Dimensions.get('window').height - 200}
+              />
+            ) : (
+              <View style={styles.mapEmpty}>
+                <Feather name="map" size={32} color="#d1d5db" />
+                <Text style={styles.mapEmptyText}>Нет мест для отображения</Text>
+              </View>
+            )}
+          </View>
+        ) : (
+          /* Режим списка */
+          <View style={styles.listFullContainer}>
+            <View style={styles.listHeader}>
+              <Text style={styles.listHeaderTitle}>
+                Найдено мест: {filteredResults.length}
+              </Text>
+              <Text style={styles.listHeaderSubtitle}>
+                Нажмите на место для просмотра деталей
+              </Text>
+            </View>
+            <ScrollView 
+              style={styles.placesList}
+              showsVerticalScrollIndicator={true}
+            >
+              {filteredResults.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Feather name="search" size={48} color="#d1d5db" />
+                  <Text style={styles.emptyStateText}>Места не найдены</Text>
+                  <Text style={styles.emptyStateSubtext}>
+                    Попробуйте изменить параметры поиска
+                  </Text>
+                </View>
+              ) : (
+                filteredResults.map((place) => (
+                  <PlaceCard 
+                    key={place.id} 
+                    place={place}
+                    onPress={() => {
+                      selectPlace(place);
+                      setShowPlaceModal(true);
+                    }}
+                  />
+                ))
+              )}
+            </ScrollView>
           </View>
         )}
       </View>
 
+      {/* Модальное окно с деталями места */}
+      <Modal
+        visible={showPlaceModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowPlaceModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            {selectedPlace && (
+              <>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>{selectedPlace.name}</Text>
+                  <TouchableOpacity
+                    style={styles.modalCloseButton}
+                    onPress={() => setShowPlaceModal(false)}
+                  >
+                    <Feather name="x" size={24} color="#374151" />
+                  </TouchableOpacity>
+                </View>
+                <ScrollView style={styles.modalScroll}>
+                  <PlaceDetails place={selectedPlace} />
+                </ScrollView>
+                <View style={styles.modalActions}>
+                  <TouchableOpacity
+                    style={[
+                      styles.modalAddButton,
+                      planningRequest.planType === 'single' && currentPlan.activities.length > 0 && styles.modalAddButtonDisabled
+                    ]}
+                    onPress={() => {
+                      // Для одного мероприятия всегда показываем модальное окно выбора времени
+                      // Для цепочки - только если это первая активность
+                      const result = addToPlan(selectedPlace);
+                      if (result) {
+                        setPlaceToAdd(selectedPlace);
+                        setSuggestedStartTime(result.startTime);
+                        setSuggestedEndTime(result.endTime);
+                        setShowPlaceModal(false);
+                        setShowTimeModal(true);
+                      }
+                      // Если result === null, значит для цепочки активность уже добавлена автоматически
+                      // или для одного мероприятия уже есть активность (показывается Alert)
+                    }}
+                    disabled={planningRequest.planType === 'single' && currentPlan.activities.length > 0}
+                  >
+                    <Feather name="plus" size={20} color="white" />
+                    <Text style={styles.modalAddButtonText}>
+                      {planningRequest.planType === 'single' && currentPlan.activities.length > 0
+                        ? 'Уже добавлено одно мероприятие'
+                        : 'Добавить в план'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+
       {/* Рекомендации - в самом низу */}
-      <Recommendations />
+      {Recommendations}
 
       {/* План превью - фиксированная кнопка внизу */}
       {currentPlan.activities.length > 0 && (
@@ -327,6 +485,24 @@ export const SearchResultsStep = () => {
           </TouchableOpacity>
         </View>
       )}
+
+      {/* Модальное окно выбора времени */}
+      <TimeSelectionModal
+        visible={showTimeModal}
+        suggestedStartTime={suggestedStartTime}
+        suggestedEndTime={suggestedEndTime}
+        onConfirm={(startTime, endTime) => {
+          if (placeToAdd) {
+            addToPlan(placeToAdd, startTime, endTime);
+            setPlaceToAdd(null);
+          }
+          setShowTimeModal(false);
+        }}
+        onCancel={() => {
+          setShowTimeModal(false);
+          setPlaceToAdd(null);
+        }}
+      />
     </View>
   );
 };
@@ -366,11 +542,100 @@ const styles = StyleSheet.create({
   },
   leftColumn: {
     flex: 1,
+    backgroundColor: 'white',
+    borderRightWidth: 1,
+    borderRightColor: '#e5e7eb',
+  },
+  listHeader: {
+    padding: 16,
+    backgroundColor: '#f8fafc',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  listHeaderTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 4,
+  },
+  listHeaderSubtitle: {
+    fontSize: 12,
+    color: '#6b7280',
   },
   rightColumn: {
     width: 400,
+    maxWidth: 400,
     borderLeftWidth: 1,
     borderLeftColor: '#e5e7eb',
+    flexDirection: 'column',
+    backgroundColor: 'white',
+  },
+  mapSection: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+    maxHeight: 350,
+    minHeight: 300,
+  },
+  mapHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 8,
+  },
+  mapTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  detailsSection: {
+    flex: 1,
+    overflow: 'hidden',
+    minHeight: 200,
+    maxHeight: 500,
+  },
+  detailsPlaceholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+    backgroundColor: '#f8fafc',
+  },
+  detailsPlaceholderText: {
+    fontSize: 14,
+    color: '#6b7280',
+    textAlign: 'center',
+    marginTop: 12,
+  },
+  mapEmpty: {
+    height: 300,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 12,
+  },
+  mapEmptyText: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginTop: 8,
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyStateText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#374151',
+    marginTop: 16,
+  },
+  emptyStateSubtext: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginTop: 8,
+    textAlign: 'center',
   },
   placesList: {
     flex: 1,
@@ -442,6 +707,7 @@ const styles = StyleSheet.create({
   },
   placeDetails: {
     flex: 1,
+    height: '100%',
   },
   detailsImage: {
     width: '100%',
@@ -514,6 +780,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginLeft: 8,
   },
+  saveButtonActive: {
+    borderColor: '#ef4444',
+    backgroundColor: '#fef2f2',
+  },
+  saveButtonTextActive: {
+    color: '#ef4444',
+  },
+  saveButtonDisabled: {
+    opacity: 0.5,
+  },
   addButton: {
     flex: 2,
     flexDirection: 'row',
@@ -524,6 +800,89 @@ const styles = StyleSheet.create({
     backgroundColor: '#3b82f6',
   },
   addButtonText: {
+    fontSize: 16,
+    color: 'white',
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  addButtonDisabled: {
+    backgroundColor: '#9ca3af',
+    opacity: 0.6,
+  },
+  viewToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: '#f8fafc',
+    gap: 6,
+  },
+  viewToggleActive: {
+    backgroundColor: '#3b82f6',
+  },
+  viewToggleText: {
+    fontSize: 12,
+    color: '#374151',
+    fontWeight: '500',
+  },
+  viewToggleTextActive: {
+    color: 'white',
+  },
+  mapFullContainer: {
+    flex: 1,
+  },
+  listFullContainer: {
+    flex: 1,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '90%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    flex: 1,
+  },
+  modalCloseButton: {
+    padding: 4,
+  },
+  modalScroll: {
+    maxHeight: Dimensions.get('window').height * 0.6,
+  },
+  modalActions: {
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+  },
+  modalAddButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#3b82f6',
+  },
+  modalAddButtonDisabled: {
+    backgroundColor: '#9ca3af',
+    opacity: 0.6,
+  },
+  modalAddButtonText: {
     fontSize: 16,
     color: 'white',
     fontWeight: '600',

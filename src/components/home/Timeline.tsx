@@ -5,7 +5,7 @@ interface TimelineProps {
   timeSlots: string[];
   hourHeight: number;
   contentHeight: number;
-  scrollRef?: React.RefObject<ScrollView | null>; // ИЗМЕНИТЕ ТИП НА ScrollView | null
+  scrollRef?: React.RefObject<ScrollView | null>; 
   onScroll?: (event: any) => void;
 }
 
@@ -25,6 +25,8 @@ export const Timeline: React.FC<TimelineProps> = ({
         ref={scrollRef}
         onScroll={onScroll}
         scrollEventThrottle={16}
+        nestedScrollEnabled={true}
+        bounces={false}
       >
         {timeSlots.map((time, index) => (
           <View 

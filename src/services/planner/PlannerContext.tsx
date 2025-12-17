@@ -25,7 +25,7 @@ interface PlannerContextType {
   currentPlan: RoutePlan;
   searchPlaces: () => void;
   selectPlace: (place: Place) => void;
-  addToPlan: (place: Place) => void;
+  addToPlan: (place: Place, startTime?: string, endTime?: string) => void;
   removeFromPlan: (activityId: string) => void;
   reorderPlan: (activities: PlannedActivity[]) => void;
   savePlan: (onSaved?: () => void) => void;
@@ -36,6 +36,7 @@ interface PlannerContextType {
     distance: number;
   };
   setSearchFilters: (filters: any) => void;
+  planningDate: Date;
 }
 
 const PlannerContext = createContext<PlannerContextType | undefined>(undefined);
@@ -71,10 +72,12 @@ type PlannerProviderProps = {
     startTime: string;
     endTime: string;
   };
+  selectedDate?: Date;
 };
 
-export const PlannerProvider = ({ children, initialTimeSlot }: PlannerProviderProps) => {
+export const PlannerProvider = ({ children, initialTimeSlot, selectedDate }: PlannerProviderProps) => {
   const [currentStep, setCurrentStep] = useState(0);
+  const [planningDate] = useState<Date>(selectedDate || new Date());
   const [planningRequest, setPlanningRequest] = useState<PlanningRequest>({
     ...defaultPlanningRequest,
     ...(initialTimeSlot && {
@@ -182,61 +185,101 @@ export const PlannerProvider = ({ children, initialTimeSlot }: PlannerProviderPr
     setSelectedPlace(place);
   };
 
-  const addToPlan = (place: Place) => {
+  const addToPlan = (place: Place, customStartTime?: string, customEndTime?: string) => {
+    // Проверяем, если выбран тип "одно мероприятие" и уже есть активность
+    if (planningRequest.planType === 'single' && currentPlan.activities.length > 0) {
+      Alert.alert(
+        'Одно мероприятие',
+        'Вы выбрали тип "Одно мероприятие". Удалите текущую активность, чтобы добавить новую.',
+        [{ text: 'OK' }]
+      );
+      return null;
+    }
+
     const activities = [...currentPlan.activities];
     const lastActivity = activities[activities.length - 1];
     
-    // Вычисляем продолжительность
+    // Вычисляем продолжительность на основе настроек места
     const duration = calculateDuration(
       place.durationSettings, 
       planningRequest.company || 'friends',
       planningRequest.mood || 'fun'
     );
 
-    let startTime = planningRequest.startTime;
+    let startTime: string;
     let travelTimeFromPrevious = 0;
 
+    // Если передано пользовательское время, используем его
+    if (customStartTime && customEndTime) {
+      startTime = customStartTime;
+      
+      // Если есть предыдущая активность, рассчитываем время пути
+      if (lastActivity) {
+        travelTimeFromPrevious = calculateTravelTime(lastActivity.place, place);
+      }
+      
+      const newActivity: PlannedActivity = {
+        id: generateUniqueId(),
+        place,
+        startTime: customStartTime,
+        endTime: customEndTime,
+        travelTimeFromPrevious,
+        order: activities.length,
+      };
+
+      const updatedActivities = [...activities, newActivity];
+      const totalDuration = calculateTotalDuration(updatedActivities);
+      const totalCost = updatedActivities.reduce((total, activity) => {
+        return total + (activity.place.averageBill || 0);
+      }, 0);
+
+      setCurrentPlan({
+        ...currentPlan,
+        activities: updatedActivities,
+        totalDuration,
+        totalCost,
+      });
+
+      setSelectedPlace(null);
+      return null;
+    }
+
+    // Иначе вычисляем автоматически и возвращаем предложенное время
+    // Время начала: для первого места - из planningRequest, для последующих - с учетом логистики
+    startTime = planningRequest.startTime;
+
     if (lastActivity) {
-      // Рассчитываем время пути от предыдущего места
+      // Рассчитываем время пути от предыдущего места (логистика)
       travelTimeFromPrevious = calculateTravelTime(lastActivity.place, place);
       
+      // Время начала = время окончания предыдущей активности + время пути
       const [prevHours, prevMinutes] = lastActivity.endTime.split(':').map(Number);
       const totalMinutes = prevHours * 60 + prevMinutes + travelTimeFromPrevious;
       const hours = Math.floor(totalMinutes / 60);
       const minutes = totalMinutes % 60;
       startTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-      
-      // Проверяем, не пересекается ли с другими активностями в текущем плане
-      const endTotalMinutes = hours * 60 + minutes + duration;
-      const endHours = Math.floor(endTotalMinutes / 60);
-      const endMinutes = endTotalMinutes % 60;
-      const endTime = `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
-      
-      // Проверяем конфликты только с активностями в текущем плане
-      const conflicts = activities.filter((activity: PlannedActivity) => {
-        const activityStart = timeToMinutes(activity.startTime);
-        const activityEnd = timeToMinutes(activity.endTime);
-        const newStart = timeToMinutes(startTime);
-        const newEnd = timeToMinutes(endTime);
-        
-        return (newStart < activityEnd && newEnd > activityStart);
-      });
-      
-      if (conflicts.length > 0) {
-        Alert.alert(
-          'Конфликт времени',
-          `Выбранное время пересекается с существующими активностями в плане. Рекомендуемое время начала: ${startTime}`,
-          [{ text: 'OK' }]
-        );
-      }
     }
 
+    // Время окончания = время начала + продолжительность (автоматически из настроек места)
     const [startHours, startMinutes] = startTime.split(':').map(Number);
     const endTotalMinutes = startHours * 60 + startMinutes + duration;
     const endHours = Math.floor(endTotalMinutes / 60);
     const endMinutes = endTotalMinutes % 60;
     const endTime = `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
 
+    // Для одного мероприятия всегда возвращаем предложенное время для модального окна
+    // Для цепочки - возвращаем только если это первая активность или пользователь хочет изменить
+    if (planningRequest.planType === 'single') {
+      return { startTime, endTime, place };
+    }
+
+    // Для цепочки: если это первая активность, показываем модальное окно
+    // Если уже есть активности, добавляем автоматически без модального окна
+    if (activities.length === 0) {
+      return { startTime, endTime, place };
+    }
+
+    // Для последующих активностей в цепочке добавляем автоматически
     const newActivity: PlannedActivity = {
       id: generateUniqueId(),
       place,
@@ -260,6 +303,7 @@ export const PlannerProvider = ({ children, initialTimeSlot }: PlannerProviderPr
     });
 
     setSelectedPlace(null);
+    return null;
   };
 
   const removeFromPlan = (activityId: string) => {
@@ -415,6 +459,7 @@ export const PlannerProvider = ({ children, initialTimeSlot }: PlannerProviderPr
         resetPlanner,
         searchFilters,
         setSearchFilters,
+        planningDate,
       }}
     >
       {children}

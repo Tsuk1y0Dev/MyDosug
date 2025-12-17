@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, Platform } from 'react-native';
 import { usePlanner } from '../../services/planner/PlannerContext';
 import { useSchedule } from '../../services/schedule/ScheduleContext';
 import { Activity } from '../../types/schedule';
 import { Feather } from '@expo/vector-icons';
+import { calculateEndTime } from '../../utils/timingUtils';
 
 interface CustomActivityStepProps {
   onPlanSaved?: () => void;
 }
 
 export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({ onPlanSaved }) => {
-  const { planningRequest, setCurrentStep } = usePlanner();
+  const { planningRequest, setCurrentStep, planningDate } = usePlanner();
   const { addActivity } = useSchedule();
   
   const [customActivity, setCustomActivity] = useState({
@@ -18,7 +19,7 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({ onPlanSa
     location: '',
     description: '',
     duration: 60, // минуты
-    coordinates: { lat: 55.7558, lng: 37.6173 }, // Координаты по умолчанию (Москва)
+    coordinates: { lat: 52.0339, lng: 113.5010 }, // Координаты по умолчанию (Чита)
   });
 
   const handleSaveCustomActivity = () => {
@@ -27,24 +28,30 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({ onPlanSa
       return;
     }
 
+    if (!customActivity.location.trim()) {
+      Alert.alert('Ошибка', 'Укажите местоположение активности');
+      return;
+    }
+
     const newActivity: Activity = {
-      id: `custom-${Date.now()}`,
+      id: `custom-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       title: customActivity.title,
       startTime: planningRequest.startTime,
       endTime: calculateEndTime(planningRequest.startTime, customActivity.duration),
       location: customActivity.location,
       type: 'custom',
       description: customActivity.description,
+      date: planningDate ? planningDate.toISOString().split('T')[0] : undefined,
     };
 
     addActivity(newActivity);
     
     Alert.alert(
-      'Успешно!',
-      'Кастомная активность добавлена в расписание',
+      '✅ Успешно!',
+      `Активность "${customActivity.title}" добавлена в расписание\n\nВремя: ${planningRequest.startTime} - ${calculateEndTime(planningRequest.startTime, customActivity.duration)}`,
       [
         { 
-          text: 'OK', 
+          text: 'Отлично!', 
           onPress: () => {
             // Закрываем модальное окно через onPlanSaved
             if (onPlanSaved) {
@@ -59,13 +66,6 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({ onPlanSa
     );
   };
 
-  const calculateEndTime = (startTime: string, duration: number): string => {
-    const [hours, minutes] = startTime.split(':').map(Number);
-    const totalMinutes = hours * 60 + minutes + duration;
-    const endHours = Math.floor(totalMinutes / 60);
-    const endMinutes = totalMinutes % 60;
-    return `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
-  };
 
   const durationOptions = [30, 60, 90, 120, 180];
 
@@ -88,8 +88,19 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({ onPlanSa
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Создать свою активность</Text>
-      <Text style={styles.subtitle}>Добавьте мероприятие, которого нет в нашем каталоге</Text>
+      {/* Заголовок с кнопкой назад */}
+      <View style={styles.header}>
+        <TouchableOpacity 
+          style={styles.headerBackButton}
+          onPress={() => setCurrentStep(2)}
+        >
+          <Feather name="arrow-left" size={24} color="#374151" />
+        </TouchableOpacity>
+        <View style={styles.headerContent}>
+          <Text style={styles.title}>Создать свою активность</Text>
+          <Text style={styles.subtitle}>Добавьте мероприятие, которого нет в нашем каталоге</Text>
+        </View>
+      </View>
 
       <ScrollView style={styles.form}>
         <View style={styles.field}>
@@ -103,7 +114,7 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({ onPlanSa
         </View>
 
         <View style={styles.field}>
-          <Text style={styles.label}>Местоположение</Text>
+          <Text style={styles.label}>Местоположение *</Text>
           <TextInput
             style={styles.input}
             placeholder="Адрес или название места"
@@ -163,7 +174,10 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({ onPlanSa
       <View style={styles.buttons}>
         <TouchableOpacity 
           style={styles.backButton}
-          onPress={() => setCurrentStep(2)}
+          onPress={() => {
+            // Возвращаемся к шагу параметров (шаг 2)
+            setCurrentStep(2);
+          }}
         >
           <Feather name="arrow-left" size={20} color="#3b82f6" />
           <Text style={styles.backButtonText}>Назад</Text>
@@ -172,9 +186,9 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({ onPlanSa
         <TouchableOpacity 
           style={[
             styles.saveButton,
-            !customActivity.title.trim() && styles.saveButtonDisabled
+            (!customActivity.title.trim() || !customActivity.location.trim()) && styles.saveButtonDisabled
           ]}
-          disabled={!customActivity.title.trim()}
+          disabled={!customActivity.title.trim() || !customActivity.location.trim()}
           onPress={handleSaveCustomActivity}
         >
           <Feather name="check" size={20} color="white" />
@@ -188,25 +202,47 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({ onPlanSa
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#f8fafc',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
     padding: 20,
+    paddingTop: Platform.OS === 'ios' ? 50 : 20,
     backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  headerBackButton: {
+    padding: 8,
+    marginRight: 12,
+    marginTop: 4,
+  },
+  headerContent: {
+    flex: 1,
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#1f2937',
-    marginBottom: 8,
+    marginBottom: 4,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#6b7280',
-    marginBottom: 30,
+    lineHeight: 20,
   },
   form: {
     flex: 1,
+    padding: 20,
   },
   field: {
     marginBottom: 24,
+    backgroundColor: 'white',
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
   },
   label: {
     fontSize: 16,
@@ -307,17 +343,31 @@ const styles = StyleSheet.create({
   buttons: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 20,
+    padding: 20,
+    paddingBottom: Platform.OS === 'ios' ? 30 : 20,
+    backgroundColor: 'white',
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+    ...(Platform.OS === 'web' ? {
+      boxShadow: '0 -2px 10px rgba(0, 0, 0, 0.05)',
+    } : {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: -2 },
+      shadowOpacity: 0.05,
+      shadowRadius: 10,
+      elevation: 5,
+    }),
   },
   backButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
+    padding: 18,
+    borderRadius: 16,
+    borderWidth: 2,
     borderColor: '#3b82f6',
+    backgroundColor: 'white',
   },
   backButtonText: {
     color: '#3b82f6',
@@ -330,9 +380,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 16,
-    borderRadius: 12,
+    padding: 18,
+    borderRadius: 16,
     backgroundColor: '#10b981',
+    ...(Platform.OS === 'web' ? {
+      boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
+    } : {
+      shadowColor: '#10b981',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 12,
+      elevation: 5,
+    }),
   },
   saveButtonDisabled: {
     backgroundColor: '#9ca3af',

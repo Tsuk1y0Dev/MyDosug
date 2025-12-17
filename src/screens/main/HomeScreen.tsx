@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -6,16 +6,25 @@ import {
   ScrollView, 
   TouchableOpacity,
   SafeAreaView,
-  Alert
+  Alert,
+  Platform
 } from 'react-native';
 import { useAuth } from '../../services/auth/AuthContext';
 import { useSchedule } from '../../services/schedule/ScheduleContext';
+import { useNavigation } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
+import { RootStackParamList } from '../../navigation/types';
 import { Activity, FreeSlot } from '../../types/schedule';
+import { timeToMinutes } from '../../utils/timingUtils';
 import { ActivityBlock } from '../../components/home/ActivityBlock';
 import { AddSlotButton } from '../../components/home/AddSlotButton';
 import { Timeline } from '../../components/home/Timeline';
 import { PlannerModal } from './PlannerModal';
+import { ActivityMenu } from '../../components/home/ActivityMenu';
 import { Feather } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
+
+type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Main'>;
 
 const HOUR_HEIGHT = 80;
 const START_HOUR = 6;
@@ -24,15 +33,74 @@ const TOTAL_HOURS = END_HOUR - START_HOUR;
 
 export const HomeScreen = () => {
   const { logout, user } = useAuth();
+  const navigation = useNavigation<HomeScreenNavigationProp>();
   const { schedule, deleteActivity, updateActivity } = useSchedule();
-  const [selectedDate, setSelectedDate] = useState<string>('Сегодня');
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [draggingActivityId, setDraggingActivityId] = useState<string | null>(null);
   const [plannerVisible, setPlannerVisible] = useState(false);
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<{startTime: string; endTime: string} | undefined>();
+  const [welcomeOpacity, setWelcomeOpacity] = useState(1);
+  const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
+  const [showActivityMenu, setShowActivityMenu] = useState(false);
+
+  // Форматирование даты для отображения
+  const formatDate = useCallback((date: Date): string => {
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    if (date.toDateString() === today.toDateString()) {
+      return 'Сегодня';
+    } else if (date.toDateString() === tomorrow.toDateString()) {
+      return 'Завтра';
+    } else {
+      const days = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
+      const dayName = days[date.getDay()];
+      const day = date.getDate();
+      const month = date.getMonth() + 1;
+      return `${dayName}, ${day}.${month}`;
+    }
+  }, []);
+
+  const handleDateChange = (event: any, date?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
+    }
+    if (date) {
+      setSelectedDate(date);
+    }
+  };
 
   // Refs для синхронного скролла
   const timelineScrollRef = useRef<ScrollView>(null);
   const activitiesScrollRef = useRef<ScrollView>(null);
+
+  // Фильтруем активности по выбранной дате
+  const filteredSchedule = useMemo(() => {
+    const dateStr = selectedDate.toISOString().split('T')[0];
+    const filtered = schedule.filter(activity => {
+      // Если дата не указана, показываем для сегодня
+      if (!activity.date) {
+        return new Date().toISOString().split('T')[0] === dateStr;
+      }
+      return activity.date === dateStr;
+    });
+    // Сортируем по времени начала
+    return filtered.sort((a, b) => {
+      const aTime = timeToMinutes(a.startTime);
+      const bTime = timeToMinutes(b.startTime);
+      return aTime - bTime;
+    });
+  }, [schedule, selectedDate]);
+
+  // Плавное исчезновение приветственного экрана
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setWelcomeOpacity(0);
+    }, 3000); // Исчезает через 3 секунды
+    return () => clearTimeout(timer);
+  }, []);
 
   const timeSlots = useMemo(() => {
     const slots = [];
@@ -42,39 +110,51 @@ export const HomeScreen = () => {
     return slots;
   }, []);
 
-  const timeToPosition = (time: string): number => {
+  const timeToPosition = useCallback((time: string): number => {
     const [hours, minutes] = time.split(':').map(Number);
     return (hours - START_HOUR) * HOUR_HEIGHT + (minutes / 60) * HOUR_HEIGHT;
-  };
+  }, []);
 
-  const positionToTime = (position: number): string => {
+  const positionToTime = useCallback((position: number): string => {
     const totalMinutes = (position / HOUR_HEIGHT) * 60;
     const hours = Math.floor(totalMinutes / 60) + START_HOUR;
     const minutes = Math.round(totalMinutes % 60);
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-  };
+  }, []);
 
-    // Обработчики синхронного скролла
-  const handleTimelineScroll = (event: any) => {
+  // Обработчики синхронного скролла с debounce для мобильных
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  const handleTimelineScroll = useCallback((event: any) => {
     const { y } = event.nativeEvent.contentOffset;
-    if (activitiesScrollRef.current) {
-      activitiesScrollRef.current.scrollTo({ y, animated: false });
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
     }
-  };
+    scrollTimeoutRef.current = setTimeout(() => {
+      if (activitiesScrollRef.current) {
+        activitiesScrollRef.current.scrollTo({ y, animated: false });
+      }
+    }, 10);
+  }, []);
 
-  const handleActivitiesScroll = (event: any) => {
+  const handleActivitiesScroll = useCallback((event: any) => {
     const { y } = event.nativeEvent.contentOffset;
-    if (timelineScrollRef.current) {
-      timelineScrollRef.current.scrollTo({ y, animated: false });
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
     }
-  };
+    scrollTimeoutRef.current = setTimeout(() => {
+      if (timelineScrollRef.current) {
+        timelineScrollRef.current.scrollTo({ y, animated: false });
+      }
+    }, 10);
+  }, []);
 
 const freeSlots = useMemo((): FreeSlot[] => {
-  if (schedule.length === 0) {
+  if (filteredSchedule.length === 0) {
     return []; // Не показываем окна, если нет активностей
   }
 
-  const busySlots = schedule
+  const busySlots = filteredSchedule
     .map(activity => ({
       start: timeToPosition(activity.startTime),
       end: timeToPosition(activity.endTime)
@@ -90,7 +170,7 @@ const freeSlots = useMemo((): FreeSlot[] => {
     
     if (nextSlot.start > currentSlot.end) {
       const durationPixels = nextSlot.start - currentSlot.end;
-      const durationMinutes = (durationPixels / HOUR_HEIGHT) * 60;
+      const durationMinutes = Math.round((durationPixels / HOUR_HEIGHT) * 60);
       
       if (durationMinutes >= 30) { // Минимум 30 минут
         slots.push({
@@ -105,21 +185,24 @@ const freeSlots = useMemo((): FreeSlot[] => {
   }
 
   return slots;
-}, [schedule]);
+}, [filteredSchedule, timeToPosition, positionToTime]);
 
   const handleActivityPress = (activity: Activity) => {
-    Alert.alert(
-      activity.title,
-      `${activity.startTime} - ${activity.endTime}\n${activity.location || ''}`,
-      [
-        { text: 'Закрыть', style: 'cancel' },
-        { 
-          text: 'Удалить', 
-          style: 'destructive',
-          onPress: () => deleteActivity(activity.id)
-        }
-      ]
-    );
+    setSelectedActivity(activity);
+    setShowActivityMenu(true);
+  };
+
+  const handleEditActivity = (activity: Activity) => {
+    // Открываем планировщик с предзаполненными данными
+    setSelectedTimeSlot({
+      startTime: activity.startTime,
+      endTime: activity.endTime,
+    });
+    setPlannerVisible(true);
+  };
+
+  const handleDeleteActivity = (activityId: string) => {
+    deleteActivity(activityId);
   };
 
   const handleDragStart = (activityId: string) => {
@@ -135,8 +218,8 @@ const freeSlots = useMemo((): FreeSlot[] => {
   };
 
   const handleActivitySwap = (draggedId: string, targetId: string) => {
-    const draggedActivity = schedule.find(a => a.id === draggedId);
-    const targetActivity = schedule.find(a => a.id === targetId);
+    const draggedActivity = filteredSchedule.find(a => a.id === draggedId);
+    const targetActivity = filteredSchedule.find(a => a.id === targetId);
     
     if (!draggedActivity || !targetActivity) return;
 
@@ -196,34 +279,85 @@ const freeSlots = useMemo((): FreeSlot[] => {
      <SafeAreaView style={styles.container}>
       {/* Заголовок */}
       <View style={styles.header}>
-        <View style={styles.headerLeft}>
+        <TouchableOpacity 
+          style={styles.headerLeft}
+          onPress={() => setShowDatePicker(true)}
+        >
           <Feather name="calendar" size={24} color="#3b82f6" />
           <View style={styles.headerText}>
             <Text style={styles.title}>Расписание</Text>
-            <Text style={styles.subtitle}>{selectedDate}</Text>
+            <Text style={styles.subtitle}>{formatDate(selectedDate)}</Text>
           </View>
-        </View>
+          <Feather name="chevron-down" size={16} color="#6b7280" style={styles.dateChevron} />
+        </TouchableOpacity>
+        
+        {showDatePicker && (
+          Platform.OS === 'web' ? (
+            <View style={styles.datePickerOverlay}>
+              <input
+                type="date"
+                value={selectedDate.toISOString().split('T')[0]}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    setSelectedDate(new Date(e.target.value));
+                    setShowDatePicker(false);
+                  }
+                }}
+                onBlur={() => setShowDatePicker(false)}
+                autoFocus
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  marginTop: 8,
+                  padding: 12,
+                  border: '1px solid #e5e7eb',
+                  borderRadius: 8,
+                  fontSize: 16,
+                  zIndex: 1000,
+                  backgroundColor: 'white',
+                  boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                } as any}
+              />
+            </View>
+          ) : (
+            <DateTimePicker
+              value={selectedDate}
+              mode="date"
+              display="default"
+              onChange={handleDateChange}
+              minimumDate={new Date()}
+            />
+          )
+        )}
         
         <View style={styles.headerRight}>
-          <TouchableOpacity style={styles.statsButton}>
-            <Feather name="bar-chart-2" size={20} color="#6b7280" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-            <Feather name="log-out" size={20} color="#ef4444" />
-          </TouchableOpacity>
+          {!user && (
+            <TouchableOpacity 
+              style={styles.loginButton} 
+              onPress={() => {
+                // @ts-ignore - navigation to Auth screen
+                navigation.navigate('Auth', { screen: 'Login' });
+              }}
+            >
+              <Feather name="log-in" size={20} color="#3b82f6" />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
       {/* Информация о пользователе */}
-      <View style={styles.userInfo}>
-        <Text style={styles.userGreeting}>Добро пожаловать!</Text>
-        <Text style={styles.userEmail}>{user?.email}</Text>
-        <View style={styles.scheduleStats}>
-          <Text style={styles.statsText}>
-            {schedule.length} активностей • {freeSlots.length} свободных окон
-          </Text>
+      {welcomeOpacity > 0 && (
+        <View style={[styles.userInfo, { opacity: welcomeOpacity }]}>
+          <Text style={styles.userGreeting}>Добро пожаловать!</Text>
+          <Text style={styles.userEmail}>{user?.email || 'Гость'}</Text>
+          <View style={styles.scheduleStats}>
+            <Text style={styles.statsText}>
+              {filteredSchedule.length} активностей • {freeSlots.length} свободных окон
+            </Text>
+          </View>
         </View>
-      </View>
+      )}
 
       {/* Временная шкала и активности */}
       <View style={styles.timelineContainer}>
@@ -243,6 +377,8 @@ const freeSlots = useMemo((): FreeSlot[] => {
             ref={activitiesScrollRef}
             onScroll={handleActivitiesScroll}
             scrollEventThrottle={16}
+            nestedScrollEnabled={true}
+            bounces={false}
           >
             <View style={[styles.activitiesContent, { height: TOTAL_HOURS * HOUR_HEIGHT }]}>
               {/* Текущее время индикатор */}
@@ -274,7 +410,7 @@ const freeSlots = useMemo((): FreeSlot[] => {
               ))}
               
               {/* Активности */}
-              {schedule.map((activity) => (
+              {filteredSchedule.map((activity) => (
                 <ActivityBlock
                   key={activity.id}
                   activity={activity}
@@ -286,7 +422,7 @@ const freeSlots = useMemo((): FreeSlot[] => {
                   positionToTime={positionToTime}
                   hourHeight={HOUR_HEIGHT}
                   isDragging={draggingActivityId === activity.id}
-                  allActivities={schedule}
+                  allActivities={filteredSchedule}
                 />
               ))}
             </View>
@@ -307,6 +443,7 @@ const freeSlots = useMemo((): FreeSlot[] => {
         visible={plannerVisible}
         onClose={handlePlannerClose}
         initialTimeSlot={selectedTimeSlot}
+        selectedDate={selectedDate}
       />
     </SafeAreaView>
   );
@@ -335,6 +472,10 @@ const styles = StyleSheet.create({
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
+  },
+  dateChevron: {
+    marginLeft: 8,
   },
   headerText: {
     marginLeft: 12,
@@ -364,10 +505,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#fef2f2',
     borderRadius: 8,
   },
+  loginButton: {
+    padding: 8,
+    backgroundColor: '#eff6ff',
+    borderRadius: 8,
+  },
   userInfo: {
     paddingHorizontal: 20,
     paddingVertical: 20,
-    backgroundColor: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    backgroundColor: '#667eea',
   },
   userGreeting: {
     fontSize: 18,
@@ -459,13 +605,20 @@ const styles = StyleSheet.create({
     backgroundColor: '#3b82f6',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    ...(Platform.OS === 'web' ? {
+      boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
+    } : {
+      shadowColor: '#000',
+      shadowOffset: {
+        width: 0,
+        height: 4,
+      },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 8,
+    }),
+  },
+  datePickerOverlay: {
+    position: 'relative',
   },
 });

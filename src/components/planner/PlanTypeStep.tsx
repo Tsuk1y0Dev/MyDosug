@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { usePlanner } from '../../services/planner/PlannerContext';
 import { Feather } from '@expo/vector-icons';
 
@@ -61,7 +61,15 @@ export const PlanTypeStep = () => {
           !planningRequest.planType && styles.nextButtonDisabled
         ]}
         disabled={!planningRequest.planType}
-        onPress={() => setCurrentStep(2)}
+        onPress={() => {
+          // Для одного мероприятия пропускаем шаг выбора времени
+          // Для цепочки - переходим к выбору времени
+          if (planningRequest.planType === 'single') {
+            setCurrentStep(2); // Пропускаем TimeSelectionStep, идем к ParametersStep
+          } else {
+            setCurrentStep(1); // Идем к TimeSelectionStep
+          }
+        }}
       >
         <Text style={styles.nextButtonText}>Продолжить</Text>
         <Feather name="arrow-right" size={20} color="white" />
@@ -73,11 +81,11 @@ export const PlanTypeStep = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
-    backgroundColor: 'white',
+    padding: 24,
+    backgroundColor: '#f8fafc',
   },
   title: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
     color: '#1f2937',
     marginBottom: 8,
@@ -86,23 +94,43 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: '#6b7280',
-    marginBottom: 40,
+    marginBottom: 32,
     textAlign: 'center',
+    lineHeight: 22,
   },
   options: {
     flex: 1,
-    gap: 20,
+    gap: 16,
+    justifyContent: 'center',
   },
   option: {
-    backgroundColor: '#f8fafc',
-    padding: 24,
-    borderRadius: 16,
+    backgroundColor: 'white',
+    padding: 28,
+    borderRadius: 20,
     borderWidth: 2,
-    borderColor: 'transparent',
+    borderColor: '#e5e7eb',
+    ...(Platform.OS === 'web' ? {
+      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+    } : {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.08,
+      shadowRadius: 8,
+      elevation: 3,
+    }),
   },
   optionSelected: {
     backgroundColor: '#eff6ff',
     borderColor: '#3b82f6',
+    ...(Platform.OS === 'web' ? {
+      boxShadow: '0 4px 12px rgba(59, 130, 246, 0.2)',
+    } : {
+      shadowColor: '#3b82f6',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.2,
+      shadowRadius: 12,
+      elevation: 5,
+    }),
   },
   optionIcon: {
     alignItems: 'center',

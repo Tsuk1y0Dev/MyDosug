@@ -20,7 +20,12 @@ export const PlannerContent: React.FC<PlannerContentProps> = ({ onPlanSaved }) =
       case 0:
         return <PlanTypeStep />;
       case 1:
-        return <TimeSelectionStep />;
+        // TimeSelectionStep только для цепочки мероприятий
+        if (planningRequest.planType === 'chain') {
+          return <TimeSelectionStep />;
+        }
+        // Для одного мероприятия пропускаем этот шаг
+        return <ParametersStep />;
       case 2:
         // Если выбран тип "custom", показываем CustomActivityStep
         if (planningRequest.activityType === 'custom') {
@@ -50,7 +55,6 @@ export const PlannerContent: React.FC<PlannerContentProps> = ({ onPlanSaved }) =
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'white',
-    paddingTop: 60,
+    backgroundColor: '#f8fafc',
   },
 });

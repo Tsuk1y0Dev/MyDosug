@@ -7,7 +7,8 @@ export interface Activity {
   type: 'meal' | 'custom' | 'activity';
   color?: string;
   duration?: number;
-  description?: string; 
+  description?: string;
+  date?: string; // ISO date string (YYYY-MM-DD)
 }
 
 export interface TimeSlot {

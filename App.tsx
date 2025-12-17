@@ -2,6 +2,7 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { AuthProvider, useAuth } from './src/services/auth/AuthContext';
 import { ScheduleProvider } from './src/services/schedule/ScheduleContext';
+import { FavoritesProvider } from './src/services/favorites/FavoritesContext';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { LoadingScreen } from './src/screens/common/LoadingScreen';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -19,13 +20,15 @@ function AppContent() {
 export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ScheduleProvider>
-        <AuthProvider>
-          <NavigationContainer>
-            <AppContent />
-          </NavigationContainer>
-        </AuthProvider>
-      </ScheduleProvider>
+      <AuthProvider>
+        <ScheduleProvider>
+          <FavoritesProvider>
+            <NavigationContainer>
+              <AppContent />
+            </NavigationContainer>
+          </FavoritesProvider>
+        </ScheduleProvider>
+      </AuthProvider>
     </GestureHandlerRootView>
   );
 }
