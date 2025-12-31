@@ -8,14 +8,23 @@ import { RootStackParamList } from './types';
 const Stack = createStackNavigator<RootStackParamList>();
 
 export const AppNavigator = () => {
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
+
+  // Показываем главный экран даже без авторизации (гостевой режим)
+  // Пользователь может использовать приложение, но избранное не будет работать
+  if (isLoading) {
+    return null; // Можно показать загрузку
+  }
 
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {user ? (
-        <Stack.Screen name="Main" component={MainNavigator} />
-      ) : (
-        <Stack.Screen name="Auth" component={AuthNavigator} />
+      <Stack.Screen name="Main" component={MainNavigator} />
+      {!user && (
+        <Stack.Screen 
+          name="Auth" 
+          component={AuthNavigator}
+          options={{ presentation: 'modal' }}
+        />
       )}
     </Stack.Navigator>
   );

@@ -1,5 +1,5 @@
-import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import React, { useState, useCallback, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, Alert } from 'react-native';
 import { PanGestureHandler } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
@@ -8,7 +8,7 @@ import Animated, {
   runOnJS,
   withSpring,
 } from 'react-native-reanimated';
-import { Activity } from '../types/schedule';
+import { Activity } from '../../types/schedule';
 import { MaterialIcons, Feather } from '@expo/vector-icons';
 
 interface ActivityBlockProps {
@@ -43,6 +43,12 @@ export const ActivityBlock: React.FC<ActivityBlockProps> = ({
   
   const startPosition = useSharedValue(timeToPosition(activity.startTime));
   const duration = useSharedValue(timeToPosition(activity.endTime) - timeToPosition(activity.startTime));
+  
+  // Обновляем позицию при изменении времени активности
+  useEffect(() => {
+    startPosition.value = timeToPosition(activity.startTime);
+    duration.value = timeToPosition(activity.endTime) - timeToPosition(activity.startTime);
+  }, [activity.startTime, activity.endTime, timeToPosition, startPosition, duration]);
 
   const getActivityColor = (type: Activity['type']) => {
     const colors = {
@@ -74,36 +80,64 @@ export const ActivityBlock: React.FC<ActivityBlockProps> = ({
 
   // Функция для обработки окончания перетаскивания
   const handleDragEnd = useCallback((newPosition: number) => {
-    const overlappingActivity = findOverlappingActivity(newPosition);
-    
-    if (overlappingActivity) {
-      // Если есть пересечение - обменяемся
-      onSwap(activity.id, overlappingActivity.id);
-    } else {
-      // Иначе просто перемещаем
-      const newStartTime = positionToTime(newPosition);
-      const newEndTime = positionToTime(newPosition + duration.value);
-      onDragEnd(activity.id, newStartTime, newEndTime);
+    try {
+      const overlappingActivity = findOverlappingActivity(newPosition);
+      
+      if (overlappingActivity) {
+        // Если есть пересечение - обменяемся
+        onSwap(activity.id, overlappingActivity.id);
+      } else {
+        // Иначе просто перемещаем
+        const newStartTime = positionToTime(newPosition);
+        const newEndTime = positionToTime(newPosition + duration.value);
+        onDragEnd(activity.id, newStartTime, newEndTime);
+      }
+      
+      setIsActiveDrag(false);
+    } catch (error) {
+      console.error('Error in handleDragEnd:', error);
+      setIsActiveDrag(false);
     }
-    
-    setIsActiveDrag(false);
   }, [findOverlappingActivity, onSwap, onDragEnd, activity.id, positionToTime, duration.value]);
 
   const gestureHandler = useAnimatedGestureHandler({
     onStart: () => {
-      setIsActiveDrag(true);
-      onDragStart(activity.id);
+      try {
+        runOnJS(setIsActiveDrag)(true);
+        runOnJS(onDragStart)(activity.id);
+      } catch (error) {
+        console.error('Error in gesture onStart:', error);
+      }
     },
     onActive: (event) => {
-      translateY.value = event.translationY;
+      try {
+        if (event.translationY !== undefined && !isNaN(event.translationY)) {
+          translateY.value = event.translationY;
+        }
+      } catch (error) {
+        console.error('Error in gesture onActive:', error);
+      }
     },
     onEnd: (event) => {
-      const newPosition = startPosition.value + event.translationY;
-      
-      // Используем runOnJS для вызова JS функции
-      runOnJS(handleDragEnd)(newPosition);
-      
+      try {
+        const newPosition = startPosition.value + (event.translationY || 0);
+        if (!isNaN(newPosition) && newPosition >= 0) {
+          runOnJS(handleDragEnd)(newPosition);
+        }
+        translateY.value = withSpring(0);
+      } catch (error) {
+        console.error('Error in gesture onEnd:', error);
+        translateY.value = withSpring(0);
+        runOnJS(setIsActiveDrag)(false);
+      }
+    },
+    onCancel: () => {
       translateY.value = withSpring(0);
+      runOnJS(setIsActiveDrag)(false);
+    },
+    onFail: () => {
+      translateY.value = withSpring(0);
+      runOnJS(setIsActiveDrag)(false);
     },
   });
 
@@ -140,13 +174,16 @@ export const ActivityBlock: React.FC<ActivityBlockProps> = ({
       handleDragEnd(newPosition);
     };
 
+    const topPosition = timeToPosition(activity.startTime);
+    const height = timeToPosition(activity.endTime) - timeToPosition(activity.startTime);
+    
     return (
       <View
         style={[
           styles.activityCard,
           {
-            top: timeToPosition(activity.startTime),
-            height: timeToPosition(activity.endTime) - timeToPosition(activity.startTime),
+            top: topPosition,
+            height: Math.max(height, 40), // Минимальная высота
             borderLeftColor: getActivityColor(activity.type),
           },
         ]}
@@ -164,7 +201,22 @@ export const ActivityBlock: React.FC<ActivityBlockProps> = ({
                 </TouchableOpacity>
               </View>
             </View>
-            <TouchableOpacity>
+            <TouchableOpacity onPress={(e) => {
+              e.stopPropagation();
+              Alert.alert(
+                activity.title,
+                `${activity.startTime} - ${activity.endTime}\n${activity.location || ''}`,
+                [
+                  { text: 'Изменить', onPress: () => onPress(activity) },
+                  { 
+                    text: 'Удалить', 
+                    style: 'destructive',
+                    onPress: () => onPress(activity)
+                  },
+                  { text: 'Отмена', style: 'cancel' }
+                ]
+              );
+            }}>
               <Feather name="more-vertical" size={16} color="#6b7280" />
             </TouchableOpacity>
           </View>
@@ -186,16 +238,20 @@ export const ActivityBlock: React.FC<ActivityBlockProps> = ({
   }
 
   // Для мобильных устройств используем жесты
+  const cardStyle = useAnimatedStyle(() => {
+    return {
+      top: startPosition.value,
+      height: duration.value,
+      borderLeftColor: getActivityColor(activity.type),
+    };
+  });
+  
   return (
     <PanGestureHandler onGestureEvent={gestureHandler}>
       <AnimatedView
         style={[
           styles.activityCard,
-          {
-            top: startPosition.value,
-            height: duration.value,
-            borderLeftColor: getActivityColor(activity.type),
-          },
+          cardStyle,
           animatedStyle,
         ]}
       >
@@ -204,7 +260,22 @@ export const ActivityBlock: React.FC<ActivityBlockProps> = ({
             <View style={styles.dragHandle}>
               <MaterialIcons name="drag-indicator" size={16} color="#6b7280" />
             </View>
-            <TouchableOpacity>
+            <TouchableOpacity onPress={(e) => {
+              e.stopPropagation();
+              Alert.alert(
+                activity.title,
+                `${activity.startTime} - ${activity.endTime}\n${activity.location || ''}`,
+                [
+                  { text: 'Изменить', onPress: () => onPress(activity) },
+                  { 
+                    text: 'Удалить', 
+                    style: 'destructive',
+                    onPress: () => onPress(activity)
+                  },
+                  { text: 'Отмена', style: 'cancel' }
+                ]
+              );
+            }}>
               <Feather name="more-vertical" size={16} color="#6b7280" />
             </TouchableOpacity>
           </View>
@@ -297,5 +368,8 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#9ca3af',
     fontStyle: 'italic',
+  },
+  moreButton: {
+    padding: 4,
   },
 });

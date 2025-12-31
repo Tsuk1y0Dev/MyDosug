@@ -6,7 +6,9 @@ export interface Activity {
   location?: string;
   type: 'meal' | 'custom' | 'activity';
   color?: string;
-  duration?: number; // Добавим длительность для удобства
+  duration?: number;
+  description?: string;
+  date?: string; // ISO date string (YYYY-MM-DD)
 }
 
 export interface TimeSlot {

@@ -1,7 +1,8 @@
 import React from 'react';
 import { TouchableOpacity, Text, StyleSheet, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { FreeSlot } from '../types/schedule';
+import { FreeSlot } from '../../types/schedule';
+import { colors } from '../../constants/colors';
 
 interface AddSlotButtonProps {
   slot: FreeSlot;
@@ -9,7 +10,10 @@ interface AddSlotButtonProps {
 }
 
 export const AddSlotButton: React.FC<AddSlotButtonProps> = ({ slot, onPress }) => {
-  const formatDuration = (durationMinutes: number) => {
+  // Конвертируем пиксели в минуты (80px = 1 час = 60 минут)
+  const HOUR_HEIGHT = 80;
+  const formatDuration = (durationPixels: number) => {
+    const durationMinutes = Math.round((durationPixels / HOUR_HEIGHT) * 60);
     const hours = Math.floor(durationMinutes / 60);
     const minutes = durationMinutes % 60;
     
@@ -31,7 +35,7 @@ export const AddSlotButton: React.FC<AddSlotButtonProps> = ({ slot, onPress }) =
       onPress={() => onPress(slot)}
     >
       <View style={styles.addSlotContent}>
-        <Feather name="plus" size={16} color="#6b7280" />
+        <Feather name="plus" size={16} color={colors.primary} />
         <Text style={styles.addSlotText}>
           Добавить активность ({formatDuration(slot.duration)})
         </Text>
@@ -46,10 +50,10 @@ const styles = StyleSheet.create({
     left: 8,
     right: 8,
     borderWidth: 2,
-    borderColor: '#e5e7eb',
+    borderColor: colors.border,
     borderStyle: 'dashed',
-    borderRadius: 8,
-    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    backgroundColor: colors.backgroundSecondary,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -61,7 +65,7 @@ const styles = StyleSheet.create({
   addSlotText: {
     marginLeft: 8,
     fontSize: 12,
-    color: '#6b7280',
+    color: colors.textSecondary,
     fontWeight: '500',
   },
 });
