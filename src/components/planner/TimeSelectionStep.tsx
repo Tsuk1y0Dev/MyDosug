@@ -5,6 +5,7 @@ import { useSchedule } from '../../services/schedule/ScheduleContext';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Feather } from '@expo/vector-icons';
 import { timeToMinutes, minutesToTime } from '../../utils/timingUtils';
+import { colors } from '../../constants/colors';
 
 export const TimeSelectionStep = () => {
   const { planningRequest, updatePlanningRequest, setCurrentStep } = usePlanner();
@@ -285,7 +286,6 @@ const findNextAvailableSlot = (desiredStart: string, duration: number): string =
                     });
                   }
                 }}
-                style={styles.webTimeInput}
               />
             ) : (
               <DateTimePicker
@@ -363,16 +363,28 @@ const findNextAvailableSlot = (desiredStart: string, duration: number): string =
         </Text>
       </View>
 
-      <TouchableOpacity 
-        style={[
-          styles.nextButton,
-          !isSlotAvailable && styles.nextButtonWarning
-        ]}
-        onPress={() => setCurrentStep(2)}
-      >
-        <Text style={styles.nextButtonText}>Продолжить</Text>
-        <Feather name="arrow-right" size={20} color="white" />
-      </TouchableOpacity>
+      <View style={styles.buttons}>
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => setCurrentStep(0)}
+          activeOpacity={0.7}
+        >
+          <Feather name="arrow-left" size={20} color="#3b82f6" />
+          <Text style={styles.backButtonText}>Назад</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={[
+            styles.nextButton,
+            !isSlotAvailable && styles.nextButtonWarning
+          ]}
+          onPress={() => setCurrentStep(2)}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.nextButtonText}>Продолжить</Text>
+          <Feather name="arrow-right" size={20} color="white" />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 };
@@ -381,7 +393,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 24,
-    backgroundColor: '#f8fafc',
+    backgroundColor: colors.backgroundSecondary,
   },
   title: {
     fontSize: 28,
@@ -563,17 +575,40 @@ const styles = StyleSheet.create({
   durationTextWarning: {
     color: '#92400e',
   },
+  buttons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 24,
+  },
+  backButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 18,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    backgroundColor: colors.background,
+  },
+  backButtonText: {
+    color: colors.primary,
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
   nextButton: {
-    backgroundColor: '#3b82f6',
+    flex: 2,
+    backgroundColor: colors.primary,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 18,
     borderRadius: 16,
     ...(Platform.OS === 'web' ? {
-      boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
+      boxShadow: `0 4px 12px ${colors.shadow}`,
     } : {
-      shadowColor: '#3b82f6',
+      shadowColor: colors.primary,
       shadowOffset: { width: 0, height: 4 },
       shadowOpacity: 0.3,
       shadowRadius: 12,
@@ -581,7 +616,7 @@ const styles = StyleSheet.create({
     }),
   },
   nextButtonWarning: {
-    backgroundColor: '#f59e0b',
+    backgroundColor: colors.warning,
   },
   nextButtonText: {
     color: 'white',

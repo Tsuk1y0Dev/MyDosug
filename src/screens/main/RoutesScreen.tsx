@@ -386,6 +386,11 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 120,
   },
+  favoriteImagePlaceholder: {
+    backgroundColor: '#f3f4f6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   favoriteInfo: {
     padding: 12,
   },

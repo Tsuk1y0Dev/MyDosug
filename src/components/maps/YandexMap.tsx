@@ -21,7 +21,9 @@ interface YandexMapProps {
 const { width } = Dimensions.get('window');
 
 
-const YANDEX_API_KEY = process.env.EXPO_PUBLIC_YANDEX_API_KEY || '9a022941-dd62-44b4-8f0f-349ebfe69e34';
+// API ключ должен быть в переменных окружения
+// Для разработки можно использовать fallback, но НЕ коммитить реальный ключ
+const YANDEX_API_KEY = process.env.EXPO_PUBLIC_YANDEX_API_KEY || '';
 
 export const YandexMap: React.FC<YandexMapProps> = ({
   center = { lat: 52.0339, lng: 113.5010 }, // Чита по умолчанию
@@ -94,7 +96,7 @@ export const YandexMap: React.FC<YandexMapProps> = ({
     `;
     }).join('\n');
 
-    const apiKey = YANDEX_API_KEY !== 'YOUR_API_KEY' ? `&apikey=${YANDEX_API_KEY}` : '';
+    const apiKey = YANDEX_API_KEY ? `&apikey=${YANDEX_API_KEY}` : '';
 
     return `
       <!DOCTYPE html>
@@ -213,11 +215,9 @@ export const YandexMap: React.FC<YandexMapProps> = ({
                 {markers.length} {markers.length === 1 ? 'место' : markers.length < 5 ? 'места' : 'мест'} на карте
               </Text>
             </View>
-            {YANDEX_API_KEY === 'YOUR_API_KEY' && (
-              <Text style={styles.mapOverlaySubtext}>
-                Нажмите на маркер для выбора места
-              </Text>
-            )}
+            <Text style={styles.mapOverlaySubtext}>
+              Нажмите на маркер для выбора места
+            </Text>
           </View>
         </View>
       </View>

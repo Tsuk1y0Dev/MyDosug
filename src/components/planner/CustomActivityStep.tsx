@@ -92,7 +92,10 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({ onPlanSa
       <View style={styles.header}>
         <TouchableOpacity 
           style={styles.headerBackButton}
-          onPress={() => setCurrentStep(2)}
+          onPress={() => {
+            // Возвращаемся к шагу параметров (шаг 2)
+            setCurrentStep(2);
+          }}
         >
           <Feather name="arrow-left" size={24} color="#374151" />
         </TouchableOpacity>
@@ -178,6 +181,7 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({ onPlanSa
             // Возвращаемся к шагу параметров (шаг 2)
             setCurrentStep(2);
           }}
+          activeOpacity={0.7}
         >
           <Feather name="arrow-left" size={20} color="#3b82f6" />
           <Text style={styles.backButtonText}>Назад</Text>

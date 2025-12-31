@@ -95,7 +95,11 @@ export const SearchScreen = () => {
       ]}
       onPress={() => setSelectedPlace(place)}
     >
-      <Image source={{ uri: place.image }} style={styles.placeImage} />
+      <Image 
+        source={{ uri: place.image }} 
+        style={styles.placeImage as any}
+        resizeMode="cover"
+      />
       <View style={styles.placeInfo}>
         <Text style={styles.placeName}>{place.name}</Text>
         <Text style={styles.placeAddress} numberOfLines={1}>
@@ -110,7 +114,7 @@ export const SearchScreen = () => {
             <Feather name="navigation" size={14} color="#6b7280" />
             <Text style={styles.metaText}>{place.distance} м</Text>
           </View>
-          {place.averageBill > 0 && (
+          {place.averageBill && place.averageBill > 0 && (
             <View style={styles.metaItem}>
               <Feather name="credit-card" size={14} color="#6b7280" />
               <Text style={styles.metaText}>~{place.averageBill}₽</Text>
@@ -289,7 +293,11 @@ export const SearchScreen = () => {
             <Feather name="x" size={24} color="#374151" />
           </TouchableOpacity>
           <ScrollView>
-            <Image source={{ uri: selectedPlace.image }} style={styles.detailsImage} />
+            <Image 
+              source={{ uri: selectedPlace.image }} 
+              style={styles.detailsImage as any}
+              resizeMode="cover"
+            />
             <View style={styles.detailsContent}>
               <Text style={styles.detailsName}>{selectedPlace.name}</Text>
               <Text style={styles.detailsDescription}>{selectedPlace.description}</Text>
@@ -455,10 +463,35 @@ const styles = StyleSheet.create({
   placesList: {
     flex: 1,
     padding: 16,
-    ...(Platform.OS === 'web' ? {
-      overflowY: 'auto',
-      maxHeight: 'calc(100vh - 200px)',
-    } : {}),
+  },
+  mapFullContainer: {
+    flex: 1,
+  },
+  mapEmpty: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+  },
+  mapEmptyText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#6b7280',
+  },
+  listFullContainer: {
+    flex: 1,
+  },
+  listHeader: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#f8fafc',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  listHeaderTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
   },
   resultsCount: {
     fontSize: 14,
@@ -657,6 +690,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#e5e7eb',
+    backgroundColor: 'white',
   },
   ratingButtonActive: {
     backgroundColor: '#fef3c7',
@@ -674,7 +708,7 @@ const styles = StyleSheet.create({
     borderColor: '#e5e7eb',
     borderRadius: 8,
     padding: 12,
-    fontSize: 16,
+    fontSize: 14,
     backgroundColor: 'white',
   },
   priceSeparator: {
@@ -706,59 +740,6 @@ const styles = StyleSheet.create({
   },
   distanceButtonTextActive: {
     color: 'white',
-  },
-  ratingContainer: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 8,
-  },
-  ratingButton: {
-    padding: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    backgroundColor: 'white',
-  },
-  ratingButtonActive: {
-    backgroundColor: '#fef3c7',
-    borderColor: '#f59e0b',
-  },
-  priceInputs: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginTop: 8,
-  },
-  priceInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 14,
-    backgroundColor: 'white',
-  },
-  priceSeparator: {
-    fontSize: 16,
-    color: '#6b7280',
-  },
-  advancedToggle: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
-    marginTop: 8,
-  },
-  advancedToggleText: {
-    fontSize: 14,
-    color: '#374151',
-    fontWeight: '500',
-  },
-  advancedFilters: {
-    paddingTop: 12,
   },
   featuresFilters: {
     flexDirection: 'row',

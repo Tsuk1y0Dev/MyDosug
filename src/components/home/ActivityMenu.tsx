@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Activity } from '../../types/schedule';
+import { colors } from '../../constants/colors';
 
 interface ActivityMenuProps {
   visible: boolean;
@@ -48,13 +49,13 @@ export const ActivityMenu: React.FC<ActivityMenuProps> = ({
             onPress={handleEdit}
           >
             <View style={styles.menuItemIcon}>
-              <Feather name="edit-2" size={20} color="#3b82f6" />
+              <Feather name="edit-2" size={20} color={colors.primary} />
             </View>
             <View style={styles.menuItemContent}>
               <Text style={styles.menuItemTitle}>Редактировать</Text>
               <Text style={styles.menuItemSubtitle}>Изменить время или детали</Text>
             </View>
-            <Feather name="chevron-right" size={20} color="#9ca3af" />
+            <Feather name="chevron-right" size={20} color={colors.textTertiary} />
           </TouchableOpacity>
 
           <View style={styles.separator} />
@@ -64,7 +65,7 @@ export const ActivityMenu: React.FC<ActivityMenuProps> = ({
             onPress={handleDelete}
           >
             <View style={[styles.menuItemIcon, styles.menuItemIconDanger]}>
-              <Feather name="trash-2" size={20} color="#ef4444" />
+              <Feather name="trash-2" size={20} color={colors.error} />
             </View>
             <View style={styles.menuItemContent}>
               <Text style={[styles.menuItemTitle, styles.menuItemTitleDanger]}>Удалить</Text>
@@ -91,7 +92,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   menuContainer: {
-    backgroundColor: 'white',
+    backgroundColor: colors.background,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 20,
@@ -99,7 +100,7 @@ const styles = StyleSheet.create({
     ...(Platform.OS === 'web' ? {
       boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.15)',
     } : {
-      shadowColor: '#000',
+      shadowColor: colors.shadowDark,
       shadowOffset: { width: 0, height: -4 },
       shadowOpacity: 0.15,
       shadowRadius: 20,
@@ -111,7 +112,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     borderRadius: 12,
-    backgroundColor: '#f8fafc',
+    backgroundColor: colors.backgroundSecondary,
     marginBottom: 8,
   },
   menuItemDanger: {
@@ -135,32 +136,32 @@ const styles = StyleSheet.create({
   menuItemTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1f2937',
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   menuItemTitleDanger: {
-    color: '#ef4444',
+    color: colors.error,
   },
   menuItemSubtitle: {
     fontSize: 12,
-    color: '#6b7280',
+    color: colors.textSecondary,
   },
   separator: {
     height: 1,
-    backgroundColor: '#e5e7eb',
+    backgroundColor: colors.border,
     marginVertical: 8,
   },
   cancelButton: {
     marginTop: 8,
     padding: 16,
     borderRadius: 12,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.backgroundTertiary,
     alignItems: 'center',
   },
   cancelButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#374151',
+    color: colors.textPrimary,
   },
 });
 

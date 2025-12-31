@@ -494,7 +494,16 @@ export const ParametersStep = () => {
         <View style={styles.buttons}>
           <TouchableOpacity 
             style={styles.backButton}
-            onPress={() => setCurrentStep(1)}
+            onPress={() => {
+              // Если planType === 'chain', возвращаемся к шагу выбора времени (1)
+              // Если planType === 'single', возвращаемся к шагу выбора типа плана (0)
+              if (planningRequest.planType === 'chain') {
+                setCurrentStep(1);
+              } else {
+                setCurrentStep(0);
+              }
+            }}
+            activeOpacity={0.7}
           >
             <Feather name="arrow-left" size={20} color="#3b82f6" />
             <Text style={styles.backButtonText}>Назад</Text>
@@ -504,12 +513,14 @@ export const ParametersStep = () => {
             style={styles.searchButton}
             onPress={() => {
               if (planningRequest.activityType === 'custom') {
-                // Для кастомной активности переходим к созданию
-                setCurrentStep(3);
+                // Для кастомной активности переходим к созданию (шаг 2)
+                setCurrentStep(2);
               } else {
+                // Для обычных активностей ищем места (шаг 3)
                 searchPlaces();
               }
             }}
+            activeOpacity={0.8}
           >
             <Text style={styles.searchButtonText}>
               {planningRequest.activityType === 'custom' ? 'Создать активность' : 'Найти места'}

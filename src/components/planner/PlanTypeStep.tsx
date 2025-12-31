@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { usePlanner } from '../../services/planner/PlannerContext';
 import { Feather } from '@expo/vector-icons';
+import { colors } from '../../constants/colors';
 
 export const PlanTypeStep = () => {
   const { planningRequest, updatePlanningRequest, setCurrentStep } = usePlanner();
@@ -82,7 +83,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 24,
-    backgroundColor: '#f8fafc',
+    backgroundColor: colors.backgroundSecondary,
   },
   title: {
     fontSize: 28,
@@ -158,16 +159,25 @@ const styles = StyleSheet.create({
     color: '#6b7280',
   },
   nextButton: {
-    backgroundColor: '#3b82f6',
+    backgroundColor: colors.primary,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 16,
     borderRadius: 12,
     marginTop: 20,
+    ...(Platform.OS === 'web' ? {
+      boxShadow: `0 4px 12px ${colors.shadow}`,
+    } : {
+      shadowColor: colors.primary,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 12,
+      elevation: 5,
+    }),
   },
   nextButtonDisabled: {
-    backgroundColor: '#9ca3af',
+    backgroundColor: colors.textTertiary,
   },
   nextButtonText: {
     color: 'white',

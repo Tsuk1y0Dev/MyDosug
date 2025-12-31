@@ -1,5 +1,5 @@
-import React, { createContext, useState, useContext, ReactNode } from 'react';
-import { Alert } from 'react-native'; // Добавьте этот импорт
+import React, { createContext, useState, useContext, ReactNode, useMemo, useCallback } from 'react';
+import { Alert } from 'react-native';
 import { 
   PlanningRequest, 
   Place, 
@@ -13,6 +13,7 @@ import {
 } from '../../types/planner';
 import { mockPlaces, mockStartPoints } from '../../data/mockPlaces';
 import { calculateDuration } from '../../types/planner';
+import { timeToMinutes, minutesToTime } from '../../utils/timingUtils';
 
 interface PlannerContextType {
   currentStep: number;
@@ -96,18 +97,12 @@ export const PlannerProvider = ({ children, initialTimeSlot, selectedDate }: Pla
   });
 
   // Генератор уникальных ID
-  const generateUniqueId = () => {
+  const generateUniqueId = useCallback(() => {
     return `activity-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  };
+  }, []);
 
-  // Вспомогательная функция для преобразования времени в минуты
-  const timeToMinutes = (time: string): number => {
-    const [hours, minutes] = time.split(':').map(Number);
-    return hours * 60 + minutes;
-  };
-
-  // Функция для расчета расстояния между двумя точками по координатам
-  const calculateDistance = (from: { lat: number; lng: number }, to: { lat: number; lng: number }): number => {
+  // Функция для расчета расстояния между двумя точками по координатам (формула гаверсинуса)
+  const calculateDistance = useCallback((from: { lat: number; lng: number }, to: { lat: number; lng: number }): number => {
     const R = 6371; // Радиус Земли в км
     const dLat = (to.lat - from.lat) * Math.PI / 180;
     const dLon = (to.lng - from.lng) * Math.PI / 180;
@@ -118,28 +113,28 @@ export const PlannerProvider = ({ children, initialTimeSlot, selectedDate }: Pla
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     const distance = R * c; // Расстояние в км
     return Math.round(distance * 1000); // Переводим в метры
-  };
+  }, []);
 
   // Функция для расчета времени пути между двумя местами
-  const calculateTravelTime = (from: Place, to: Place): number => {
+  const calculateTravelTime = useCallback((from: Place, to: Place): number => {
     const distance = calculateDistance(from.coordinates, to.coordinates);
     // Предполагаем среднюю скорость 5 км/ч для пешехода
     const timeInMinutes = Math.round((distance / 5000) * 60);
     return Math.max(5, Math.min(timeInMinutes, 120)); // Минимум 5 минут, максимум 2 часа
-  };
+  }, [calculateDistance]);
 
   // Функция для расчета общей продолжительности плана
-  const calculateTotalDuration = (activities: PlannedActivity[]): number => {
+  const calculateTotalDuration = useCallback((activities: PlannedActivity[]): number => {
     if (activities.length === 0) return 0;
     
     const firstActivity = activities[0];
     const lastActivity = activities[activities.length - 1];
     
-    const [startH, startM] = firstActivity.startTime.split(':').map(Number);
-    const [endH, endM] = lastActivity.endTime.split(':').map(Number);
+    const startMin = timeToMinutes(firstActivity.startTime);
+    const endMin = timeToMinutes(lastActivity.endTime);
     
-    return (endH * 60 + endM) - (startH * 60 + startM);
-  };
+    return endMin - startMin;
+  }, []);
 
   const updatePlanningRequest = (updates: Partial<PlanningRequest>) => {
     setPlanningRequest(prev => ({ ...prev, ...updates }));
@@ -253,19 +248,14 @@ export const PlannerProvider = ({ children, initialTimeSlot, selectedDate }: Pla
       travelTimeFromPrevious = calculateTravelTime(lastActivity.place, place);
       
       // Время начала = время окончания предыдущей активности + время пути
-      const [prevHours, prevMinutes] = lastActivity.endTime.split(':').map(Number);
-      const totalMinutes = prevHours * 60 + prevMinutes + travelTimeFromPrevious;
-      const hours = Math.floor(totalMinutes / 60);
-      const minutes = totalMinutes % 60;
-      startTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+      const prevMinutes = timeToMinutes(lastActivity.endTime);
+      const totalMinutes = prevMinutes + travelTimeFromPrevious;
+      startTime = minutesToTime(totalMinutes);
     }
 
     // Время окончания = время начала + продолжительность (автоматически из настроек места)
-    const [startHours, startMinutes] = startTime.split(':').map(Number);
-    const endTotalMinutes = startHours * 60 + startMinutes + duration;
-    const endHours = Math.floor(endTotalMinutes / 60);
-    const endMinutes = endTotalMinutes % 60;
-    const endTime = `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
+    const startMinutes = timeToMinutes(startTime);
+    const endTime = minutesToTime(startMinutes + duration);
 
     // Для одного мероприятия всегда возвращаем предложенное время для модального окна
     // Для цепочки - возвращаем только если это первая активность или пользователь хочет изменить
@@ -316,23 +306,17 @@ export const PlannerProvider = ({ children, initialTimeSlot, selectedDate }: Pla
       } else {
         const prevActivity = updatedActivities[index - 1];
         const travelTime = calculateTravelTime(prevActivity.place, activity.place);
-        const [prevHours, prevMinutes] = prevActivity.endTime.split(':').map(Number);
-        const totalMinutes = prevHours * 60 + prevMinutes + travelTime;
-        const hours = Math.floor(totalMinutes / 60);
-        const minutes = totalMinutes % 60;
-        currentTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+        const prevMinutes = timeToMinutes(prevActivity.endTime);
+        currentTime = minutesToTime(prevMinutes + travelTime);
       }
 
-      const [startHours, startMinutes] = currentTime.split(':').map(Number);
+      const startMinutes = timeToMinutes(currentTime);
       const activityDuration = calculateDuration(
         activity.place.durationSettings,
         planningRequest.company || 'friends',
         planningRequest.mood || 'fun'
       );
-      const endTotalMinutes = startHours * 60 + startMinutes + activityDuration;
-      const endHours = Math.floor(endTotalMinutes / 60);
-      const endMinutes = endTotalMinutes % 60;
-      const endTime = `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
+      const endTime = minutesToTime(startMinutes + activityDuration);
 
       return {
         ...activity,
@@ -364,23 +348,17 @@ export const PlannerProvider = ({ children, initialTimeSlot, selectedDate }: Pla
       } else {
         const prevActivity = activities[index - 1];
         const travelTime = calculateTravelTime(prevActivity.place, activity.place);
-        const [prevHours, prevMinutes] = prevActivity.endTime.split(':').map(Number);
-        const totalMinutes = prevHours * 60 + prevMinutes + travelTime;
-        const hours = Math.floor(totalMinutes / 60);
-        const minutes = totalMinutes % 60;
-        currentTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+        const prevMinutes = timeToMinutes(prevActivity.endTime);
+        currentTime = minutesToTime(prevMinutes + travelTime);
       }
 
-      const [startHours, startMinutes] = currentTime.split(':').map(Number);
+      const startMinutes = timeToMinutes(currentTime);
       const activityDuration = calculateDuration(
         activity.place.durationSettings,
         planningRequest.company || 'friends',
         planningRequest.mood || 'fun'
       );
-      const endTotalMinutes = startHours * 60 + startMinutes + activityDuration;
-      const endHours = Math.floor(endTotalMinutes / 60);
-      const endMinutes = endTotalMinutes % 60;
-      const endTime = `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
+      const endTime = minutesToTime(startMinutes + activityDuration);
 
       return {
         ...activity,
