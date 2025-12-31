@@ -21,18 +21,15 @@ export interface Place {
   type: ActivityType;
   address: string;
   description: string;
-  priceLevel: number;
+  priceLevel: 1 | 2 | 3 | 4;
   averageBill?: number;
   rating: number;
   distance: number;
   travelTime: number;
-  durationSettings?: {
-    baseDuration: number;
-    modifiers?: Record<string, any>;
-  };
-  image?: string;
+  durationSettings: DurationSettings;
+  image: string;
   website?: string;
-  workingHours?: string;
+  workingHours: string;
   features: {
     wheelchair: boolean;
     vegetarian: boolean;
@@ -53,14 +50,67 @@ export interface RouteActivity {
 
 export interface RoutePlan {
   id: string;
-  activities: RouteActivity[];
+  activities: PlannedActivity[];
   totalDuration: number;
   totalCost: number;
-  startPoint?: { type: string; address: string };
+  startPoint: StartPoint;
 }
 
 export interface StartPoint {
   type: 'home' | 'work' | 'current' | 'custom';
   address: string;
   label?: string;
+  coordinates?: {
+    lat: number;
+    lng: number;
+  };
 }
+
+export interface PlanningRequest {
+  startTime: string;
+  endTime: string;
+  startPoint: StartPoint;
+  budget: number;
+  activityType: ActivityType;
+  planType?: 'single' | 'chain';
+  mood?: MoodType;
+  company?: CompanyType;
+  filters: AdditionalFilters;
+}
+
+export interface AdditionalFilters {
+  wheelchairAccessible: boolean;
+  vegetarian: boolean;
+  outdoor: boolean;
+  freeEntry: boolean;
+  childFriendly: boolean;
+}
+
+export interface DurationSettings {
+  baseDuration: number;
+  modifiers: {
+    company: Record<CompanyType, number>;
+    mood: Record<MoodType, number>;
+  };
+}
+
+export interface PlannedActivity {
+  id: string;
+  place: Place;
+  startTime: string;
+  endTime: string;
+  travelTimeFromPrevious: number;
+  order: number;
+}
+
+export const calculateDuration = (
+  durationSettings: DurationSettings,
+  company: CompanyType,
+  mood: MoodType
+): number => {
+  const base = durationSettings.baseDuration;
+  const companyModifier = durationSettings.modifiers.company[company] || 1;
+  const moodModifier = durationSettings.modifiers.mood[mood] || 1;
+  
+  return Math.round(base * companyModifier * moodModifier);
+};
