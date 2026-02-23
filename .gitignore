@@ -326,8 +326,18 @@ Desktop.ini
 # EAS
 .eas/
 
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
 # Misc
 *.pem
 *.orig.*
 *.jks
 *.mobileprovision
+
+# Konkurs
+konkurs/
