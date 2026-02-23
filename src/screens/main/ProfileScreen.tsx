@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   View, 
   Text, 
@@ -18,22 +18,14 @@ import { RootStackParamList } from '../../navigation/types';
 import { Feather } from '@expo/vector-icons';
 import { mockStartPoints } from '../../data/mockPlaces';
 import { StartPoint } from '../../types/planner';
+import { useUser } from '../../context/UserContext';
 
 type ProfileScreenNavigationProp = StackNavigationProp<RootStackParamList>;
-
-interface UserSettings {
-  defaultStartPoint: StartPoint;
-  defaultTransportMode: 'walking' | 'car' | 'public';
-  notificationsEnabled: boolean;
-  accessibilityMode: boolean;
-  vegetarian: boolean;
-  wheelchairAccessible: boolean;
-  averageWalkingTime: number; // в минутах
-}
 
 export const ProfileScreen = () => {
   const { user, logout } = useAuth();
   const navigation = useNavigation<ProfileScreenNavigationProp>();
+  const { profile, updateProfile, addSavedLocation, removeSavedLocation, updateAccessibilitySettings } = useUser();
 
   // Редирект на авторизацию, если пользователь не залогинен
   useEffect(() => {
@@ -42,17 +34,47 @@ export const ProfileScreen = () => {
       navigation.navigate('Auth', { screen: 'Login' });
     }
   }, [user, navigation]);
-  const [settings, setSettings] = useState<UserSettings>({
-    defaultStartPoint: mockStartPoints[0],
-    defaultTransportMode: 'walking',
+  const [settings, setSettings] = useState<{
+    defaultStartPoint: StartPoint;
+    defaultTransportMode: 'walking' | 'car' | 'public';
+    notificationsEnabled: boolean;
+    vegetarian: boolean;
+    wheelchairAccessible: boolean;
+    averageWalkingTime: number;
+  }>({
+    defaultStartPoint: mockStartPoints[0] as StartPoint,
+    defaultTransportMode: 'walking' as 'walking' | 'car' | 'public',
     notificationsEnabled: true,
-    accessibilityMode: false,
     vegetarian: false,
     wheelchairAccessible: false,
-    averageWalkingTime: 15, // минут
+    averageWalkingTime: 15,
   });
   const [editingWalkingTime, setEditingWalkingTime] = useState(false);
   const [walkingTimeInput, setWalkingTimeInput] = useState(settings.averageWalkingTime.toString());
+  const [newLocationName, setNewLocationName] = useState('');
+  const [newLocationType, setNewLocationType] = useState<'home' | 'office' | 'hotel' | 'other'>('home');
+
+  useEffect(() => {
+    if (profile) {
+      const fallback = mockStartPoints[0];
+      const fromProfile = profile.defaultStartPoint as StartPoint | undefined;
+      const nextStartPoint: StartPoint =
+        fromProfile && ['home', 'work', 'current', 'custom'].includes(fromProfile.type)
+          ? fromProfile
+          : (fallback as StartPoint);
+
+      setSettings(prev => ({
+        ...prev,
+        defaultStartPoint: nextStartPoint,
+        defaultTransportMode: profile.defaultTransportMode,
+        notificationsEnabled: profile.notificationsEnabled,
+        vegetarian: profile.vegetarian,
+        wheelchairAccessible: profile.wheelchairAccessible,
+        averageWalkingTime: profile.averageWalkingTime,
+      }));
+      setWalkingTimeInput(String(profile.averageWalkingTime));
+    }
+  }, [profile]);
 
   const handleLogout = async () => {
     Alert.alert(
@@ -77,10 +99,41 @@ export const ProfileScreen = () => {
     const time = parseInt(walkingTimeInput, 10);
     if (!isNaN(time) && time > 0 && time <= 120) {
       setSettings(prev => ({ ...prev, averageWalkingTime: time }));
+      updateProfile({ averageWalkingTime: time });
       setEditingWalkingTime(false);
     } else {
       Alert.alert('Ошибка', 'Введите корректное значение (1-120 минут)');
     }
+  };
+
+  const savedLocations = useMemo(
+    () => profile?.savedLocations || [],
+    [profile]
+  );
+
+  const handleAddLocation = () => {
+    if (!newLocationName.trim()) {
+      Alert.alert('Ошибка', 'Введите название точки');
+      return;
+    }
+    // Заглушка: в реальном приложении сюда попадут координаты от карты/геопозиции
+    addSavedLocation({
+      type: newLocationType,
+      name: newLocationName.trim(),
+      icon:
+        newLocationType === 'home'
+          ? '🏠'
+          : newLocationType === 'office'
+          ? '💼'
+          : newLocationType === 'hotel'
+          ? '🏨'
+          : '📍',
+      coords: {
+        lat: 52.03,
+        lng: 113.5,
+      },
+    });
+    setNewLocationName('');
   };
 
 
@@ -157,6 +210,25 @@ export const ProfileScreen = () => {
           </View>
           <Text style={styles.userName}>{user?.name || 'Пользователь'}</Text>
           <Text style={styles.userEmail}>{user?.email}</Text>
+          {profile?.accessibilitySettings && (
+            <View style={styles.profileChips}>
+              {profile.accessibilitySettings.needsRamp && (
+                <View style={styles.profileChip}>
+                  <Text style={styles.profileChipText}>♿ Нужен пандус</Text>
+                </View>
+              )}
+              {profile.accessibilitySettings.needsElevator && (
+                <View style={styles.profileChip}>
+                  <Text style={styles.profileChipText}>⬆ Нужен лифт</Text>
+                </View>
+              )}
+              {settings.vegetarian && (
+                <View style={styles.profileChip}>
+                  <Text style={styles.profileChipText}>🌱 Вегетарианец</Text>
+                </View>
+              )}
+            </View>
+          )}
         </View>
 
         {/* Настройки по умолчанию */}
@@ -174,7 +246,10 @@ export const ProfileScreen = () => {
                 [
                   ...mockStartPoints.map(point => ({
                     text: point.label,
-                    onPress: () => setSettings(prev => ({ ...prev, defaultStartPoint: point }))
+                    onPress: () => {
+                      setSettings(prev => ({ ...prev, defaultStartPoint: point }));
+                      updateProfile({ defaultStartPoint: point });
+                    }
                   })),
                   { text: 'Отмена', style: 'cancel' }
                 ]
@@ -234,9 +309,27 @@ export const ProfileScreen = () => {
                 'Режим транспорта',
                 'Выберите режим транспорта по умолчанию',
                 [
-                  { text: 'Пешком', onPress: () => setSettings(prev => ({ ...prev, defaultTransportMode: 'walking' })) },
-                  { text: 'На машине', onPress: () => setSettings(prev => ({ ...prev, defaultTransportMode: 'car' })) },
-                  { text: 'Общественный транспорт', onPress: () => setSettings(prev => ({ ...prev, defaultTransportMode: 'public' })) },
+                  {
+                    text: 'Пешком',
+                    onPress: () => {
+                      setSettings(prev => ({ ...prev, defaultTransportMode: 'walking' }));
+                      updateProfile({ defaultTransportMode: 'walking' });
+                    },
+                  },
+                  {
+                    text: 'На машине',
+                    onPress: () => {
+                      setSettings(prev => ({ ...prev, defaultTransportMode: 'car' }));
+                      updateProfile({ defaultTransportMode: 'car' });
+                    },
+                  },
+                  {
+                    text: 'Общественный транспорт',
+                    onPress: () => {
+                      setSettings(prev => ({ ...prev, defaultTransportMode: 'public' }));
+                      updateProfile({ defaultTransportMode: 'public' });
+                    },
+                  },
                   { text: 'Отмена', style: 'cancel' }
                 ]
               );
@@ -251,15 +344,31 @@ export const ProfileScreen = () => {
           <SwitchRow
             label="Вегетарианец"
             value={settings.vegetarian}
-            onValueChange={(value) => setSettings(prev => ({ ...prev, vegetarian: value }))}
+            onValueChange={(value) => {
+              setSettings(prev => ({ ...prev, vegetarian: value }));
+              updateProfile({ vegetarian: value });
+            }}
             icon="heart"
           />
 
           <SwitchRow
             label="Требуется доступность для инвалидных колясок"
             value={settings.wheelchairAccessible}
-            onValueChange={(value) => setSettings(prev => ({ ...prev, wheelchairAccessible: value }))}
+            onValueChange={(value) => {
+              setSettings(prev => ({ ...prev, wheelchairAccessible: value }));
+              updateProfile({ wheelchairAccessible: value });
+              updateAccessibilitySettings({ needsRamp: value });
+            }}
             icon="user"
+          />
+
+          <SwitchRow
+            label="Нужен лифт (этажность, ТЦ)"
+            value={profile?.accessibilitySettings.needsElevator || false}
+            onValueChange={(value) => {
+              updateAccessibilitySettings({ needsElevator: value });
+            }}
+            icon="activity"
           />
         </View>
 
@@ -270,9 +379,84 @@ export const ProfileScreen = () => {
           <SwitchRow
             label="Уведомления"
             value={settings.notificationsEnabled}
-            onValueChange={(value) => setSettings(prev => ({ ...prev, notificationsEnabled: value }))}
+            onValueChange={(value) => {
+              setSettings(prev => ({ ...prev, notificationsEnabled: value }));
+              updateProfile({ notificationsEnabled: value });
+            }}
             icon="bell"
           />
+        </View>
+
+        {/* Любимые места */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Любимые места</Text>
+
+          <View style={styles.savedLocationInputRow}>
+            <TextInput
+              style={styles.savedLocationInput}
+              placeholder="Название точки (Дом, Офис, Отель)..."
+              value={newLocationName}
+              onChangeText={setNewLocationName}
+            />
+          </View>
+
+          <View style={styles.savedLocationTypeRow}>
+            {[
+              { type: 'home' as const, label: 'Дом', icon: '🏠' },
+              { type: 'office' as const, label: 'Офис', icon: '💼' },
+              { type: 'hotel' as const, label: 'Отель', icon: '🏨' },
+              { type: 'other' as const, label: 'Другое', icon: '📍' },
+            ].map(option => (
+              <TouchableOpacity
+                key={option.type}
+                style={[
+                  styles.locationTypeChip,
+                  newLocationType === option.type && styles.locationTypeChipActive,
+                ]}
+                onPress={() => setNewLocationType(option.type)}
+              >
+                <Text style={styles.locationTypeChipIcon}>{option.icon}</Text>
+                <Text
+                  style={[
+                    styles.locationTypeChipText,
+                    newLocationType === option.type && styles.locationTypeChipTextActive,
+                  ]}
+                >
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <TouchableOpacity style={styles.addLocationButton} onPress={handleAddLocation}>
+            <Feather name="plus-circle" size={18} color="#3b82f6" />
+            <Text style={styles.addLocationButtonText}>Добавить точку</Text>
+          </TouchableOpacity>
+
+          {savedLocations.length === 0 ? (
+            <Text style={styles.savedLocationEmpty}>
+              Добавьте любимые точки (дом, офис, отель), чтобы быстрее строить маршруты.
+            </Text>
+          ) : (
+            <View style={styles.savedLocationList}>
+              {savedLocations.map(location => (
+                <View key={location.id} style={styles.savedLocationRow}>
+                  <View style={styles.savedLocationLeft}>
+                    <Text style={styles.savedLocationIcon}>{location.icon}</Text>
+                    <View>
+                      <Text style={styles.savedLocationName}>{location.name}</Text>
+                      <Text style={styles.savedLocationCoords}>
+                        {location.coords.lat.toFixed(3)}, {location.coords.lng.toFixed(3)}
+                      </Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity onPress={() => removeSavedLocation(location.id)}>
+                    <Feather name="trash-2" size={18} color="#ef4444" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
 
         {/* Дополнительные действия */}
@@ -343,6 +527,23 @@ const styles = StyleSheet.create({
   userEmail: {
     fontSize: 14,
     color: '#6b7280',
+  },
+  profileChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  profileChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#eff6ff',
+  },
+  profileChipText: {
+    fontSize: 12,
+    color: '#1d4ed8',
+    fontWeight: '500',
   },
   section: {
     backgroundColor: 'white',
@@ -459,5 +660,98 @@ const styles = StyleSheet.create({
   footerText: {
     fontSize: 12,
     color: '#9ca3af',
+  },
+  savedLocationInputRow: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+  },
+  savedLocationInput: {
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#f9fafb',
+    fontSize: 14,
+  },
+  savedLocationTypeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+  },
+  locationTypeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: 'white',
+    gap: 4,
+  },
+  locationTypeChipActive: {
+    backgroundColor: '#eff6ff',
+    borderColor: '#3b82f6',
+  },
+  locationTypeChipIcon: {
+    fontSize: 14,
+  },
+  locationTypeChipText: {
+    fontSize: 13,
+    color: '#374151',
+  },
+  locationTypeChipTextActive: {
+    color: '#1d4ed8',
+    fontWeight: '600',
+  },
+  addLocationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
+  addLocationButtonText: {
+    fontSize: 14,
+    color: '#3b82f6',
+    fontWeight: '600',
+  },
+  savedLocationEmpty: {
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+    fontSize: 13,
+    color: '#6b7280',
+  },
+  savedLocationList: {
+    paddingHorizontal: 20,
+    paddingBottom: 8,
+  },
+  savedLocationRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  savedLocationLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  savedLocationIcon: {
+    fontSize: 18,
+  },
+  savedLocationName: {
+    fontSize: 14,
+    color: '#111827',
+    fontWeight: '500',
+  },
+  savedLocationCoords: {
+    fontSize: 12,
+    color: '#6b7280',
   },
 });
