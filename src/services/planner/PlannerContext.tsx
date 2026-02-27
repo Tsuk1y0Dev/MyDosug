@@ -1,18 +1,17 @@
 import React, { createContext, useState, useContext, ReactNode, useMemo, useCallback } from 'react';
 import { Alert } from 'react-native';
-import { 
-  PlanningRequest, 
-  Place, 
-  PlannedActivity, 
+import {
+  PlanningRequest,
+  Place,
+  PlannedActivity,
   RoutePlan,
   StartPoint,
   ActivityType,
   MoodType,
   CompanyType,
-  AdditionalFilters
+  AdditionalFilters,
 } from '../../types/planner';
 import { SearchCriteria } from '../../types/searchCriteria';
-import { mockPlaces, mockStartPoints } from '../../data/mockPlaces';
 import { calculateDuration } from '../../types/planner';
 import { timeToMinutes, minutesToTime } from '../../utils/timingUtils';
 
@@ -48,7 +47,11 @@ const PlannerContext = createContext<PlannerContextType | undefined>(undefined);
 const defaultPlanningRequest: PlanningRequest = {
   startTime: '15:00',
   endTime: '16:00',
-  startPoint: mockStartPoints[0],
+  startPoint: {
+    type: 'current',
+    address: '',
+    label: 'Текущая позиция',
+  } as StartPoint,
   budget: 2000,
   activityType: 'food',
   mood: 'fun',
@@ -67,7 +70,11 @@ const defaultPlan: RoutePlan = {
   activities: [],
   totalDuration: 0,
   totalCost: 0,
-  startPoint: mockStartPoints[0],
+  startPoint: {
+    type: 'current',
+    address: '',
+    label: 'Текущая позиция',
+  } as StartPoint,
 };
 
 type PlannerProviderProps = {
@@ -156,38 +163,10 @@ export const PlannerProvider = ({
   };
 
   const searchPlaces = () => {
-    // Если выбран тип "custom", сразу переходим к созданию кастомной активности
     if (planningRequest.activityType === 'custom') {
-      setCurrentStep(3); // Переходим к шагу создания кастомной активности
+      setCurrentStep(3);
       return;
     }
-
-    let results = mockPlaces.filter(place => {
-      if (place.type !== planningRequest.activityType) return false;
-      
-      const maxPrice = planningRequest.budget;
-      if (place.averageBill && place.averageBill > maxPrice) return false;
-      
-      if (planningRequest.filters.wheelchairAccessible && !place.features.wheelchair) return false;
-      if (planningRequest.filters.vegetarian && !place.features.vegetarian) return false;
-      if (planningRequest.filters.outdoor && !place.features.outdoor) return false;
-      if (planningRequest.filters.childFriendly && !place.features.childFriendly) return false;
-      
-      if (place.distance > searchFilters.distance) return false;
-      if (place.rating < searchFilters.rating) return false;
-      if (place.priceLevel < searchFilters.priceRange[0] || place.priceLevel > searchFilters.priceRange[1]) return false;
-      
-      return true;
-    });
-
-    results.sort((a, b) => {
-      const scoreA = (a.rating * 100) - (a.distance / 100);
-      const scoreB = (b.rating * 100) - (b.distance / 100);
-      return scoreB - scoreA;
-    });
-
-    setSearchResults(results);
-    setFilteredResults(results);
     setCurrentStep(3);
   };
 

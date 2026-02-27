@@ -12,17 +12,15 @@ import {
   Modal,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import type { CatalogPlace } from '../../data/mockPlaces';
 import { activityCategories } from '../../data/categories';
 import { YandexMap } from '../../components/maps/YandexMap';
-import { OSMService, OSMTagFilter } from '../../services/osm/OSMService';
+import { OSMService, OSMPlace } from '../../services/osm/OSMService';
+import { useUser } from '../../context/UserContext';
 
 const { width } = Dimensions.get('window');
 
-const DEFAULT_CENTER = { lat: 52.03, lng: 113.5 };
-
 function matchesAccessibility(
-  place: CatalogPlace,
+  place: OSMPlace,
   filters: { wheelchair?: boolean; elevator?: boolean; stepFree?: boolean; toilet?: boolean; parking?: boolean; transport?: boolean }
 ) {
   const a = place.accessibility;
@@ -36,11 +34,12 @@ function matchesAccessibility(
 }
 
 export const SearchScreen = () => {
+  const { profile } = useUser();
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [subCategoryId, setSubCategoryId] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
-  const [selectedPlace, setSelectedPlace] = useState<CatalogPlace | null>(null);
+  const [selectedPlace, setSelectedPlace] = useState<OSMPlace | null>(null);
   const [mapView, setMapView] = useState(false);
   const [minRating, setMinRating] = useState(0);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
@@ -52,60 +51,36 @@ export const SearchScreen = () => {
     parking: false,
     transport: false,
   });
-
-  const [sourcePlaces, setSourcePlaces] = useState<CatalogPlace[]>([]);
+  const [places, setPlaces] = useState<OSMPlace[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const centerCoords =
+    (profile?.defaultStartPoint &&
+      'coordinates' in profile.defaultStartPoint &&
+      (profile.defaultStartPoint as any).coordinates && {
+        lat: (profile.defaultStartPoint as any).coordinates.lat,
+        lng: (profile.defaultStartPoint as any).coordinates.lng,
+      }) || { lat: 52.0339, lng: 113.501 };
 
   useEffect(() => {
-    let cancelled = false;
-
     const load = async () => {
       setLoading(true);
-      setError(null);
-
-      const tags: OSMTagFilter[] = [];
-
-      if (categoryId) {
-        tags.push({ key: "amenity", value: categoryId });
-      } else {
-        tags.push({ key: "amenity" });
-      }
-
-      if (accessibilityFilters.wheelchair) {
-        tags.push({ key: "wheelchair", value: "yes" });
-      }
-
+      setLoadError(null);
       try {
-        const places = await OSMService.search({
-          center: DEFAULT_CENTER,
-          radiusMeters: 2500,
-          tags,
-        });
-        if (!cancelled) {
-          setSourcePlaces(places);
-        }
+        const result = await OSMService.searchAround(centerCoords, 2000);
+        setPlaces(result);
       } catch (e: any) {
-        if (!cancelled) {
-          setError("Не удалось загрузить места из OSM");
-          setSourcePlaces([]);
-        }
+        setLoadError(e?.message || 'Ошибка загрузки мест');
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        setLoading(false);
       }
     };
-
     load();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [categoryId, accessibilityFilters.wheelchair]);
+  }, [centerCoords.lat, centerCoords.lng]);
 
   const filteredPlaces = useMemo(() => {
-    let results = sourcePlaces;
+    let results = places;
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -117,6 +92,13 @@ export const SearchScreen = () => {
       );
     }
 
+    if (categoryId) {
+      results = results.filter((p) => p.categoryId === categoryId);
+      if (subCategoryId) {
+        results = results.filter((p) => p.subCategoryId === subCategoryId);
+      }
+    }
+
     if (minRating > 0) {
       results = results.filter((p) => p.rating >= minRating);
     }
@@ -124,11 +106,11 @@ export const SearchScreen = () => {
     results = results.filter((p) => matchesAccessibility(p, accessibilityFilters));
 
     return results;
-  }, [searchQuery, categoryId, subCategoryId, minRating, accessibilityFilters]);
+  }, [places, searchQuery, categoryId, subCategoryId, minRating, accessibilityFilters]);
 
   const selectedCategory = categoryId ? activityCategories.find((c) => c.id === categoryId) : null;
 
-  const PlaceCard = ({ place }: { place: CatalogPlace }) => (
+  const PlaceCard = ({ place }: { place: OSMPlace }) => (
     <TouchableOpacity
       style={[styles.placeCard, selectedPlace?.id === place.id && styles.placeCardSelected]}
       onPress={() => setSelectedPlace(place)}
@@ -341,7 +323,6 @@ export const SearchScreen = () => {
       {/* Контент */}
       <View style={styles.content}>
         {mapView ? (
-          /* Режим карты - только карта */
           <View style={styles.mapFullContainer}>
             {filteredPlaces.length > 0 ? (
               <YandexMap
@@ -366,20 +347,18 @@ export const SearchScreen = () => {
             )}
           </View>
         ) : (
-          /* Режим списка - только список */
           <View style={styles.listFullContainer}>
             <View style={styles.listHeader}>
               <Text style={styles.listHeaderTitle}>
-                {loading ? "Загрузка..." : `Найдено мест: ${filteredPlaces.length}`}
+                {loading
+                  ? 'Загрузка мест...'
+                  : loadError
+                  ? loadError
+                  : `Найдено мест: ${filteredPlaces.length}`}
               </Text>
             </View>
             <ScrollView style={styles.placesList}>
-              {error ? (
-                <View style={styles.emptyState}>
-                  <Feather name="alert-triangle" size={48} color="#f97316" />
-                  <Text style={styles.emptyStateText}>{error}</Text>
-                </View>
-              ) : filteredPlaces.length === 0 && !loading ? (
+              {filteredPlaces.length === 0 ? (
                 <View style={styles.emptyState}>
                   <Feather name="search" size={48} color="#d1d5db" />
                   <Text style={styles.emptyStateText}>Ничего не найдено</Text>
