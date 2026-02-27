@@ -1,168 +1,145 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
+import React, { useState, useMemo } from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  ScrollView, 
+  TouchableOpacity, 
   TextInput,
   SafeAreaView,
+  Image,
   Dimensions,
-  Platform,
-  Modal,
+  Platform
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import type { CatalogPlace } from '../../data/mockPlaces';
+import { mockPlaces, activityTypes, moodTypes, companyTypes } from '../../data/mockPlaces';
 import { activityCategories } from '../../data/categories';
+import { Place } from '../../types/planner';
 import { YandexMap } from '../../components/maps/YandexMap';
-import { OSMService, OSMTagFilter } from '../../services/osm/OSMService';
 
 const { width } = Dimensions.get('window');
 
-const DEFAULT_CENTER = { lat: 52.03, lng: 113.5 };
-
-function matchesAccessibility(
-  place: CatalogPlace,
-  filters: { wheelchair?: boolean; elevator?: boolean; stepFree?: boolean; toilet?: boolean; parking?: boolean; transport?: boolean }
-) {
-  const a = place.accessibility;
-  if (filters.wheelchair && !a.wheelchairAccessible) return false;
-  if (filters.elevator && !a.elevatorOrRamp) return false;
-  if (filters.stepFree && !a.stepFreeEntrance) return false;
-  if (filters.toilet && !a.accessibleToilet) return false;
-  if (filters.parking && !a.parkingNearby) return false;
-  if (filters.transport && !a.publicTransportNearby) return false;
-  return true;
-}
-
 export const SearchScreen = () => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [categoryId, setCategoryId] = useState<string | null>(null);
-  const [subCategoryId, setSubCategoryId] = useState<string | null>(null);
+  const [selectedActivityType, setSelectedActivityType] = useState<string | null>(null);
+  const [selectedMood, setSelectedMood] = useState<string | null>(null);
+  const [selectedCompany, setSelectedCompany] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
-  const [selectedPlace, setSelectedPlace] = useState<CatalogPlace | null>(null);
+  const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [mapView, setMapView] = useState(false);
+  const [priceRange, setPriceRange] = useState<[number, number]>([0, 5000]);
   const [minRating, setMinRating] = useState(0);
-  const [showCategoryModal, setShowCategoryModal] = useState(false);
-  const [accessibilityFilters, setAccessibilityFilters] = useState({
-    wheelchair: false,
-    elevator: false,
-    stepFree: false,
-    toilet: false,
-    parking: false,
-    transport: false,
-  });
+  const [maxDistance, setMaxDistance] = useState(10000);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
+  const [wheelchairAccessible, setWheelchairAccessible] = useState(false);
+  const [vegetarian, setVegetarian] = useState(false);
+  const [outdoor, setOutdoor] = useState(false);
+  const [childFriendly, setChildFriendly] = useState(false);
 
-  const [sourcePlaces, setSourcePlaces] = useState<CatalogPlace[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
-      setLoading(true);
-      setError(null);
-
-      const tags: OSMTagFilter[] = [];
-
-      if (categoryId) {
-        tags.push({ key: "amenity", value: categoryId });
-      } else {
-        tags.push({ key: "amenity" });
-      }
-
-      if (accessibilityFilters.wheelchair) {
-        tags.push({ key: "wheelchair", value: "yes" });
-      }
-
-      try {
-        const places = await OSMService.search({
-          center: DEFAULT_CENTER,
-          radiusMeters: 2500,
-          tags,
-        });
-        if (!cancelled) {
-          setSourcePlaces(places);
-        }
-      } catch (e: any) {
-        if (!cancelled) {
-          setError("Не удалось загрузить места из OSM");
-          setSourcePlaces([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    };
-
-    load();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [categoryId, accessibilityFilters.wheelchair]);
-
+  // Фильтрация мест
   const filteredPlaces = useMemo(() => {
-    let results = sourcePlaces;
+    let results = mockPlaces;
 
     if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      results = results.filter(
-        (p) =>
-          p.title.toLowerCase().includes(q) ||
-          p.description.toLowerCase().includes(q) ||
-          (p.address && p.address.toLowerCase().includes(q))
+      results = results.filter(place =>
+        place.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        place.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        place.address.toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
 
-    if (minRating > 0) {
-      results = results.filter((p) => p.rating >= minRating);
+    if (selectedActivityType) {
+      results = results.filter(place => place.type === selectedActivityType);
     }
 
-    results = results.filter((p) => matchesAccessibility(p, accessibilityFilters));
+    if (minRating > 0) {
+      results = results.filter(place => place.rating >= minRating);
+    }
+
+    if (priceRange[0] > 0 || priceRange[1] < 5000) {
+      results = results.filter(place => {
+        const bill = place.averageBill || 0;
+        return bill >= priceRange[0] && bill <= priceRange[1];
+      });
+    }
+
+    if (maxDistance < 10000) {
+      results = results.filter(place => place.distance <= maxDistance);
+    }
+
+    if (wheelchairAccessible) {
+      results = results.filter(place => place.features.wheelchair);
+    }
+
+    if (vegetarian) {
+      results = results.filter(place => place.features.vegetarian);
+    }
+
+    if (outdoor) {
+      results = results.filter(place => place.features.outdoor);
+    }
+
+    if (childFriendly) {
+      results = results.filter(place => place.features.childFriendly);
+    }
 
     return results;
-  }, [searchQuery, categoryId, subCategoryId, minRating, accessibilityFilters]);
+  }, [searchQuery, selectedActivityType, minRating, priceRange, maxDistance, wheelchairAccessible, vegetarian, outdoor, childFriendly]);
 
-  const selectedCategory = categoryId ? activityCategories.find((c) => c.id === categoryId) : null;
-
-  const PlaceCard = ({ place }: { place: CatalogPlace }) => (
+  const PlaceCard = ({ place }: { place: Place }) => (
     <TouchableOpacity
-      style={[styles.placeCard, selectedPlace?.id === place.id && styles.placeCardSelected]}
+      style={[
+        styles.placeCard,
+        selectedPlace?.id === place.id && styles.placeCardSelected
+      ]}
       onPress={() => setSelectedPlace(place)}
-      activeOpacity={0.85}
     >
-      <View style={styles.placeImagePlaceholder}>
-        <Text style={styles.placeImageEmoji}>{selectedCategory?.icon || '📍'}</Text>
-      </View>
+      <Image 
+        source={{ uri: place.image }} 
+        style={styles.placeImage as any}
+        resizeMode="cover"
+      />
       <View style={styles.placeInfo}>
-        <Text style={styles.placeName}>{place.title}</Text>
-        {place.address ? (
-          <Text style={styles.placeAddress} numberOfLines={1}>
-            <Feather name="map-pin" size={12} color="#6b7280" /> {place.address}
-          </Text>
-        ) : null}
+        <Text style={styles.placeName}>{place.name}</Text>
+        <Text style={styles.placeAddress} numberOfLines={1}>
+          <Feather name="map-pin" size={12} color="#6b7280" /> {place.address}
+        </Text>
         <View style={styles.placeMeta}>
           <View style={styles.metaItem}>
             <Feather name="star" size={14} color="#f59e0b" />
             <Text style={styles.metaText}>{place.rating}</Text>
           </View>
-        </View>
-        <View style={styles.placeTags}>
-          {place.accessibility.wheelchairAccessible && (
-            <View style={styles.tag}><Text style={styles.tagText}>♿</Text></View>
-          )}
-          {place.accessibility.parkingNearby && (
-            <View style={styles.tag}><Text style={styles.tagText}>🅿</Text></View>
-          )}
-          {place.accessibility.publicTransportNearby && (
-            <View style={styles.tag}><Text style={styles.tagText}>🚌</Text></View>
+          <View style={styles.metaItem}>
+            <Feather name="navigation" size={14} color="#6b7280" />
+            <Text style={styles.metaText}>{place.distance} м</Text>
+          </View>
+          {place.averageBill && place.averageBill > 0 && (
+            <View style={styles.metaItem}>
+              <Feather name="credit-card" size={14} color="#6b7280" />
+              <Text style={styles.metaText}>~{place.averageBill}₽</Text>
+            </View>
           )}
         </View>
       </View>
     </TouchableOpacity>
+  );
+
+  const MapView = () => (
+    <YandexMap
+      center={filteredPlaces.length > 0 ? filteredPlaces[0].coordinates : undefined}
+      markers={filteredPlaces.map(place => ({
+        id: place.id,
+        lat: place.coordinates.lat,
+        lng: place.coordinates.lng,
+        title: place.name,
+      }))}
+      onMarkerPress={(markerId) => {
+        const place = filteredPlaces.find(p => p.id === markerId);
+        if (place) setSelectedPlace(place);
+      }}
+      height={Dimensions.get('window').height - 200}
+    />
   );
 
   return (
@@ -189,7 +166,7 @@ export const SearchScreen = () => {
           onPress={() => setShowFilters(!showFilters)}
         >
           <Feather name="filter" size={20} color="#374151" />
-          {(categoryId || minRating > 0 || Object.values(accessibilityFilters).some(Boolean)) && (
+          {(selectedActivityType || selectedMood || selectedCompany) && (
             <View style={styles.filterIndicator} />
           )}
         </TouchableOpacity>
@@ -207,136 +184,48 @@ export const SearchScreen = () => {
       {/* Фильтры */}
       {showFilters && (
         <View style={styles.filtersPanel}>
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={styles.filtersContent}>
               <View style={styles.filterSection}>
-                <Text style={styles.filterLabel}>Категория</Text>
-                <TouchableOpacity
-                  style={styles.categoryButton}
-                  onPress={() => setShowCategoryModal(true)}
-                >
-                  <Text style={styles.categoryButtonText}>
-                    {selectedCategory ? `${selectedCategory.icon} ${selectedCategory.name}` : 'Все категории'}
-                  </Text>
-                  <Feather name="chevron-right" size={18} color="#6b7280" />
-                </TouchableOpacity>
-                {selectedCategory && (
-                  <TouchableOpacity
-                    style={styles.clearCategoryBtn}
-                    onPress={() => { setCategoryId(null); setSubCategoryId(null); }}
-                  >
-                    <Text style={styles.clearCategoryText}>Сбросить категорию</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-              <View style={styles.filterSection}>
-                <Text style={styles.filterLabel}>Доступность</Text>
-                <View style={styles.filterChips}>
-                  {[
-                    { key: 'wheelchair' as const, label: '♿' },
-                    { key: 'elevator' as const, label: '⬆' },
-                    { key: 'stepFree' as const, label: '🚪' },
-                    { key: 'toilet' as const, label: '🚻' },
-                    { key: 'parking' as const, label: '🅿' },
-                    { key: 'transport' as const, label: '🚌' },
-                  ].map(({ key, label }) => (
+                <Text style={styles.filterLabel}>Тип активности</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={styles.filterChips}>
                     <TouchableOpacity
-                      key={key}
-                      style={[styles.filterChip, accessibilityFilters[key] && styles.filterChipSelected]}
-                      onPress={() => setAccessibilityFilters((prev) => ({ ...prev, [key]: !prev[key] }))}
+                      style={[
+                        styles.filterChip,
+                        !selectedActivityType && styles.filterChipSelected
+                      ]}
+                      onPress={() => setSelectedActivityType(null)}
                     >
-                      <Text style={[styles.filterChipText, accessibilityFilters[key] && styles.filterChipTextSelected]}>{label}</Text>
+                      <Text style={[
+                        styles.filterChipText,
+                        !selectedActivityType && styles.filterChipTextSelected
+                      ]}>Все</Text>
                     </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-              <View style={styles.filterSection}>
-                <Text style={styles.filterLabel}>Рейтинг от</Text>
-                <View style={styles.filterChips}>
-                  {[0, 3.5, 4, 4.5].map((r) => (
-                    <TouchableOpacity
-                      key={r}
-                      style={[styles.filterChip, minRating === r && styles.filterChipSelected]}
-                      onPress={() => setMinRating(r)}
-                    >
-                      <Text style={[styles.filterChipText, minRating === r && styles.filterChipTextSelected]}>
-                        {r === 0 ? 'Любой' : `${r}+`}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                    {activityTypes.filter(t => t.value !== 'custom').map(type => (
+                      <TouchableOpacity
+                        key={type.value}
+                        style={[
+                          styles.filterChip,
+                          selectedActivityType === type.value && styles.filterChipSelected
+                        ]}
+                        onPress={() => setSelectedActivityType(
+                          selectedActivityType === type.value ? null : type.value
+                        )}
+                      >
+                        <Text style={[
+                          styles.filterChipText,
+                          selectedActivityType === type.value && styles.filterChipTextSelected
+                        ]}>{type.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
               </View>
             </View>
           </ScrollView>
         </View>
       )}
-
-      {/* Модальное окно выбора категории */}
-      <Modal
-        visible={showCategoryModal}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowCategoryModal(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowCategoryModal(false)}
-        >
-          <TouchableOpacity style={styles.categoryModalContent} activeOpacity={1} onPress={(e) => e.stopPropagation()}>
-            <View style={styles.categoryModalHeader}>
-              <Text style={styles.categoryModalTitle}>Выберите категорию</Text>
-              <TouchableOpacity onPress={() => setShowCategoryModal(false)}>
-                <Feather name="x" size={24} color="#374151" />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.categoryModalScroll} showsVerticalScrollIndicator={false}>
-              <TouchableOpacity
-                style={[styles.categoryModalRow, !categoryId && styles.categoryModalRowSelected]}
-                onPress={() => { setCategoryId(null); setSubCategoryId(null); setShowCategoryModal(false); }}
-              >
-                <Text style={styles.categoryModalRowIcon}>📋</Text>
-                <Text style={styles.categoryModalRowText}>Все категории</Text>
-              </TouchableOpacity>
-              {activityCategories.map((cat) => (
-                <View key={cat.id}>
-                  <TouchableOpacity
-                    style={[styles.categoryModalRow, categoryId === cat.id && !subCategoryId && styles.categoryModalRowSelected]}
-                    onPress={() => {
-                      setCategoryId(cat.id);
-                      setSubCategoryId(null);
-                      if (cat.subcategories.length === 0) setShowCategoryModal(false);
-                    }}
-                  >
-                    <Text style={styles.categoryModalRowIcon}>{cat.icon}</Text>
-                    <Text style={styles.categoryModalRowText}>{cat.name}</Text>
-                    {cat.subcategories.length > 0 && (
-                      <Feather name="chevron-right" size={18} color="#9ca3af" />
-                    )}
-                  </TouchableOpacity>
-                  {categoryId === cat.id && cat.subcategories.length > 0 && (
-                    <View style={styles.subcategoryList}>
-                      {cat.subcategories.map((sub) => (
-                        <TouchableOpacity
-                          key={sub.id}
-                          style={[styles.subcategoryRow, subCategoryId === sub.id && styles.categoryModalRowSelected]}
-                          onPress={() => {
-                            setSubCategoryId(sub.id);
-                            setShowCategoryModal(false);
-                          }}
-                        >
-                          <Text style={styles.subcategoryIcon}>{sub.icon || '•'}</Text>
-                          <Text style={styles.subcategoryText}>{sub.name}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
-                </View>
-              ))}
-            </ScrollView>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
 
       {/* Контент */}
       <View style={styles.content}>
@@ -345,12 +234,14 @@ export const SearchScreen = () => {
           <View style={styles.mapFullContainer}>
             {filteredPlaces.length > 0 ? (
               <YandexMap
-                center={{ lat: filteredPlaces[0].coords.lat, lng: filteredPlaces[0].coords.lng }}
+                center={filteredPlaces[0].coordinates}
                 markers={filteredPlaces.map(place => ({
                   id: place.id,
-                  lat: place.coords.lat,
-                  lng: place.coords.lng,
-                  title: place.title,
+                  lat: place.coordinates.lat,
+                  lng: place.coordinates.lng,
+                  title: place.name,
+                  rating: place.rating,
+                  priceLevel: place.priceLevel,
                 }))}
                 onMarkerPress={(markerId) => {
                   const place = filteredPlaces.find(p => p.id === markerId);
@@ -370,16 +261,11 @@ export const SearchScreen = () => {
           <View style={styles.listFullContainer}>
             <View style={styles.listHeader}>
               <Text style={styles.listHeaderTitle}>
-                {loading ? "Загрузка..." : `Найдено мест: ${filteredPlaces.length}`}
+                Найдено мест: {filteredPlaces.length}
               </Text>
             </View>
             <ScrollView style={styles.placesList}>
-              {error ? (
-                <View style={styles.emptyState}>
-                  <Feather name="alert-triangle" size={48} color="#f97316" />
-                  <Text style={styles.emptyStateText}>{error}</Text>
-                </View>
-              ) : filteredPlaces.length === 0 && !loading ? (
+              {filteredPlaces.length === 0 ? (
                 <View style={styles.emptyState}>
                   <Feather name="search" size={48} color="#d1d5db" />
                   <Text style={styles.emptyStateText}>Ничего не найдено</Text>
@@ -397,7 +283,7 @@ export const SearchScreen = () => {
         )}
       </View>
 
-      {/* Детали выбранного места — карточка как метка на карте / элемент списка */}
+      {/* Детали выбранного места */}
       {selectedPlace && (
         <View style={styles.placeDetails}>
           <TouchableOpacity
@@ -406,37 +292,55 @@ export const SearchScreen = () => {
           >
             <Feather name="x" size={24} color="#374151" />
           </TouchableOpacity>
-          <ScrollView style={styles.detailsScroll}>
-            <View style={styles.placeImagePlaceholder}>
-              <Text style={styles.placeImageEmojiLarge}>{selectedCategory?.icon || '📍'}</Text>
-            </View>
+          <ScrollView>
+            <Image 
+              source={{ uri: selectedPlace.image }} 
+              style={styles.detailsImage as any}
+              resizeMode="cover"
+            />
             <View style={styles.detailsContent}>
-              <Text style={styles.detailsName}>{selectedPlace.title}</Text>
+              <Text style={styles.detailsName}>{selectedPlace.name}</Text>
               <Text style={styles.detailsDescription}>{selectedPlace.description}</Text>
+              
               <View style={styles.detailsGrid}>
-                {selectedPlace.address ? (
-                  <View style={styles.detailItem}>
-                    <Feather name="map-pin" size={16} color="#6b7280" />
-                    <Text style={styles.detailText}>{selectedPlace.address}</Text>
-                  </View>
-                ) : null}
+                <View style={styles.detailItem}>
+                  <Feather name="map-pin" size={16} color="#6b7280" />
+                  <Text style={styles.detailText}>{selectedPlace.address}</Text>
+                </View>
+                <View style={styles.detailItem}>
+                  <Feather name="clock" size={16} color="#6b7280" />
+                  <Text style={styles.detailText}>{selectedPlace.workingHours}</Text>
+                </View>
                 <View style={styles.detailItem}>
                   <Feather name="star" size={16} color="#f59e0b" />
-                  <Text style={styles.detailText}>Рейтинг: {selectedPlace.rating}</Text>
+                  <Text style={styles.detailText}>Рейтинг: {selectedPlace.rating}/5</Text>
+                </View>
+                <View style={styles.detailItem}>
+                  <Feather name="navigation" size={16} color="#6b7280" />
+                  <Text style={styles.detailText}>{selectedPlace.distance} м от вас</Text>
                 </View>
               </View>
+
               <View style={styles.features}>
-                {selectedPlace.accessibility.wheelchairAccessible && (
-                  <View style={styles.featureTag}><Text style={styles.featureText}>♿ Доступно</Text></View>
+                {selectedPlace.features.wheelchair && (
+                  <View style={styles.featureTag}>
+                    <Text style={styles.featureText}>♿ Доступно</Text>
+                  </View>
                 )}
-                {selectedPlace.accessibility.elevatorOrRamp && (
-                  <View style={styles.featureTag}><Text style={styles.featureText}>⬆ Лифт/пандус</Text></View>
+                {selectedPlace.features.vegetarian && (
+                  <View style={styles.featureTag}>
+                    <Text style={styles.featureText}>🌱 Вегетарианское</Text>
+                  </View>
                 )}
-                {selectedPlace.accessibility.parkingNearby && (
-                  <View style={styles.featureTag}><Text style={styles.featureText}>🅿 Парковка</Text></View>
+                {selectedPlace.features.outdoor && (
+                  <View style={styles.featureTag}>
+                    <Text style={styles.featureText}>🌳 На улице</Text>
+                  </View>
                 )}
-                {selectedPlace.accessibility.publicTransportNearby && (
-                  <View style={styles.featureTag}><Text style={styles.featureText}>🚌 Остановка рядом</Text></View>
+                {selectedPlace.features.childFriendly && (
+                  <View style={styles.featureTag}>
+                    <Text style={styles.featureText}>👶 Для детей</Text>
+                  </View>
                 )}
               </View>
             </View>
@@ -596,17 +500,16 @@ const styles = StyleSheet.create({
   },
   placeCard: {
     backgroundColor: 'white',
-    borderRadius: 16,
-    marginBottom: 16,
-    overflow: 'hidden',
+    borderRadius: 12,
+    marginBottom: 12,
     ...(Platform.OS === 'web' ? {
-      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
+      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
     } : {
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.08,
-      shadowRadius: 12,
-      elevation: 4,
+      shadowOpacity: 0.1,
+      shadowRadius: 8,
+      elevation: 3,
     }),
     borderWidth: 2,
     borderColor: 'transparent',
@@ -614,32 +517,31 @@ const styles = StyleSheet.create({
   placeCardSelected: {
     borderColor: '#3b82f6',
   },
-  placeImagePlaceholder: {
+  placeImage: {
     width: '100%',
-    height: 140,
+    height: 150,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    backgroundColor: '#f3f4f6',
+  },
+  placeImagePlaceholder: {
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f1f5f9',
-  },
-  placeImageEmoji: {
-    fontSize: 40,
-  },
-  placeImageEmojiLarge: {
-    fontSize: 56,
+    backgroundColor: '#f3f4f6',
   },
   placeInfo: {
-    padding: 16,
+    padding: 12,
   },
   placeName: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
     color: '#1f2937',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   placeAddress: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#6b7280',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   placeMeta: {
     flexDirection: 'row',
@@ -651,123 +553,8 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   metaText: {
-    fontSize: 13,
-    color: '#6b7280',
-  },
-  placeTags: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 10,
-  },
-  tag: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    backgroundColor: '#eff6ff',
-  },
-  tagText: {
     fontSize: 12,
-  },
-  categoryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    backgroundColor: '#f8fafc',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-  },
-  categoryButtonText: {
-    fontSize: 15,
-    color: '#374151',
-    fontWeight: '500',
-  },
-  clearCategoryBtn: {
-    marginTop: 8,
-    alignSelf: 'flex-start',
-  },
-  clearCategoryText: {
-    fontSize: 14,
-    color: '#3b82f6',
-    fontWeight: '500',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  categoryModalContent: {
-    backgroundColor: 'white',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '80%',
-  },
-  categoryModalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  categoryModalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  categoryModalScroll: {
-    padding: 16,
-    paddingBottom: 32,
-  },
-  categoryModalRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    gap: 12,
-  },
-  categoryModalRowSelected: {
-    backgroundColor: '#eff6ff',
-  },
-  categoryModalRowIcon: {
-    fontSize: 24,
-    width: 32,
-    textAlign: 'center',
-  },
-  categoryModalRowText: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#111827',
-  },
-  subcategoryList: {
-    paddingLeft: 44,
-    paddingBottom: 8,
-  },
-  subcategoryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    gap: 10,
-  },
-  subcategoryIcon: {
-    fontSize: 18,
-    width: 24,
-    textAlign: 'center',
-  },
-  subcategoryText: {
-    fontSize: 15,
-    color: '#374151',
-  },
-  detailsScroll: {
-    flex: 1,
+    color: '#6b7280',
   },
   emptyState: {
     flex: 1,

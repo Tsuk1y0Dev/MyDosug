@@ -83,6 +83,24 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({
 
 	const durationOptions = [30, 60, 90, 120, 180];
 
+	// Заглушка для карты
+	const MapPlaceholder = () => (
+		<View style={styles.mapPlaceholder}>
+			<Feather name="map-pin" size={32} color="#6b7280" />
+			<Text style={styles.mapPlaceholderText}>Карта</Text>
+			<Text style={styles.mapDescription}>
+				Здесь будет отображаться выбранное местоположение
+			</Text>
+			<Text style={styles.coordinatesText}>
+				Координаты: {customActivity.coordinates.lat.toFixed(4)},{" "}
+				{customActivity.coordinates.lng.toFixed(4)}
+			</Text>
+			<TouchableOpacity style={styles.mapButton}>
+				<Text style={styles.mapButtonText}>Выбрать на карте</Text>
+			</TouchableOpacity>
+		</View>
+	);
+
 	return (
 		<View style={styles.container}>
 			{/* Заголовок с кнопкой назад */}
@@ -129,31 +147,10 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({
 					/>
 				</View>
 
-				{/* Карта выбора точки */}
+				{/* Заглушка карты */}
 				<View style={styles.field}>
 					<Text style={styles.label}>Местоположение на карте</Text>
-					<View style={styles.mapContainer}>
-						<YandexMap
-							center={customActivity.coordinates}
-							markers={[]}
-							height={220}
-							selectionMode
-							selectedPoint={customActivity.coordinates}
-							onSelectPoint={(coords) =>
-								setCustomActivity((prev) => ({
-									...prev,
-									coordinates: coords,
-								}))
-							}
-						/>
-						<Text style={styles.coordinatesText}>
-							Координаты: {customActivity.coordinates.lat.toFixed(4)},{" "}
-							{customActivity.coordinates.lng.toFixed(4)}
-						</Text>
-						<Text style={styles.mapHint}>
-							Нажмите по карте, чтобы выбрать точку
-						</Text>
-					</View>
+					<MapPlaceholder />
 				</View>
 
 				<View style={styles.field}>

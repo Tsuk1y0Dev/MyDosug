@@ -1,8 +1,6 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { AuthProvider, useAuth } from './src/services/auth/AuthContext';
-import { UserProvider } from './src/context/UserContext';
-import { RouteProvider } from './src/services/planner/RouteContext';
 import { ScheduleProvider } from './src/services/schedule/ScheduleContext';
 import { FavoritesProvider } from './src/services/favorites/FavoritesContext';
 import { AppNavigator } from './src/navigation/AppNavigator';
@@ -23,17 +21,13 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <AuthProvider>
-        <UserProvider>
-          <RouteProvider>
-            <ScheduleProvider>
-              <FavoritesProvider>
-                <NavigationContainer>
-                  <AppContent />
-                </NavigationContainer>
-              </FavoritesProvider>
-            </ScheduleProvider>
-          </RouteProvider>
-        </UserProvider>
+        <ScheduleProvider>
+          <FavoritesProvider>
+            <NavigationContainer>
+              <AppContent />
+            </NavigationContainer>
+          </FavoritesProvider>
+        </ScheduleProvider>
       </AuthProvider>
     </GestureHandlerRootView>
   );

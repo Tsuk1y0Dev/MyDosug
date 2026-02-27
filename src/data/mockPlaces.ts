@@ -13,7 +13,7 @@ export const mockPlaces: Place[] = [
     distance: 800,
     travelTime: 10,
     durationSettings: {
-      baseDuration: 90,
+      baseDuration: 90, 
       modifiers: {
         company: {
           solo: 0.7,
@@ -54,10 +54,22 @@ export const mockPlaces: Place[] = [
     distance: 1500,
     travelTime: 18,
     durationSettings: {
-      baseDuration: 120,
+      baseDuration: 120, 
       modifiers: {
-        company: { solo: 0.7, couple: 1.2, friends: 1.5, kids: 0.8, colleagues: 1.1 },
-        mood: { relax: 1.3, educational: 1.1, fun: 1.4, romantic: 1.5, active: 0.8 }
+        company: {
+          solo: 0.7,
+          couple: 1.2,
+          friends: 1.5,
+          kids: 0.8,
+          colleagues: 1.1
+        },
+        mood: {
+          relax: 1.3,
+          educational: 1.1,
+          fun: 1.4,
+          romantic: 1.5,
+          active: 0.8
+        }
       }
     },
     image: 'https://images.unsplash.com/photo-1572017932228-19de42fdb4a9?w=400',
@@ -82,10 +94,22 @@ export const mockPlaces: Place[] = [
     distance: 1200,
     travelTime: 15,
     durationSettings: {
-      baseDuration: 105,
+      baseDuration: 105, 
       modifiers: {
-        company: { solo: 0.7, couple: 1.2, friends: 1.5, kids: 0.8, colleagues: 1.1 },
-        mood: { relax: 1.3, educational: 1.1, fun: 1.4, romantic: 1.5, active: 0.8 }
+        company: {
+          solo: 0.7,
+          couple: 1.2,
+          friends: 1.5,
+          kids: 0.8,
+          colleagues: 1.1
+        },
+        mood: {
+          relax: 1.3,
+          educational: 1.1,
+          fun: 1.4,
+          romantic: 1.5,
+          active: 0.8
+        }
       }
     },
     image: 'https://images.unsplash.com/photo-1563089145-599997674d42?w=400',
@@ -113,8 +137,20 @@ export const mockPlaces: Place[] = [
     durationSettings: {
       baseDuration: 45,
       modifiers: {
-        company: { solo: 0.7, couple: 1.2, friends: 1.5, kids: 0.8, colleagues: 1.1 },
-        mood: { relax: 1.3, educational: 1.1, fun: 1.4, romantic: 1.5, active: 0.8 }
+        company: {
+          solo: 0.7,
+          couple: 1.2,
+          friends: 1.5,
+          kids: 0.8,
+          colleagues: 1.1
+        },
+        mood: {
+          relax: 1.3,
+          educational: 1.1,
+          fun: 1.4,
+          romantic: 1.5,
+          active: 0.8
+        }
       }
     },
     image: 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=400',
@@ -139,10 +175,22 @@ export const mockPlaces: Place[] = [
     distance: 2000,
     travelTime: 20,
     durationSettings: {
-      baseDuration: 180,
+      baseDuration: 180, 
       modifiers: {
-        company: { solo: 0.7, couple: 1.2, friends: 1.5, kids: 0.8, colleagues: 1.1 },
-        mood: { relax: 1.3, educational: 1.1, fun: 1.4, romantic: 1.5, active: 0.8 }
+        company: {
+          solo: 0.7,
+          couple: 1.2,
+          friends: 1.5,
+          kids: 0.8,
+          colleagues: 1.1
+        },
+        mood: {
+          relax: 1.3,
+          educational: 1.1,
+          fun: 1.4,
+          romantic: 1.5,
+          active: 0.8
+        }
       }
     },
     image: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=400',
@@ -168,10 +216,22 @@ export const mockPlaces: Place[] = [
     distance: 1800,
     travelTime: 18,
     durationSettings: {
-      baseDuration: 90,
+      baseDuration: 90, 
       modifiers: {
-        company: { solo: 0.7, couple: 1.2, friends: 1.5, kids: 0.8, colleagues: 1.1 },
-        mood: { relax: 1.3, educational: 1.1, fun: 1.4, romantic: 1.5, active: 0.8 }
+        company: {
+          solo: 0.7,
+          couple: 1.2,
+          friends: 1.5,
+          kids: 0.8,
+          colleagues: 1.1
+        },
+        mood: {
+          relax: 1.3,
+          educational: 1.1,
+          fun: 1.4,
+          romantic: 1.5,
+          active: 0.8
+        }
       }
     },
     image: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=400',
@@ -188,35 +248,35 @@ export const mockPlaces: Place[] = [
 ];
 
 export const mockStartPoints = [
-  { type: 'home' as const, address: 'ул. Ленина, 25', label: '🏠 Дом' },
-  { type: 'work' as const, address: 'ул. Амурская, 50', label: '💼 Работа' },
-  { type: 'current' as const, address: 'Текущее местоположение', label: '📍 Текущее' },
+    { type: 'home' as const, address: 'ул. Ленина, 25', label: '🏠 Дом' },
+    { type: 'work' as const, address: 'ул. Амурская, 50', label: '💼 Работа' },
+    { type: 'current' as const, address: 'Текущее местоположение', label: '📍 Текущее' },
 ];
 
 export const activityTypes: { value: ActivityType; label: string; icon: string }[] = [
-  { value: 'food', label: '🍽️ Еда', icon: '🍽️' },
-  { value: 'entertainment', label: '🎭 Развлечения', icon: '🎭' },
-  { value: 'sports', label: '⚽ Спорт', icon: '⚽' },
-  { value: 'culture', label: '🎨 Культура', icon: '🎨' },
-  { value: 'walking', label: '🚶 Прогулка', icon: '🚶' },
-  { value: 'shopping', label: '🛍️ Шопинг', icon: '🛍️' },
-  { value: 'education', label: '📚 Образование', icon: '📚' },
-  { value: 'nature', label: '🌳 Природа', icon: '🌳' },
-  { value: 'custom', label: '✏️ Своя активность', icon: '✏️' },
-];
+    { value: 'food', label: '🍽️ Еда', icon: '🍽️' },
+    { value: 'entertainment', label: '🎭 Развлечения', icon: '🎭' },
+    { value: 'sports', label: '⚽ Спорт', icon: '⚽' },
+    { value: 'culture', label: '🎨 Культура', icon: '🎨' },
+    { value: 'walking', label: '🚶 Прогулка', icon: '🚶' },
+    { value: 'shopping', label: '🛍️ Шопинг', icon: '🛍️' },
+    { value: 'education', label: '📚 Образование', icon: '📚' },
+    { value: 'nature', label: '🌳 Природа', icon: '🌳' },
+    { value: 'custom', label: '✏️ Своя активность', icon: '✏️' },
+    ];
 
 export const moodTypes: { value: MoodType; label: string; icon: string; color: string }[] = [
-  { value: 'relax', label: 'Релакс', icon: '', color: '#10b981' },
-  { value: 'educational', label: 'Познавательно', icon: '', color: '#3b82f6' },
-  { value: 'fun', label: 'Весело', icon: '', color: '#f59e0b' },
-  { value: 'romantic', label: 'Романтично', icon: '', color: '#ec4899' },
-  { value: 'active', label: 'Активно', icon: '', color: '#ef4444' },
-];
+    { value: 'relax', label: 'Релакс', icon: '', color: '#10b981' },
+    { value: 'educational', label: 'Познавательно', icon: '', color: '#3b82f6' },
+    { value: 'fun', label: 'Весело', icon: '', color: '#f59e0b' },
+    { value: 'romantic', label: 'Романтично', icon: '', color: '#ec4899' },
+    { value: 'active', label: 'Активно', icon: '', color: '#ef4444' },
+    ];
 
 export const companyTypes: { value: CompanyType; label: string; icon: string }[] = [
-  { value: 'solo', label: 'Один', icon: ' ' },
-  { value: 'couple', label: ' Пара', icon: '' },
-  { value: 'friends', label: ' Друзья', icon: '' },
-  { value: 'kids', label: ' Дети', icon: '' },
-  { value: 'colleagues', label: ' Коллеги', icon: '' },
+    { value: 'solo', label: 'Один', icon: ' ' },
+    { value: 'couple', label: ' Пара', icon: '' },
+    { value: 'friends', label: ' Друзья', icon: '' },
+    { value: 'kids', label: ' Дети', icon: '' },
+    { value: 'colleagues', label: ' Коллеги', icon: '' },
 ];
