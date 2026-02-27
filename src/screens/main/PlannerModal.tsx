@@ -12,13 +12,17 @@ interface PlannerModalProps {
     endTime: string;
   };
   selectedDate?: Date;
+  initialStep?: number;
+  initialPlanType?: 'single' | 'chain';
 }
 
 export const PlannerModal: React.FC<PlannerModalProps> = ({ 
   visible, 
   onClose, 
   initialTimeSlot,
-  selectedDate
+  selectedDate,
+  initialStep,
+  initialPlanType,
 }) => {
   return (
     <Modal
@@ -27,7 +31,12 @@ export const PlannerModal: React.FC<PlannerModalProps> = ({
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <PlannerProvider initialTimeSlot={initialTimeSlot} selectedDate={selectedDate}>
+      <PlannerProvider
+        initialTimeSlot={initialTimeSlot}
+        selectedDate={selectedDate}
+        initialStep={initialStep}
+        initialPlanType={initialPlanType}
+      >
         <View style={styles.container}>
           <TouchableOpacity style={styles.closeButton} onPress={onClose}>
             <Feather name="x" size={24} color="#374151" />

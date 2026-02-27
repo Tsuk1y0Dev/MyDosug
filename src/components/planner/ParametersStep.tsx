@@ -1,1134 +1,628 @@
-import React, { useState, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Switch, Platform, Modal } from 'react-native';
-import { usePlanner } from '../../services/planner/PlannerContext';
-import { Feather } from '@expo/vector-icons';
-import { mockStartPoints, activityTypes, moodTypes, companyTypes } from '../../data/mockPlaces';
-import { activityCategories } from '../../data/categories';
+import React, { useState, useCallback } from "react";
+import {
+	View,
+	Text,
+	StyleSheet,
+	ScrollView,
+	TouchableOpacity,
+	Platform,
+} from "react-native";
+import { usePlanner } from "../../services/planner/PlannerContext";
+import { useUser } from "../../context/UserContext";
+import { Feather } from "@expo/vector-icons";
+import { activityCategories } from "../../data/categories";
+import { CategoryPickerModal } from "../CategoryPickerModal";
+import { SearchCriteria, SearchCriteriaFilters, GoalType } from "../../types/searchCriteria";
+
+const CHITA_CENTER = { lat: 52.03, lng: 113.5 };
+
+const GOAL_OPTIONS: { value: GoalType; label: string; icon: string }[] = [
+	{ value: "work", label: "Работа", icon: "briefcase" },
+	{ value: "relax", label: "Релакс", icon: "coffee" },
+	{ value: "fun", label: "Весело", icon: "smile" },
+	{ value: "romantic", label: "Романтика", icon: "heart" },
+	{ value: "active", label: "Активно", icon: "activity" },
+	{ value: "educational", label: "Познавательно", icon: "book-open" },
+];
+
+const FILTER_CHIPS: { key: keyof SearchCriteriaFilters; label: string }[] = [
+	{ key: "wheelchairAccessible", label: "♿ Пандус / коляска" },
+	{ key: "elevatorOrRamp", label: "⬆ Лифт / пандус" },
+	{ key: "stepFreeEntrance", label: "🚪 Без ступенек" },
+	{ key: "accessibleToilet", label: "🚻 Доступный туалет" },
+	{ key: "parkingNearby", label: "🅿 Парковка" },
+	{ key: "publicTransportNearby", label: "🚌 Остановка рядом" },
+	{ key: "outdoor", label: "🌳 Открытый воздух" },
+	{ key: "childFriendly", label: "👶 С детьми" },
+	{ key: "wifi", label: "📶 Wi‑Fi" },
+	{ key: "vegetarian", label: "🌱 Вегетарианское" },
+];
 
 export const ParametersStep = () => {
-  const { planningRequest, updatePlanningRequest, searchPlaces, setCurrentStep } = usePlanner();
-  const [customAddress, setCustomAddress] = useState('');
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [showCategoryModal, setShowCategoryModal] = useState(false);
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+	const { setCurrentStep, setSearchCriteria, updatePlanningRequest } = usePlanner();
+	const { profile } = useUser();
 
-  const handleStartPointSelect = useCallback((point: any) => {
-    updatePlanningRequest({ startPoint: point });
-  }, [updatePlanningRequest]);
+	const savedLocations = profile?.savedLocations ?? [];
+	const [selectedStartId, setSelectedStartId] = useState<string | null>(null);
+	const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
+	const [categoryId, setCategoryId] = useState<string | null>(null);
+	const [subCategoryId, setSubCategoryId] = useState<string | null>(null);
+	const [budgetMax, setBudgetMax] = useState(3000);
+	const [goal, setGoal] = useState<GoalType | null>(null);
+	const [filters, setFilters] = useState<SearchCriteriaFilters>({});
+	const [showCategoryModal, setShowCategoryModal] = useState(false);
 
-  const handleBudgetChange = useCallback((value: number) => {
-    updatePlanningRequest({ budget: value });
-  }, [updatePlanningRequest]);
+	const startCoords =
+		selectedStartId && savedLocations.length
+			? savedLocations.find((l) => l.id === selectedStartId)?.coords ?? CHITA_CENTER
+			: CHITA_CENTER;
 
-  // Функция для определения, показывать ли дополнительные фильтры
-  const shouldShowAdditionalFilters = useMemo(
-    () => planningRequest.activityType !== 'custom',
-    [planningRequest.activityType]
-  );
+	const toggleFilter = useCallback((key: keyof SearchCriteriaFilters) => {
+		setFilters((prev) => ({ ...prev, [key]: !prev[key] }));
+	}, []);
 
-  return (
-    <View style={styles.container}>
-      <ScrollView 
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        <View style={styles.header}>
-          <Text style={styles.title}>Параметры поиска</Text>
-          <Text style={styles.subtitle}>
-            {planningRequest.activityType === 'custom' 
-              ? 'Создайте свою уникальную активность' 
-              : 'Укажите предпочтения для поиска идеальных мест'}
-          </Text>
-        </View>
+	const toggleCategory = (catId: string) => {
+		setExpandedCategoryId((prev) => (prev === catId ? null : catId));
+	};
 
-        {/* Точка старта */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Точка старта</Text>
-          <View style={styles.startPoints}>
-            {mockStartPoints.map((point, index) => (
-              <TouchableOpacity
-                key={index}
-                style={[
-                  styles.startPoint,
-                  planningRequest.startPoint.type === point.type && styles.startPointSelected,
-                ]}
-                onPress={() => handleStartPointSelect(point)}
-              >
-                <Text style={[
-                  styles.startPointText,
-                  planningRequest.startPoint.type === point.type && styles.startPointTextSelected,
-                ]}>
-                  {point.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <TextInput
-            style={styles.addressInput}
-            placeholder="Или введите адрес вручную..."
-            value={customAddress}
-            onChangeText={setCustomAddress}
-            onSubmitEditing={() => {
-              if (customAddress.trim()) {
-                handleStartPointSelect({
-                  type: 'custom',
-                  address: customAddress.trim(),
-                });
-              }
-            }}
-          />
-        </View>
+	const selectSubcategory = (catId: string, subId: string) => {
+		setCategoryId(catId);
+		setSubCategoryId(subId);
+	};
 
-        {/* Тип активности */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Тип активности</Text>
-          </View>
-          
-          {/* Выбранная категория */}
-          {planningRequest.activityType && planningRequest.activityType !== 'custom' && (() => {
-            const selectedCategory = activityCategories.find(cat => cat.id === planningRequest.activityType);
-            return selectedCategory ? (
-              <TouchableOpacity
-                style={styles.selectedCategoryCard}
-                onPress={() => setShowCategoryModal(true)}
-              >
-                <Text style={styles.selectedCategoryIcon}>{selectedCategory.icon}</Text>
-                <View style={styles.selectedCategoryInfo}>
-                  <Text style={styles.selectedCategoryName}>{selectedCategory.name}</Text>
-                  <Text style={styles.selectedCategorySubtext}>
-                    {selectedCategory.subcategories.length} подкатегорий
-                  </Text>
-                </View>
-                <Feather name="chevron-right" size={20} color="#6b7280" />
-              </TouchableOpacity>
-            ) : null;
-          })()}
+	const handleShowResults = () => {
+		const criteria: SearchCriteria = {
+			startCoords,
+			categoryId: categoryId ?? undefined,
+			subCategoryId: subCategoryId ?? undefined,
+			budgetMin: 0,
+			budgetMax,
+			goal: goal ?? undefined,
+			filters: Object.fromEntries(
+				Object.entries(filters).filter(([, v]) => v === true)
+			) as SearchCriteriaFilters,
+		};
+		setSearchCriteria(criteria);
+		setCurrentStep(3);
+	};
 
-          {/* Кнопка выбора категории */}
-          {!planningRequest.activityType || planningRequest.activityType === 'custom' ? (
-            <TouchableOpacity
-              style={styles.selectCategoryButton}
-              onPress={() => setShowCategoryModal(true)}
-            >
-              <Feather name="grid" size={20} color="#3b82f6" />
-              <Text style={styles.selectCategoryText}>Выбрать категорию</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={styles.changeCategoryButton}
-              onPress={() => setShowCategoryModal(true)}
-            >
-              <Feather name="edit-2" size={16} color="#6b7280" />
-              <Text style={styles.changeCategoryText}>Изменить категорию</Text>
-            </TouchableOpacity>
-          )}
+	const handleCustomActivity = () => {
+		updatePlanningRequest({ activityType: "custom" });
+		setCurrentStep(2);
+	};
 
-          {/* Кнопка "Своя активность" - отдельно */}
-          <TouchableOpacity
-            style={[
-              styles.customActivityButton,
-              planningRequest.activityType === 'custom' && styles.customActivityButtonActive
-            ]}
-            onPress={() => {
-              if (planningRequest.activityType === 'custom') {
-                // Если уже выбрана, переходим к созданию
-                setCurrentStep(3);
-              } else {
-                // Выбираем тип "custom"
-                updatePlanningRequest({ activityType: 'custom' });
-                setCurrentStep(3);
-              }
-            }}
-          >
-            <Feather 
-              name={planningRequest.activityType === 'custom' ? "check-circle" : "plus-circle"} 
-              size={20} 
-              color={planningRequest.activityType === 'custom' ? "white" : "#f59e0b"} 
-            />
-            <Text style={[
-              styles.customActivityText,
-              planningRequest.activityType === 'custom' && styles.customActivityTextActive
-            ]}>
-              {planningRequest.activityType === 'custom' ? 'Своя активность выбрана' : 'Создать свою активность'}
-            </Text>
-          </TouchableOpacity>
-        </View>
+	return (
+		<View style={styles.container}>
+			<ScrollView
+				style={styles.scroll}
+				contentContainerStyle={styles.scrollContent}
+				showsVerticalScrollIndicator={false}
+			>
+				<View style={styles.header}>
+					<Text style={styles.title}>Параметры поиска</Text>
+					<Text style={styles.subtitle}>
+						Укажите точку старта, категорию и фильтры — покажем подходящие места в Чите
+					</Text>
+				</View>
 
-        {/* Модальное окно выбора категории */}
-        <Modal
-          visible={showCategoryModal}
-          animationType="slide"
-          transparent={true}
-          onRequestClose={() => setShowCategoryModal(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Выберите категорию</Text>
-                <TouchableOpacity
-                  style={styles.modalCloseButton}
-                  onPress={() => setShowCategoryModal(false)}
-                >
-                  <Feather name="x" size={24} color="#374151" />
-                </TouchableOpacity>
-              </View>
+				{/* Точка старта — сохранённые места */}
+				<View style={styles.section}>
+					<Text style={styles.sectionTitle}>Точка старта</Text>
+					<ScrollView
+						horizontal
+						showsHorizontalScrollIndicator={false}
+						contentContainerStyle={styles.startScroll}
+					>
+						{!savedLocations.length ? (
+							<TouchableOpacity
+								style={[styles.startChip, styles.startChipSelected]}
+								onPress={() => setSelectedStartId(null)}
+							>
+								<Text style={styles.startChipIcon}>📍</Text>
+								<Text style={[styles.startChipText, styles.startChipTextSelected]}>
+									Текущая геолокация
+								</Text>
+							</TouchableOpacity>
+						) : (
+							<>
+								<TouchableOpacity
+									style={[styles.startChip, selectedStartId === null && styles.startChipSelected]}
+									onPress={() => setSelectedStartId(null)}
+								>
+									<Text style={styles.startChipIcon}>📍</Text>
+									<Text
+										style={[
+											styles.startChipText,
+											selectedStartId === null && styles.startChipTextSelected,
+										]}
+									>
+										Текущая
+									</Text>
+								</TouchableOpacity>
+								{savedLocations.map((loc) => (
+									<TouchableOpacity
+										key={loc.id}
+										style={[
+											styles.startChip,
+											selectedStartId === loc.id && styles.startChipSelected,
+										]}
+										onPress={() => setSelectedStartId(loc.id)}
+									>
+										<Text style={styles.startChipIcon}>{loc.icon}</Text>
+										<Text
+											style={[
+												styles.startChipText,
+												selectedStartId === loc.id && styles.startChipTextSelected,
+											]}
+											numberOfLines={1}
+										>
+											{loc.name}
+										</Text>
+									</TouchableOpacity>
+								))}
+							</>
+						)}
+					</ScrollView>
+				</View>
 
-              <ScrollView style={styles.modalScroll}>
-                {selectedCategoryId ? (
-                  // Показываем подкатегории
-                  <>
-                    <TouchableOpacity
-                      style={styles.backToCategoriesButton}
-                      onPress={() => setSelectedCategoryId(null)}
-                    >
-                      <Feather name="arrow-left" size={20} color="#3b82f6" />
-                      <Text style={styles.backToCategoriesText}>Назад к категориям</Text>
-                    </TouchableOpacity>
-                    {(() => {
-                      const category = activityCategories.find(cat => cat.id === selectedCategoryId);
-                      return category ? (
-                        <View>
-                          <Text style={styles.subcategoriesTitle}>
-                            {category.icon} {category.name}
-                          </Text>
-                          <View style={styles.subcategoriesList}>
-                            <TouchableOpacity
-                              style={[
-                                styles.subcategoryItem,
-                                planningRequest.activityType === category.id && styles.subcategoryItemSelected
-                              ]}
-                              onPress={() => {
-                                updatePlanningRequest({ activityType: category.id as any });
-                                setShowCategoryModal(false);
-                                setSelectedCategoryId(null);
-                              }}
-                            >
-                              <Text style={styles.subcategoryItemText}>Все {category.name.toLowerCase()}</Text>
-                              {planningRequest.activityType === category.id && (
-                                <Feather name="check" size={20} color="#3b82f6" />
-                              )}
-                            </TouchableOpacity>
-                            {category.subcategories.map(subcat => (
-                              <TouchableOpacity
-                                key={subcat.id}
-                                style={styles.subcategoryItem}
-                                onPress={() => {
-                                  // В будущем можно добавить выбор подкатегории
-                                  updatePlanningRequest({ activityType: category.id as any });
-                                  setShowCategoryModal(false);
-                                  setSelectedCategoryId(null);
-                                }}
-                              >
-                                <Text style={styles.subcategoryItemIcon}>{subcat.icon || '•'}</Text>
-                                <View style={styles.subcategoryItemInfo}>
-                                  <Text style={styles.subcategoryItemName}>{subcat.name}</Text>
-                                  {subcat.description && (
-                                    <Text style={styles.subcategoryItemDescription}>{subcat.description}</Text>
-                                  )}
-                                </View>
-                              </TouchableOpacity>
-                            ))}
-                          </View>
-                        </View>
-                      ) : null;
-                    })()}
-                  </>
-                ) : (
-                  // Показываем категории
-                  <View style={styles.categoriesList}>
-                    {activityCategories.map(category => (
-                      <TouchableOpacity
-                        key={category.id}
-                        style={[
-                          styles.categoryItem,
-                          planningRequest.activityType === category.id && styles.categoryItemSelected
-                        ]}
-                        onPress={() => {
-                          if (category.subcategories.length > 0) {
-                            setSelectedCategoryId(category.id);
-                          } else {
-                            updatePlanningRequest({ activityType: category.id as any });
-                            setShowCategoryModal(false);
-                          }
-                        }}
-                      >
-                        <Text style={styles.categoryIcon}>{category.icon}</Text>
-                        <View style={styles.categoryInfo}>
-                          <Text style={[
-                            styles.categoryName,
-                            planningRequest.activityType === category.id && styles.categoryNameSelected
-                          ]}>
-                            {category.name}
-                          </Text>
-                          {category.subcategories.length > 0 && (
-                            <Text style={styles.categorySubtext}>
-                              {category.subcategories.length} подкатегорий
-                            </Text>
-                          )}
-                        </View>
-                        {planningRequest.activityType === category.id && (
-                          <Feather name="check" size={20} color="#3b82f6" />
-                        )}
-                        {category.subcategories.length > 0 && (
-                          <Feather name="chevron-right" size={20} color="#9ca3af" />
-                        )}
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-              </ScrollView>
-            </View>
-          </View>
-        </Modal>
+				{/* Категории — модальное меню + аккордеон */}
+				<View style={styles.section}>
+					<Text style={styles.sectionTitle}>Категория</Text>
+					<TouchableOpacity
+						style={styles.categoryModalButton}
+						onPress={() => setShowCategoryModal(true)}
+					>
+						<Text style={styles.categoryModalButtonText}>
+							{categoryId
+								? `${activityCategories.find((c) => c.id === categoryId)?.icon ?? "📋"} ${
+										activityCategories.find((c) => c.id === categoryId)?.name ?? ""
+								  }${subCategoryId ? ` → ${activityCategories.find((c) => c.id === categoryId)?.subcategories.find((s) => s.id === subCategoryId)?.name ?? ""}` : ""}`
+								: "Открыть выбор категории"}
+						</Text>
+						<Feather name="chevron-right" size={20} color="#6b7280" />
+					</TouchableOpacity>
+					<CategoryPickerModal
+						visible={showCategoryModal}
+						onClose={() => setShowCategoryModal(false)}
+						selectedCategoryId={categoryId}
+						selectedSubCategoryId={subCategoryId}
+						onSelect={(catId, subId) => {
+							setCategoryId(catId);
+							setSubCategoryId(subId ?? null);
+						}}
+					/>
+					{activityCategories.map((cat) => (
+						<View key={cat.id} style={styles.accordionItem}>
+							<TouchableOpacity
+								style={styles.accordionHeader}
+								onPress={() => toggleCategory(cat.id)}
+								activeOpacity={0.7}
+							>
+								<Text style={styles.accordionIcon}>{cat.icon}</Text>
+								<Text style={styles.accordionTitle}>{cat.name}</Text>
+								<Feather
+									name={expandedCategoryId === cat.id ? "chevron-up" : "chevron-down"}
+									size={20}
+									color="#6b7280"
+								/>
+							</TouchableOpacity>
+							{expandedCategoryId === cat.id && (
+								<View style={styles.accordionBody}>
+									<TouchableOpacity
+										style={[
+											styles.subItem,
+											categoryId === cat.id && !subCategoryId && styles.subItemSelected,
+										]}
+										onPress={() => {
+											setCategoryId(cat.id);
+											setSubCategoryId(null);
+										}}
+									>
+										<Text style={styles.subItemText}>Все в категории</Text>
+										{categoryId === cat.id && !subCategoryId && (
+											<Feather name="check" size={18} color="#3b82f6" />
+										)}
+									</TouchableOpacity>
+									{cat.subcategories.map((sub) => (
+										<TouchableOpacity
+											key={sub.id}
+											style={[
+												styles.subItem,
+												categoryId === cat.id && subCategoryId === sub.id && styles.subItemSelected,
+											]}
+											onPress={() => selectSubcategory(cat.id, sub.id)}
+										>
+											<Text style={styles.subItemIcon}>{sub.icon || "•"}</Text>
+											<Text style={styles.subItemText} numberOfLines={1}>
+												{sub.name}
+											</Text>
+											{categoryId === cat.id && subCategoryId === sub.id && (
+												<Feather name="check" size={18} color="#3b82f6" />
+											)}
+										</TouchableOpacity>
+									))}
+								</View>
+							)}
+						</View>
+					))}
+				</View>
 
-        {/* Дополнительные параметры (только для не-custom активностей) */}
-        {shouldShowAdditionalFilters && (
-          <>
-            {/* Бюджет */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Бюджет</Text>
-              <Text style={styles.budgetValue}>До {planningRequest.budget} ₽</Text>
-              
-              {Platform.OS === 'web' ? (
-                <View style={styles.webSliderContainer}>
-                  <input
-                    type="range"
-                    min="0"
-                    max="5000"
-                    step="100"
-                    value={planningRequest.budget}
-                    onChange={(e) => handleBudgetChange(Number(e.target.value))}
-                    style={{
-                      ...styles.webSlider,
-                      outline: 'none',
-                      cursor: 'pointer',
-                    } as any}
-                  />
-                  <View style={styles.sliderLabels}>
-                    <Text style={styles.sliderLabel}>0</Text>
-                    <Text style={styles.sliderLabel}>2500</Text>
-                    <Text style={styles.sliderLabel}>5000+</Text>
-                  </View>
-                </View>
-              ) : (
-                <View style={styles.sliderContainer}>
-                  <View style={styles.sliderTrack}>
-                    <View 
-                      style={[
-                        styles.sliderProgress,
-                        { width: `${(planningRequest.budget / 5000) * 100}%` }
-                      ]} 
-                    />
-                    <TouchableOpacity
-                      style={[
-                        styles.sliderThumb,
-                        { left: `${(planningRequest.budget / 5000) * 100}%` }
-                      ]}
-                      onPressIn={(e) => {
-                        // Начало перетаскивания
-                      }}
-                    />
-                  </View>
-                  <View style={styles.sliderLabels}>
-                    <Text style={styles.sliderLabel}>0</Text>
-                    <Text style={styles.sliderLabel}>2500</Text>
-                    <Text style={styles.sliderLabel}>5000+</Text>
-                  </View>
-                  <View style={styles.sliderButtons}>
-                    <TouchableOpacity
-                      style={styles.sliderButton}
-                      onPress={() => handleBudgetChange(Math.max(0, planningRequest.budget - 500))}
-                    >
-                      <Feather name="minus" size={16} color="#6b7280" />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.sliderButton}
-                      onPress={() => handleBudgetChange(Math.min(5000, planningRequest.budget + 500))}
-                    >
-                      <Feather name="plus" size={16} color="#6b7280" />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-            </View>
+				{/* Фильтры — чипы */}
+				<View style={styles.section}>
+					<Text style={styles.sectionTitle}>Удобства и доступность</Text>
+					<View style={styles.chipsWrap}>
+						{FILTER_CHIPS.map(({ key, label }) => (
+							<TouchableOpacity
+								key={key}
+								style={[styles.chip, filters[key] && styles.chipSelected]}
+								onPress={() => toggleFilter(key)}
+							>
+								<Text
+									style={[styles.chipText, filters[key] && styles.chipTextSelected]}
+									numberOfLines={1}
+								>
+									{label}
+								</Text>
+							</TouchableOpacity>
+						))}
+					</View>
+				</View>
 
-            {/* Настроение */}
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Настроение</Text>
-              </View>
-              <View style={styles.moodContainer}>
-                {moodTypes.map((mood) => (
-                  <TouchableOpacity
-                    key={mood.value}
-                    style={[
-                      styles.moodItem,
-                      planningRequest.mood === mood.value && { backgroundColor: mood.color },
-                      planningRequest.mood === mood.value && styles.moodItemSelected
-                    ]}
-                    onPress={() => {
-                      // Toggle: если уже выбрано это настроение, снимаем выбор
-                      if (planningRequest.mood === mood.value) {
-                        updatePlanningRequest({ mood: undefined });
-                      } else {
-                        updatePlanningRequest({ mood: mood.value });
-                      }
-                    }}
-                  >
-                    <Text style={styles.moodIcon}>{mood.icon}</Text>
-                    <Text style={[
-                      styles.moodText,
-                      planningRequest.mood === mood.value && styles.moodTextSelected,
-                    ]}>
-                      {mood.label}
-                    </Text>
-                    {planningRequest.mood === mood.value && (
-                      <Feather name="check" size={16} color="white" style={styles.moodCheckIcon} />
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
+				{/* Бюджет — слайдер */}
+				<View style={styles.section}>
+					<Text style={styles.sectionTitle}>Бюджет до</Text>
+					<Text style={styles.budgetValue}>{budgetMax} ₽</Text>
+					{Platform.OS === "web" ? (
+						<input
+							type="range"
+							min={0}
+							max={5000}
+							step={100}
+							value={budgetMax}
+							onChange={(e) => setBudgetMax(Number(e.target.value))}
+							style={styles.webRange as any}
+						/>
+					) : (
+						<View style={styles.sliderRow}>
+							<TouchableOpacity
+								style={styles.sliderBtn}
+								onPress={() => setBudgetMax(Math.max(0, budgetMax - 500))}
+							>
+								<Feather name="minus" size={18} color="#374151" />
+							</TouchableOpacity>
+							<View style={styles.sliderTrack}>
+								<View
+									style={[styles.sliderFill, { width: `${(budgetMax / 5000) * 100}%` }]}
+								/>
+							</View>
+							<TouchableOpacity
+								style={styles.sliderBtn}
+								onPress={() => setBudgetMax(Math.min(5000, budgetMax + 500))}
+							>
+								<Feather name="plus" size={18} color="#374151" />
+							</TouchableOpacity>
+						</View>
+					)}
+					<View style={styles.sliderLabels}>
+						<Text style={styles.sliderLabel}>0</Text>
+						<Text style={styles.sliderLabel}>2500</Text>
+						<Text style={styles.sliderLabel}>5000 ₽</Text>
+					</View>
+				</View>
 
-            {/* Компания */}
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Компания</Text>
-              </View>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={styles.companyTypes}>
-                  {companyTypes.map((company) => (
-                    <TouchableOpacity
-                      key={company.value}
-                      style={[
-                        styles.companyType,
-                        planningRequest.company === company.value && styles.companyTypeSelected,
-                      ]}
-                      onPress={() => updatePlanningRequest({ company: company.value })}
-                    >
-                      <Text style={styles.companyIcon}>{company.icon}</Text>
-                      <Text style={[
-                        styles.companyText,
-                        planningRequest.company === company.value && styles.companyTextSelected,
-                      ]}>
-                        {company.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </ScrollView>
-            </View>
+				{/* Цель / настроение */}
+				<View style={styles.section}>
+					<Text style={styles.sectionTitle}>Цель</Text>
+					<View style={styles.goalWrap}>
+						{GOAL_OPTIONS.map((opt) => (
+							<TouchableOpacity
+								key={opt.value}
+								style={[styles.goalChip, goal === opt.value && styles.goalChipSelected]}
+								onPress={() => setGoal(goal === opt.value ? null : opt.value)}
+							>
+								<Feather
+									name={opt.icon as any}
+									size={16}
+									color={goal === opt.value ? "#fff" : "#6b7280"}
+								/>
+								<Text
+									style={[styles.goalChipText, goal === opt.value && styles.goalChipTextSelected]}
+								>
+									{opt.label}
+								</Text>
+							</TouchableOpacity>
+						))}
+					</View>
+				</View>
 
-            {/* Расширенные настройки */}
-            <View style={styles.section}>
-              <TouchableOpacity 
-                style={styles.advancedHeader}
-                onPress={() => setShowAdvanced(!showAdvanced)}
-              >
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Расширенные настройки</Text>
-                  <Feather 
-                    name={showAdvanced ? "chevron-up" : "chevron-down"} 
-                    size={20} 
-                    color="#6b7280" 
-                  />
-                </View>
-              </TouchableOpacity>
+				{/* Своя активность */}
+				<TouchableOpacity style={styles.customButton} onPress={handleCustomActivity}>
+					<Feather name="edit-3" size={20} color="#f59e0b" />
+					<Text style={styles.customButtonText}>Создать свою активность</Text>
+					<Text style={styles.customButtonSubtext}>Название + точка на карте</Text>
+				</TouchableOpacity>
 
-              {showAdvanced && (
-                <View style={styles.advancedSection}>
-                  <View style={styles.filterRow}>
-                    <Text style={styles.filterLabel}>Доступно для инвалидов</Text>
-                    <Switch
-                      value={planningRequest.filters.wheelchairAccessible}
-                      onValueChange={(value) => updatePlanningRequest({
-                        filters: { ...planningRequest.filters, wheelchairAccessible: value }
-                      })}
-                    />
-                  </View>
-                  <View style={styles.filterRow}>
-                    <Text style={styles.filterLabel}>Вегетарианское меню</Text>
-                    <Switch
-                      value={planningRequest.filters.vegetarian}
-                      onValueChange={(value) => updatePlanningRequest({
-                        filters: { ...planningRequest.filters, vegetarian: value }
-                      })}
-                    />
-                  </View>
-                  <View style={styles.filterRow}>
-                    <Text style={styles.filterLabel}>На открытом воздухе</Text>
-                    <Switch
-                      value={planningRequest.filters.outdoor}
-                      onValueChange={(value) => updatePlanningRequest({
-                        filters: { ...planningRequest.filters, outdoor: value }
-                      })}
-                    />
-                  </View>
-                  <View style={styles.filterRow}>
-                    <Text style={styles.filterLabel}>Подходит для детей</Text>
-                    <Switch
-                      value={planningRequest.filters.childFriendly}
-                      onValueChange={(value) => updatePlanningRequest({
-                        filters: { ...planningRequest.filters, childFriendly: value }
-                      })}
-                    />
-                  </View>
-                </View>
-              )}
-            </View>
-          </>
-        )}
+				{/* Показать результаты */}
+				<TouchableOpacity style={styles.primaryButton} onPress={handleShowResults}>
+					<Feather name="search" size={20} color="white" />
+					<Text style={styles.primaryButtonText}>Показать результаты</Text>
+				</TouchableOpacity>
 
-        {/* Секция для кастомной активности */}
-        {planningRequest.activityType === 'custom' && (
-          <View style={styles.customInfoSection}>
-            <Feather name="info" size={24} color="#3b82f6" />
-            <Text style={styles.customInfoText}>
-              Вы создаете свою активность. После нажатия кнопки "Создать активность" 
-              вы сможете указать название, местоположение и описание.
-            </Text>
-          </View>
-        )}
-
-        <View style={styles.buttons}>
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={() => {
-              // Если planType === 'chain', возвращаемся к шагу выбора времени (1)
-              // Если planType === 'single', возвращаемся к шагу выбора типа плана (0)
-              if (planningRequest.planType === 'chain') {
-                setCurrentStep(1);
-              } else {
-                setCurrentStep(0);
-              }
-            }}
-            activeOpacity={0.7}
-          >
-            <Feather name="arrow-left" size={20} color="#3b82f6" />
-            <Text style={styles.backButtonText}>Назад</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.searchButton}
-            onPress={() => {
-              if (planningRequest.activityType === 'custom') {
-                // Для кастомной активности переходим к созданию (шаг 2)
-                setCurrentStep(2);
-              } else {
-                // Для обычных активностей ищем места (шаг 3)
-                searchPlaces();
-              }
-            }}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.searchButtonText}>
-              {planningRequest.activityType === 'custom' ? 'Создать активность' : 'Найти места'}
-            </Text>
-            <Feather 
-              name={planningRequest.activityType === 'custom' ? 'plus' : 'search'} 
-              size={20} 
-              color="white" 
-            />
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </View>
-  );
+				<View style={{ height: 40 }} />
+			</ScrollView>
+		</View>
+	);
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: 'white',
-  },
-  scrollContent: {
-    padding: 20,
-    paddingBottom: 100,
-  },
-  header: {
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#1f2937',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#6b7280',
-    lineHeight: 22,
-  },
-  section: {
-    marginBottom: 20,
-    backgroundColor: 'white',
-    padding: 20,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    overflow: 'hidden',
-    ...(Platform.OS === 'web' ? {
-      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
-    } : {
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.06,
-      shadowRadius: 8,
-      elevation: 2,
-    }),
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  startPoints: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginBottom: 12,
-  },
-  startPoint: {
-    backgroundColor: '#f8fafc',
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    borderRadius: 12,
-    marginRight: 10,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-  },
-  startPointSelected: {
-    backgroundColor: '#3b82f6',
-  },
-  startPointText: {
-    fontSize: 14,
-    color: '#374151',
-    fontWeight: '500',
-  },
-  startPointTextSelected: {
-    color: 'white',
-  },
-  addressInput: {
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-  },
-  budgetValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#059669',
-  },
-  sliderContainer: {
-    marginBottom: 16,
-    paddingHorizontal: 0,
-    marginHorizontal: 0,
-    backgroundColor: 'transparent',
-  },
-  sliderTrack: {
-    height: 40,
-    backgroundColor: '#e5e7eb',
-    borderRadius: 4,
-    marginBottom: 8,
-    position: 'relative',
-    justifyContent: 'center',
-    marginHorizontal: 0,
-    width: '100%',
-  },
-  sliderProgress: {
-    height: 8,
-    backgroundColor: '#3b82f6',
-    borderRadius: 4,
-    position: 'absolute',
-    left: 0,
-    top: 16,
-  },
-  sliderThumb: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#3b82f6',
-    position: 'absolute',
-    marginLeft: -12,
-    top: 8,
-    borderWidth: 3,
-    borderColor: 'white',
-    ...(Platform.OS === 'web' ? {
-      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
-    } : {
-      // Убрана тень для мобильных
-    }),
-  },
-  sliderLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  sliderLabel: {
-    fontSize: 12,
-    color: '#6b7280',
-  },
-  sliderButtons: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 16,
-    marginTop: 8,
-  },
-  sliderButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#f3f4f6',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-  },
-  webSliderContainer: {
-    marginBottom: 16,
-  },
-  webSlider: {
-    width: '100%',
-    marginBottom: 8,
-    height: 6,
-    borderRadius: 3,
-  } as any, // Web-specific styles (outline, cursor) not supported in React Native StyleSheet
-  activityTypes: {
-    flexDirection: 'row',
-  },
-  activityType: {
-    alignItems: 'center',
-    backgroundColor: '#f8fafc',
-    padding: 18,
-    borderRadius: 14,
-    marginRight: 12,
-    minWidth: 90,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-  },
-  activityTypeSelected: {
-    backgroundColor: '#3b82f6',
-  },
-  activityTypeCustom: {
-    borderWidth: 2,
-    borderColor: '#f59e0b',
-    borderStyle: 'dashed',
-  },
-  activityTypeCustomSelected: {
-    backgroundColor: '#fef3c7',
-    borderColor: '#f59e0b',
-    borderStyle: 'solid',
-  },
-  activityTypeIcon: {
-    fontSize: 24,
-    marginBottom: 8,
-  },
-  activityTypeText: {
-    fontSize: 12,
-    color: '#374151',
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-  activityTypeTextSelected: {
-    color: 'white',
-  },
-  subcategoryHint: {
-    fontSize: 10,
-    color: '#9ca3af',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  moodContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  moodItem: {
-    alignItems: 'center',
-    backgroundColor: '#f8fafc',
-    padding: 16,
-    borderRadius: 14,
-    marginBottom: 10,
-    width: '48%',
-    position: 'relative',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-  },
-  moodItemSelected: {
-    borderWidth: 2,
-    borderColor: '#3b82f6',
-  },
-  moodIcon: {
-    fontSize: 20,
-    marginBottom: 4,
-  },
-  moodText: {
-    fontSize: 12,
-    color: '#374151',
-    fontWeight: '500',
-  },
-  moodTextSelected: {
-    color: 'white',
-  },
-  moodCheckIcon: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-  },
-  companyTypes: {
-    flexDirection: 'row',
-  },
-  companyType: {
-    alignItems: 'center',
-    backgroundColor: '#f8fafc',
-    padding: 16,
-    borderRadius: 12,
-    marginRight: 12,
-    minWidth: 80,
-  },
-  companyTypeSelected: {
-    backgroundColor: '#3b82f6',
-  },
-  companyIcon: {
-    fontSize: 20,
-    marginBottom: 8,
-  },
-  companyText: {
-    fontSize: 12,
-    color: '#374151',
-    fontWeight: '500',
-  },
-  companyTextSelected: {
-    color: 'white',
-  },
-  advancedHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
-  },
-  advancedTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  advancedSection: {
-    backgroundColor: '#f8fafc',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 30,
-  },
-  filterRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  filterLabel: {
-    fontSize: 14,
-    color: '#374151',
-  },
-  customInfoSection: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: '#f0f9ff',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 30,
-  },
-  customInfoText: {
-    fontSize: 14,
-    color: '#0369a1',
-    marginLeft: 12,
-    flex: 1,
-    lineHeight: 20,
-  },
-  buttons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 24,
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    backgroundColor: 'white',
-    borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-  },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 18,
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: '#3b82f6',
-    flex: 1,
-    marginRight: 12,
-    justifyContent: 'center',
-    backgroundColor: 'white',
-  },
-  backButtonText: {
-    color: '#3b82f6',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  searchButton: {
-    backgroundColor: '#3b82f6',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 18,
-    borderRadius: 16,
-    flex: 2,
-    ...(Platform.OS === 'web' ? {
-      boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
-    } : {
-      shadowColor: '#3b82f6',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.3,
-      shadowRadius: 12,
-      elevation: 5,
-    }),
-  },
-  searchButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-    marginRight: 8,
-  },
-  selectedCategoryCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#f0f9ff',
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#3b82f6',
-    marginBottom: 12,
-  },
-  selectedCategoryIcon: {
-    fontSize: 32,
-    marginRight: 12,
-  },
-  selectedCategoryInfo: {
-    flex: 1,
-  },
-  selectedCategoryName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1f2937',
-    marginBottom: 4,
-  },
-  selectedCategorySubtext: {
-    fontSize: 12,
-    color: '#6b7280',
-  },
-  selectCategoryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-    backgroundColor: 'white',
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#3b82f6',
-    borderStyle: 'dashed',
-    marginBottom: 12,
-  },
-  selectCategoryText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#3b82f6',
-    marginLeft: 8,
-  },
-  changeCategoryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 12,
-    backgroundColor: '#f8fafc',
-    borderRadius: 8,
-    marginBottom: 12,
-  },
-  changeCategoryText: {
-    fontSize: 14,
-    color: '#6b7280',
-    marginLeft: 6,
-  },
-  customActivityButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-    backgroundColor: 'white',
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#f59e0b',
-    borderStyle: 'dashed',
-    marginTop: 8,
-  },
-  customActivityButtonActive: {
-    backgroundColor: '#fef3c7',
-    borderStyle: 'solid',
-  },
-  customActivityText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#f59e0b',
-    marginLeft: 8,
-  },
-  customActivityTextActive: {
-    color: '#92400e',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: 'white',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '80%',
-    ...(Platform.OS === 'web' ? {
-      boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.15)',
-    } : {
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: -4 },
-      shadowOpacity: 0.15,
-      shadowRadius: 20,
-      elevation: 10,
-    }),
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1f2937',
-  },
-  modalCloseButton: {
-    padding: 4,
-  },
-  modalScroll: {
-    maxHeight: 500,
-  },
-  backToCategoriesButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  backToCategoriesText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#3b82f6',
-    marginLeft: 8,
-  },
-  categoriesList: {
-    padding: 16,
-  },
-  categoryItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#f8fafc',
-    borderRadius: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-  },
-  categoryItemSelected: {
-    backgroundColor: '#eff6ff',
-    borderColor: '#3b82f6',
-    borderWidth: 2,
-  },
-  categoryIcon: {
-    fontSize: 32,
-    marginRight: 12,
-  },
-  categoryInfo: {
-    flex: 1,
-  },
-  categoryName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1f2937',
-    marginBottom: 4,
-  },
-  categoryNameSelected: {
-    color: '#3b82f6',
-  },
-  categorySubtext: {
-    fontSize: 12,
-    color: '#6b7280',
-  },
-  subcategoriesTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1f2937',
-    padding: 16,
-    paddingBottom: 8,
-  },
-  subcategoriesList: {
-    padding: 16,
-    paddingTop: 0,
-  },
-  subcategoryItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#f8fafc',
-    borderRadius: 12,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-  },
-  subcategoryItemSelected: {
-    backgroundColor: '#eff6ff',
-    borderColor: '#3b82f6',
-    borderWidth: 2,
-  },
-  subcategoryItemIcon: {
-    fontSize: 20,
-    marginRight: 12,
-  },
-  subcategoryItemInfo: {
-    flex: 1,
-  },
-  subcategoryItemName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1f2937',
-    marginBottom: 4,
-  },
-  subcategoryItemText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1f2937',
-    flex: 1,
-  },
-  subcategoryItemDescription: {
-    fontSize: 12,
-    color: '#6b7280',
-  },
+	container: {
+		flex: 1,
+		backgroundColor: "#f8fafc",
+	},
+	scroll: {
+		flex: 1,
+	},
+	scrollContent: {
+		padding: 20,
+		paddingBottom: 100,
+	},
+	header: {
+		marginBottom: 20,
+	},
+	title: {
+		fontSize: 24,
+		fontWeight: "700",
+		color: "#111827",
+		marginBottom: 6,
+	},
+	subtitle: {
+		fontSize: 15,
+		color: "#6b7280",
+		lineHeight: 22,
+	},
+	section: {
+		marginBottom: 20,
+		backgroundColor: "white",
+		borderRadius: 16,
+		padding: 16,
+		borderWidth: 1,
+		borderColor: "#e5e7eb",
+		overflow: "hidden",
+	},
+	sectionTitle: {
+		fontSize: 16,
+		fontWeight: "600",
+		color: "#374151",
+		marginBottom: 12,
+	},
+	categoryModalButton: {
+		flexDirection: "row",
+		alignItems: "center",
+		justifyContent: "space-between",
+		paddingVertical: 14,
+		paddingHorizontal: 16,
+		backgroundColor: "#f8fafc",
+		borderRadius: 12,
+		borderWidth: 1,
+		borderColor: "#e5e7eb",
+		marginBottom: 12,
+	},
+	categoryModalButtonText: {
+		fontSize: 15,
+		color: "#374151",
+		fontWeight: "500",
+		flex: 1,
+	},
+	startScroll: {
+		flexDirection: "row",
+		gap: 10,
+		paddingVertical: 4,
+	},
+	startChip: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 6,
+		paddingHorizontal: 14,
+		paddingVertical: 10,
+		borderRadius: 20,
+		backgroundColor: "#f1f5f9",
+		borderWidth: 1,
+		borderColor: "#e2e8f0",
+	},
+	startChipSelected: {
+		backgroundColor: "#3b82f6",
+		borderColor: "#3b82f6",
+	},
+	startChipIcon: {
+		fontSize: 16,
+	},
+	startChipText: {
+		fontSize: 14,
+		fontWeight: "500",
+		color: "#374151",
+		maxWidth: 120,
+	},
+	startChipTextSelected: {
+		color: "white",
+	},
+	accordionItem: {
+		borderBottomWidth: 1,
+		borderBottomColor: "#f1f5f9",
+	},
+	accordionHeader: {
+		flexDirection: "row",
+		alignItems: "center",
+		paddingVertical: 14,
+		paddingHorizontal: 4,
+		gap: 10,
+	},
+	accordionIcon: {
+		fontSize: 22,
+	},
+	accordionTitle: {
+		flex: 1,
+		fontSize: 16,
+		fontWeight: "500",
+		color: "#111827",
+	},
+	accordionBody: {
+		paddingLeft: 32,
+		paddingBottom: 12,
+	},
+	subItem: {
+		flexDirection: "row",
+		alignItems: "center",
+		paddingVertical: 10,
+		paddingHorizontal: 8,
+		gap: 8,
+		borderRadius: 8,
+	},
+	subItemSelected: {
+		backgroundColor: "#eff6ff",
+	},
+	subItemIcon: {
+		fontSize: 18,
+	},
+	subItemText: {
+		flex: 1,
+		fontSize: 14,
+		color: "#374151",
+	},
+	chipsWrap: {
+		flexDirection: "row",
+		flexWrap: "wrap",
+		gap: 8,
+	},
+	chip: {
+		paddingHorizontal: 12,
+		paddingVertical: 8,
+		borderRadius: 20,
+		backgroundColor: "#f1f5f9",
+		borderWidth: 1,
+		borderColor: "#e2e8f0",
+	},
+	chipSelected: {
+		backgroundColor: "#dbeafe",
+		borderColor: "#3b82f6",
+	},
+	chipText: {
+		fontSize: 13,
+		color: "#374151",
+	},
+	chipTextSelected: {
+		color: "#1d4ed8",
+		fontWeight: "600",
+	},
+	budgetValue: {
+		fontSize: 18,
+		fontWeight: "700",
+		color: "#059669",
+		marginBottom: 8,
+	},
+	webRange: {
+		width: "100%",
+		height: 8,
+		marginVertical: 4,
+	},
+	sliderRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 12,
+		marginBottom: 4,
+	},
+	sliderBtn: {
+		width: 36,
+		height: 36,
+		borderRadius: 18,
+		backgroundColor: "#f1f5f9",
+		justifyContent: "center",
+		alignItems: "center",
+	},
+	sliderTrack: {
+		flex: 1,
+		height: 8,
+		backgroundColor: "#e5e7eb",
+		borderRadius: 4,
+		overflow: "hidden",
+	},
+	sliderFill: {
+		height: "100%",
+		backgroundColor: "#3b82f6",
+		borderRadius: 4,
+	},
+	sliderLabels: {
+		flexDirection: "row",
+		justifyContent: "space-between",
+		marginTop: 4,
+	},
+	sliderLabel: {
+		fontSize: 12,
+		color: "#9ca3af",
+	},
+	goalWrap: {
+		flexDirection: "row",
+		flexWrap: "wrap",
+		gap: 8,
+	},
+	goalChip: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 6,
+		paddingHorizontal: 12,
+		paddingVertical: 10,
+		borderRadius: 20,
+		backgroundColor: "#f1f5f9",
+		borderWidth: 1,
+		borderColor: "#e2e8f0",
+	},
+	goalChipSelected: {
+		backgroundColor: "#3b82f6",
+		borderColor: "#3b82f6",
+	},
+	goalChipText: {
+		fontSize: 13,
+		color: "#374151",
+		fontWeight: "500",
+	},
+	goalChipTextSelected: {
+		color: "white",
+	},
+	customButton: {
+		flexDirection: "row",
+		alignItems: "center",
+		flexWrap: "wrap",
+		gap: 10,
+		padding: 16,
+		borderRadius: 16,
+		backgroundColor: "#fffbeb",
+		borderWidth: 2,
+		borderColor: "#fcd34d",
+		borderStyle: "dashed",
+		marginBottom: 20,
+	},
+	customButtonText: {
+		fontSize: 16,
+		fontWeight: "600",
+		color: "#b45309",
+	},
+	customButtonSubtext: {
+		fontSize: 12,
+		color: "#92400e",
+		width: "100%",
+		marginLeft: 30,
+	},
+	primaryButton: {
+		flexDirection: "row",
+		alignItems: "center",
+		justifyContent: "center",
+		gap: 10,
+		paddingVertical: 16,
+		borderRadius: 14,
+		backgroundColor: "#3b82f6",
+	},
+	primaryButtonText: {
+		fontSize: 17,
+		fontWeight: "600",
+		color: "white",
+	},
 });

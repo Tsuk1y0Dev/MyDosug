@@ -21,8 +21,14 @@ interface YandexMapProps {
 		rating?: number;
 		priceLevel?: number;
 	}>;
+	origin?: { lat: number; lng: number; label?: string };
+	segmentLines?: Array<{ from: { lat: number; lng: number }; to: { lat: number; lng: number } }>;
 	onMarkerPress?: (markerId: string) => void;
 	height?: number;
+	fitAllMarkers?: boolean;
+	selectionMode?: boolean;
+	selectedPoint?: { lat: number; lng: number };
+	onSelectPoint?: (coords: { lat: number; lng: number }) => void;
 }
 
 const { width } = Dimensions.get("window");
@@ -35,13 +41,21 @@ export const YandexMap: React.FC<YandexMapProps> = ({
 	center = { lat: 52.0339, lng: 113.501 }, // Чита по умолчанию
 	zoom = 12,
 	markers = [],
+	origin,
+	segmentLines = [],
 	onMarkerPress,
 	height = 400,
+	fitAllMarkers = true,
+	selectionMode = false,
+	selectedPoint,
+	onSelectPoint,
 }) => {
 	const webViewRef = useRef<WebView>(null);
 
 	const generateHTML = () => {
-		if (!markers || markers.length === 0) {
+		const hasOrigin = origin != null;
+		const hasMarkers = markers && markers.length > 0;
+		if (!hasOrigin && !hasMarkers) {
 			return `
         <!DOCTYPE html>
         <html>
@@ -74,20 +88,26 @@ export const YandexMap: React.FC<YandexMapProps> = ({
       `;
 		}
 
-		const markersScript = markers
+		const allPoints: Array<{ id: string; lat: number; lng: number; title?: string }> = [];
+		if (origin) {
+			allPoints.push({ id: "origin", lat: origin.lat, lng: origin.lng, title: origin.label || "Старт" });
+		}
+		markers.forEach((m) => allPoints.push({ id: m.id, lat: m.lat, lng: m.lng, title: m.title }));
+
+		const markersScript = allPoints
 			.map((marker, index) => {
-				const rating = marker.rating ? `⭐ ${marker.rating}` : "";
-				const price = marker.priceLevel ? "💰".repeat(marker.priceLevel) : "";
-				const hintText = `${marker.title || marker.id}${rating ? " " + rating : ""}${price ? " " + price : ""}`;
+				const isOrigin = marker.id === "origin";
+				const hintText = marker.title || marker.id;
+				const preset = isOrigin ? "islands#blueCircleDotIcon" : "islands#redDotIcon";
+				const iconColor = isOrigin ? "#3b82f6" : "#ef4444";
 
 				return `
       var placemark${index} = new ymaps.Placemark([${marker.lat}, ${marker.lng}], {
         balloonContentHeader: '<strong>${(marker.title || marker.id).replace(/'/g, "\\'")}</strong>',
-        balloonContentBody: '${rating ? rating + "<br>" : ""}${price || ""}',
         hintContent: '${hintText.replace(/'/g, "\\'")}'
       }, {
-        preset: 'islands#redDotIcon',
-        iconColor: '#ef4444'
+        preset: '${preset}',
+        iconColor: '${iconColor}'
       });
       
       myMap.geoObjects.add(placemark${index});
@@ -105,6 +125,19 @@ export const YandexMap: React.FC<YandexMapProps> = ({
 			.join("\n");
 
 		const apiKey = YANDEX_API_KEY ? `&apikey=${YANDEX_API_KEY}` : "";
+
+		const selectionInit = selectionMode
+			? selectedPoint
+				? `
+      var selectedPlacemark = new ymaps.Placemark(
+        [${selectedPoint.lat}, ${selectedPoint.lng}],
+        { hintContent: 'Выбрано', balloonContentHeader: '<strong>Выбранная точка</strong>' },
+        { preset: 'islands#blueDotIconWithCaption' }
+      );
+      myMap.geoObjects.add(selectedPlacemark);
+      `
+				: "var selectedPlacemark = null;"
+			: "";
 
 		return `
       <!DOCTYPE html>
@@ -137,6 +170,7 @@ export const YandexMap: React.FC<YandexMapProps> = ({
         <body>
           <div id="map"></div>
           <div class="loading" id="loading">Загрузка карты...</div>
+          <div class="route-error" id="routeError" style="display:none;"></div>
           <script type="text/javascript">
             ymaps.ready(function () {
               document.getElementById('loading').style.display = 'none';
@@ -149,13 +183,150 @@ export const YandexMap: React.FC<YandexMapProps> = ({
               
               ${markersScript}
               
-              // Автоматически подстраиваем карту под все маркеры
-              if (myMap.geoObjects.getLength() > 0) {
-                myMap.setBounds(myMap.geoObjects.getBounds(), {
-                  checkZoomRange: true,
-                  duration: 300
+              ${selectionInit}
+
+              // Строим маршрут по дорогам через MultiRoute
+              try {
+                var allCoords = [];
+                myMap.geoObjects.each(function (obj) {
+                  if (obj.geometry && typeof obj.geometry.getCoordinates === 'function') {
+                    var c = obj.geometry.getCoordinates();
+                    if (Array.isArray(c) && c.length === 2) {
+                      allCoords.push(c);
+                    }
+                  }
                 });
+
+                // Если точек меньше двух, просто подстроим карту под маркеры
+                if (allCoords.length < 2) {
+                  if (myMap.geoObjects.getLength() > 0) {
+                    try {
+                      var onlyMarkersBounds = myMap.geoObjects.getBounds();
+                      if (onlyMarkersBounds) {
+                        myMap.setBounds(onlyMarkersBounds, { checkZoomRange: true, duration: 300 });
+                      }
+                    } catch (e) {}
+                  }
+                  return;
+                }
+
+                // Оцениваем расстояния между соседними точками, чтобы выбрать режим маршрутизации
+                function toRad(x) {
+                  return x * Math.PI / 180;
+                }
+
+                function distanceMeters(a, b) {
+                  var R = 6371000;
+                  var lat1 = a[0], lon1 = a[1];
+                  var lat2 = b[0], lon2 = b[1];
+                  var dLat = toRad(lat2 - lat1);
+                  var dLon = toRad(lon2 - lon1);
+                  var aa = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+                  var c = 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
+                  return R * c;
+                }
+
+                var maxSegmentDistance = 0;
+                for (var i = 1; i < allCoords.length; i++) {
+                  var d = distanceMeters(allCoords[i - 1], allCoords[i]);
+                  if (d > maxSegmentDistance) {
+                    maxSegmentDistance = d;
+                  }
+                }
+
+                // Если все точки близко (например, менее 1.5 км), строим пешеходный маршрут
+                var routingMode = maxSegmentDistance < 1500 ? 'pedestrian' : 'auto';
+
+                var multiRoute = new ymaps.multiRouter.MultiRoute({
+                  referencePoints: allCoords,
+                  params: {
+                    routingMode: routingMode
+                  }
+                }, {
+                  boundsAutoApply: false
+                });
+
+                myMap.geoObjects.add(multiRoute);
+
+                var routeErrorEl = document.getElementById('routeError');
+                function showRouteError(message) {
+                  if (!routeErrorEl) return;
+                  routeErrorEl.textContent = message;
+                  routeErrorEl.style.display = 'block';
+                }
+
+                // Успешное построение маршрута
+                multiRoute.model.events.add('requestsuccess', function () {
+                  if (routeErrorEl) {
+                    routeErrorEl.style.display = 'none';
+                  }
+                  var activeRoute = multiRoute.getActiveRoute();
+                  if (activeRoute) {
+                    var bounds = activeRoute.properties.get('bounds');
+                    if (bounds) {
+                      myMap.setBounds(bounds, { checkZoomRange: true, duration: 300 });
+                    }
+                  }
+                });
+
+                // Ошибка запроса к маршрутизатору
+                multiRoute.model.events.add('requestfail', function () {
+                  showRouteError('Не удалось построить маршрут по дорогам. Попробуйте изменить точки.');
+                  if (window.ReactNativeWebView) {
+                    window.ReactNativeWebView.postMessage(JSON.stringify({
+                      type: 'routeError',
+                      message: 'Не удалось построить маршрут по дорогам.'
+                    }));
+                  }
+                });
+
+                // Если активный маршрут отсутствует (например, точки невозможно связать дорогами)
+                multiRoute.events.add('activeroutechange', function () {
+                  var activeRoute = multiRoute.getActiveRoute();
+                  if (!activeRoute) {
+                    showRouteError('Маршрут не найден. Проверьте порядок и расположение точек.');
+                    if (window.ReactNativeWebView) {
+                      window.ReactNativeWebView.postMessage(JSON.stringify({
+                        type: 'routeError',
+                        message: 'Маршрут не найден для указанных точек.'
+                      }));
+                    }
+                  }
+                });
+              } catch (e) {
+                if (window.ReactNativeWebView) {
+                  window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'routeError',
+                    message: 'Ошибка при подготовке данных для маршрута.'
+                  }));
+                }
               }
+
+              ${selectionMode
+								? `
+              // Режим выбора точки на карте
+              myMap.events.add('click', function (e) {
+                var coords = e.get('coords');
+                if (typeof selectedPlacemark !== 'undefined' && selectedPlacemark) {
+                  myMap.geoObjects.remove(selectedPlacemark);
+                }
+                selectedPlacemark = new ymaps.Placemark(
+                  coords,
+                  { hintContent: 'Выбрано', balloonContentHeader: '<strong>Выбранная точка</strong>' },
+                  { preset: 'islands#blueDotIconWithCaption' }
+                );
+                myMap.geoObjects.add(selectedPlacemark);
+                if (window.ReactNativeWebView) {
+                  window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'mapClick',
+                    coords: { lat: coords[0], lng: coords[1] }
+                  }));
+                }
+              });
+              `
+								: ""}
             });
           </script>
         </body>
@@ -168,6 +339,10 @@ export const YandexMap: React.FC<YandexMapProps> = ({
 			const data = JSON.parse(event.nativeEvent.data);
 			if (data.type === "markerClick" && onMarkerPress) {
 				onMarkerPress(data.markerId);
+			} else if (data.type === "routeError") {
+				console.warn("YandexMap route error:", data.message);
+			} else if (data.type === "mapClick" && onSelectPoint && data.coords) {
+				onSelectPoint(data.coords);
 			}
 		} catch (error) {
 			console.error("Error parsing WebView message:", error);
@@ -176,22 +351,25 @@ export const YandexMap: React.FC<YandexMapProps> = ({
 
 	// Для веба используем упрощенную визуализацию
 	if (Platform.OS === "web") {
+		const webMarkers = origin
+			? [{ id: "origin", lat: origin.lat, lng: origin.lng, title: origin.label }, ...markers]
+			: markers;
+		const mapCenter =
+			webMarkers.length > 0
+				? {
+						lat: webMarkers.reduce((s, m) => s + m.lat, 0) / webMarkers.length,
+						lng: webMarkers.reduce((s, m) => s + m.lng, 0) / webMarkers.length,
+					}
+				: center;
 		return (
 			<View style={[styles.container, { height }]}>
 				<View style={styles.mapPlaceholder}>
 					<View style={styles.mapContent}>
-						{/* Центр карты */}
-						<View style={styles.mapCenter}>
-							<View style={styles.mapCenterDot} />
-						</View>
-
-						{/* Маркеры */}
-						{markers.map((marker, index) => {
-							// Простое позиционирование относительно центра
-							const latDiff = marker.lat - center.lat;
-							const lngDiff = marker.lng - center.lng;
-							const scale = 10000; // Масштаб для отображения
-
+						{webMarkers.map((marker, index) => {
+							const latDiff = marker.lat - mapCenter.lat;
+							const lngDiff = marker.lng - mapCenter.lng;
+							const scale = 10000;
+							const isOrigin = marker.id === "origin";
 							return (
 								<TouchableOpacity
 									key={marker.id}
@@ -204,34 +382,25 @@ export const YandexMap: React.FC<YandexMapProps> = ({
 									]}
 									onPress={() => onMarkerPress?.(marker.id)}
 								>
-									<View style={styles.markerPin}>
-										<Feather name="map-pin" size={20} color="#ef4444" />
+									<View style={[styles.markerPin, isOrigin && { backgroundColor: "#3b82f6" }]}>
+										<Feather name="map-pin" size={20} color={isOrigin ? "#1d4ed8" : "#ef4444"} />
 									</View>
-									<View style={styles.markerLabel}>
-										<Text style={styles.markerLabelText}>{index + 1}</Text>
+									<View style={[styles.markerLabel, isOrigin && { backgroundColor: "#3b82f6" }]}>
+										<Text style={styles.markerLabelText}>{isOrigin ? "Старт" : index}</Text>
 									</View>
 								</TouchableOpacity>
 							);
 						})}
 					</View>
 
-					{/* Информационная панель */}
 					<View style={styles.mapOverlay}>
 						<View style={styles.mapOverlayContent}>
 							<Feather name="map" size={16} color="#374151" />
 							<Text style={styles.mapOverlayText}>
-								{markers.length}{" "}
-								{markers.length === 1
-									? "место"
-									: markers.length < 5
-										? "места"
-										: "мест"}{" "}
-								на карте
+								{webMarkers.length}{" "}
+								{webMarkers.length === 1 ? "точка" : webMarkers.length < 5 ? "точки" : "точек"}
 							</Text>
 						</View>
-						<Text style={styles.mapOverlaySubtext}>
-							Нажмите на маркер для выбора места
-						</Text>
 					</View>
 				</View>
 			</View>

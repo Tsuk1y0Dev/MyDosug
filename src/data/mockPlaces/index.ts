@@ -23,3 +23,12 @@ export {
 
 export * from './types';
 
+// Реэкспорт legacy-данных для совместимости (PlannerContext, SearchScreen, placesApi и др.)
+export {
+  mockPlaces,
+  mockStartPoints,
+  activityTypes,
+  moodTypes,
+  companyTypes,
+} from '../legacyMockPlaces';
+

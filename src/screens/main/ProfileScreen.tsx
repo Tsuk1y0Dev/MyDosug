@@ -19,6 +19,7 @@ import { Feather } from '@expo/vector-icons';
 import { mockStartPoints } from '../../data/mockPlaces';
 import { StartPoint } from '../../types/planner';
 import { useUser } from '../../context/UserContext';
+import { YandexMap } from '../../components/maps/YandexMap';
 
 type ProfileScreenNavigationProp = StackNavigationProp<RootStackParamList>;
 
@@ -53,6 +54,11 @@ export const ProfileScreen = () => {
   const [walkingTimeInput, setWalkingTimeInput] = useState(settings.averageWalkingTime.toString());
   const [newLocationName, setNewLocationName] = useState('');
   const [newLocationType, setNewLocationType] = useState<'home' | 'office' | 'hotel' | 'other'>('home');
+  const [newLocationCoords, setNewLocationCoords] = useState<{ lat: number; lng: number }>({
+    lat: 52.03,
+    lng: 113.5,
+  });
+  const [mapPickerVisible, setMapPickerVisible] = useState(false);
 
   useEffect(() => {
     if (profile) {
@@ -116,7 +122,6 @@ export const ProfileScreen = () => {
       Alert.alert('Ошибка', 'Введите название точки');
       return;
     }
-    // Заглушка: в реальном приложении сюда попадут координаты от карты/геопозиции
     addSavedLocation({
       type: newLocationType,
       name: newLocationName.trim(),
@@ -128,10 +133,7 @@ export const ProfileScreen = () => {
           : newLocationType === 'hotel'
           ? '🏨'
           : '📍',
-      coords: {
-        lat: 52.03,
-        lng: 113.5,
-      },
+      coords: newLocationCoords,
     });
     setNewLocationName('');
   };
@@ -364,7 +366,7 @@ export const ProfileScreen = () => {
 
           <SwitchRow
             label="Нужен лифт (этажность, ТЦ)"
-            value={profile?.accessibilitySettings.needsElevator || false}
+            value={profile?.accessibilitySettings?.needsElevator ?? false}
             onValueChange={(value) => {
               updateAccessibilitySettings({ needsElevator: value });
             }}
@@ -427,6 +429,20 @@ export const ProfileScreen = () => {
               </TouchableOpacity>
             ))}
           </View>
+
+          <TouchableOpacity
+            style={styles.addLocationMapButton}
+            onPress={() => setMapPickerVisible(true)}
+          >
+            <Feather name="map-pin" size={18} color="#3b82f6" />
+            <Text style={styles.addLocationMapButtonText}>
+              Выбрать точку на карте
+            </Text>
+          </TouchableOpacity>
+
+          <Text style={styles.savedLocationCoordsPreview}>
+            Координаты: {newLocationCoords.lat.toFixed(4)}, {newLocationCoords.lng.toFixed(4)}
+          </Text>
 
           <TouchableOpacity style={styles.addLocationButton} onPress={handleAddLocation}>
             <Feather name="plus-circle" size={18} color="#3b82f6" />
@@ -491,6 +507,41 @@ export const ProfileScreen = () => {
         <View style={styles.footer}>
           <Text style={styles.footerText}>Версия 1.0.0</Text>
         </View>
+
+        {mapPickerVisible && (
+          <View style={styles.mapPickerOverlay}>
+            <View style={styles.mapPickerCard}>
+              <Text style={styles.mapPickerTitle}>Выберите точку на карте</Text>
+              <View style={styles.mapPickerMap}>
+                <YandexMap
+                  center={newLocationCoords}
+                  markers={[]}
+                  height={260}
+                  selectionMode
+                  selectedPoint={newLocationCoords}
+                  onSelectPoint={(coords) => setNewLocationCoords(coords)}
+                />
+              </View>
+              <Text style={styles.mapPickerCoords}>
+                {newLocationCoords.lat.toFixed(4)}, {newLocationCoords.lng.toFixed(4)}
+              </Text>
+              <View style={styles.mapPickerButtons}>
+                <TouchableOpacity
+                  style={styles.mapPickerCancel}
+                  onPress={() => setMapPickerVisible(false)}
+                >
+                  <Text style={styles.mapPickerCancelText}>Отмена</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.mapPickerSave}
+                  onPress={() => setMapPickerVisible(false)}
+                >
+                  <Text style={styles.mapPickerSaveText}>Готово</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -753,5 +804,90 @@ const styles = StyleSheet.create({
   savedLocationCoords: {
     fontSize: 12,
     color: '#6b7280',
+  },
+  addLocationMapButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+  },
+  addLocationMapButtonText: {
+    fontSize: 14,
+    color: '#3b82f6',
+    fontWeight: '500',
+  },
+  savedLocationCoordsPreview: {
+    paddingHorizontal: 20,
+    paddingBottom: 4,
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  mapPickerOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  mapPickerCard: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 16,
+  },
+  mapPickerTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  mapPickerMap: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    marginBottom: 8,
+  },
+  mapPickerCoords: {
+    fontSize: 13,
+    color: '#6b7280',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  mapPickerButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  mapPickerCancel: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    alignItems: 'center',
+  },
+  mapPickerCancelText: {
+    fontSize: 14,
+    color: '#374151',
+  },
+  mapPickerSave: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#3b82f6',
+    alignItems: 'center',
+  },
+  mapPickerSaveText: {
+    fontSize: 14,
+    color: 'white',
+    fontWeight: '600',
   },
 });

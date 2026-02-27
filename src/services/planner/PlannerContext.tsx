@@ -11,6 +11,7 @@ import {
   CompanyType,
   AdditionalFilters
 } from '../../types/planner';
+import { SearchCriteria } from '../../types/searchCriteria';
 import { mockPlaces, mockStartPoints } from '../../data/mockPlaces';
 import { calculateDuration } from '../../types/planner';
 import { timeToMinutes, minutesToTime } from '../../utils/timingUtils';
@@ -38,6 +39,8 @@ interface PlannerContextType {
   };
   setSearchFilters: (filters: any) => void;
   planningDate: Date;
+  searchCriteria: SearchCriteria | null;
+  setSearchCriteria: (c: SearchCriteria | null) => void;
 }
 
 const PlannerContext = createContext<PlannerContextType | undefined>(undefined);
@@ -74,16 +77,27 @@ type PlannerProviderProps = {
     endTime: string;
   };
   selectedDate?: Date;
+  initialStep?: number;
+  initialPlanType?: 'single' | 'chain';
 };
 
-export const PlannerProvider = ({ children, initialTimeSlot, selectedDate }: PlannerProviderProps) => {
-  const [currentStep, setCurrentStep] = useState(0);
+export const PlannerProvider = ({
+  children,
+  initialTimeSlot,
+  selectedDate,
+  initialStep,
+  initialPlanType,
+}: PlannerProviderProps) => {
+  const [currentStep, setCurrentStep] = useState(initialStep ?? 0);
   const [planningDate] = useState<Date>(selectedDate || new Date());
   const [planningRequest, setPlanningRequest] = useState<PlanningRequest>({
     ...defaultPlanningRequest,
     ...(initialTimeSlot && {
       startTime: initialTimeSlot.startTime,
       endTime: initialTimeSlot.endTime,
+    }),
+    ...(initialPlanType && {
+      planType: initialPlanType,
     }),
   });
   const [searchResults, setSearchResults] = useState<Place[]>([]);
@@ -95,6 +109,7 @@ export const PlannerProvider = ({ children, initialTimeSlot, selectedDate }: Pla
     rating: 3.0,
     distance: 5000,
   });
+  const [searchCriteria, setSearchCriteria] = useState<SearchCriteria | null>(null);
 
   // Генератор уникальных ID
   const generateUniqueId = useCallback(() => {
@@ -415,6 +430,7 @@ export const PlannerProvider = ({ children, initialTimeSlot, selectedDate }: Pla
       rating: 3.0,
       distance: 5000,
     });
+    setSearchCriteria(null);
   };
 
   return (
@@ -438,6 +454,8 @@ export const PlannerProvider = ({ children, initialTimeSlot, selectedDate }: Pla
         searchFilters,
         setSearchFilters,
         planningDate,
+        searchCriteria,
+        setSearchCriteria,
       }}
     >
       {children}
