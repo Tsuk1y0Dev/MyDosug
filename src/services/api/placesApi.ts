@@ -1,7 +1,13 @@
-import { apiClient, mockRequest, ApiResponse } from './client';
-import { Place } from '../../types/planner';
-import { OSMService } from '../osm/OSMService';
+/**
+ * API для работы с местами
+ * Моковые запросы, готовые для замены на реальные
+ */
 
+import { apiClient, mockRequest, ApiResponse } from './client';
+import { mockPlaces } from '../../data/mockPlaces';
+import { Place } from '../../types/planner';
+
+// Типы для мест
 export interface PlaceResponse {
   id: number;
   name: string;
@@ -11,8 +17,8 @@ export interface PlaceResponse {
   longitude: number;
   phone?: string;
   website?: string;
-  opens_at?: string;
-  closes_at?: string;
+  opens_at?: string; // HH:mm
+  closes_at?: string; // HH:mm
   works_on_weekends: boolean;
   price_level: 1 | 2 | 3 | 4 | 5;
   avg_price_per_person?: number;
@@ -26,7 +32,7 @@ export interface PlaceResponse {
     parking?: boolean;
     [key: string]: boolean | undefined;
   };
-  average_duration: number;
+  average_duration: number; // минуты
   min_people?: number;
   max_people?: number;
   average_rating: number;
@@ -79,6 +85,7 @@ export interface PlacesSearchResponse {
   offset: number;
 }
 
+// Моковые категории
 const mockCategories: Category[] = [
   {
     id: 1,
@@ -136,6 +143,7 @@ const mockCategories: Category[] = [
   },
 ];
 
+// Конвертер из Place в PlaceResponse
 const convertPlaceToResponse = (place: Place, id: number): PlaceResponse => {
   return {
     id,
@@ -189,71 +197,10 @@ export const placesApi = {
    * POST /api/places/search
    */
   async searchPlaces(data: PlacesSearchRequest): Promise<ApiResponse<PlacesSearchResponse>> {
-    const centerLat = data.latitude ?? 52.0339;
-    const centerLng = data.longitude ?? 113.501;
-    const radius = data.radius ?? 2000;
+    // Моковая реализация
+    let results = mockPlaces.map((place, index) => convertPlaceToResponse(place, index + 1));
 
-    const osmPlaces = await OSMService.searchAround(
-      { lat: centerLat, lng: centerLng },
-      radius
-    );
-
-    let results = osmPlaces.map((p, index) =>
-      convertPlaceToResponse(
-        {
-          id: String(index + 1),
-          name: p.title,
-          type: 'food',
-          address: p.address || '',
-          description: p.description,
-          priceLevel: 2,
-          averageBill: undefined,
-          rating: p.rating,
-          distance: 0,
-          travelTime: 0,
-          durationSettings: {
-            baseDuration: 60,
-            modifiers: {
-              company: {
-                solo: 1,
-                couple: 1,
-                friends: 1,
-                kids: 1,
-                colleagues: 1,
-              },
-              mood: {
-                relax: 1,
-                educational: 1,
-                fun: 1,
-                romantic: 1,
-                active: 1,
-              },
-            },
-          },
-          image: '',
-          website: undefined,
-          workingHours: '',
-          features: {
-            wheelchair: p.accessibility.wheelchairAccessible,
-            vegetarian: false,
-            outdoor: p.accessibility.parkingNearby,
-            childFriendly: false,
-          },
-          coordinates: {
-            lat: p.coords.lat,
-            lng: p.coords.lng,
-          },
-        } as Place,
-        index + 1
-      )
-    );
-
-    if (data.price_min !== undefined) {
-      results = results.filter(p => (p.avg_price_per_person || 0) >= data.price_min!);
-    }
-    if (data.price_max !== undefined) {
-      results = results.filter(p => (p.avg_price_per_person || 0) <= data.price_max!);
-    }
+    // Применяем фильтры
     if (data.price_min !== undefined) {
       results = results.filter(p => (p.avg_price_per_person || 0) >= data.price_min!);
     }
@@ -286,65 +233,34 @@ export const placesApi = {
       limit,
       offset,
     });
+
+    // Реальная реализация (раскомментировать когда бэкенд готов):
+    // return apiClient.post<PlacesSearchResponse>('/places/search', data);
   },
 
+  /**
+   * Получить место по ID
+   * GET /api/places/{id}
+   */
   async getPlace(id: number): Promise<ApiResponse<PlaceResponse>> {
-    const center = { lat: 52.0339, lng: 113.501 };
-    const osmPlaces = await OSMService.searchAround(center, 2000);
-    const raw = osmPlaces[id - 1];
-    if (!raw) {
+    // Моковая реализация
+    const place = mockPlaces.find((_, index) => index + 1 === id);
+    if (!place) {
       throw { message: 'Место не найдено', code: 'NOT_FOUND', status: 404 };
     }
 
-    const place: Place = {
-      id: String(id),
-      name: raw.title,
-      type: 'food',
-      address: raw.address || '',
-      description: raw.description,
-      priceLevel: 2,
-      averageBill: undefined,
-      rating: raw.rating,
-      distance: 0,
-      travelTime: 0,
-      durationSettings: {
-        baseDuration: 60,
-        modifiers: {
-          company: {
-            solo: 1,
-            couple: 1,
-            friends: 1,
-            kids: 1,
-            colleagues: 1,
-          },
-          mood: {
-            relax: 1,
-            educational: 1,
-            fun: 1,
-            romantic: 1,
-            active: 1,
-          },
-        },
-      },
-      image: '',
-      website: undefined,
-      workingHours: '',
-      features: {
-        wheelchair: raw.accessibility.wheelchairAccessible,
-        vegetarian: false,
-        outdoor: raw.accessibility.parkingNearby,
-        childFriendly: false,
-      },
-      coordinates: {
-        lat: raw.coords.lat,
-        lng: raw.coords.lng,
-      },
-    };
-
     return mockRequest<PlaceResponse>(convertPlaceToResponse(place, id));
+
+    // Реальная реализация (раскомментировать когда бэкенд готов):
+    // return apiClient.get<PlaceResponse>(`/places/${id}`);
   },
 
+  /**
+   * Получить категории мест
+   * GET /api/places/categories
+   */
   async getCategories(parentId?: number): Promise<ApiResponse<Category[]>> {
+    // Моковая реализация
     let categories = mockCategories;
     
     if (parentId !== undefined) {
@@ -354,6 +270,9 @@ export const placesApi = {
     }
 
     return mockRequest<Category[]>(categories);
+
+    // Реальная реализация (раскомментировать когда бэкенд готов):
+    // return apiClient.get<Category[]>('/places/categories', parentId ? { parent_id: parentId } : {});
   },
 };
 

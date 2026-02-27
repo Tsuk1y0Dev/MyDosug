@@ -11,10 +11,11 @@ import {
 import { Feather } from "@expo/vector-icons";
 import { usePlanner } from "../../services/planner/PlannerContext";
 import { useRoute } from "../../services/planner/RouteContext";
+import type { CatalogPlace } from "../../data/mockPlaces";
 import type { SearchCriteria, SearchCriteriaFilters } from "../../types/searchCriteria";
 import type { RouteEvent } from "../../types/route";
 import { YandexMap } from "../maps/YandexMap";
-import { OSMService, OSMPlace } from "../../services/osm/OSMService";
+import { OSMService, OSMTagFilter } from "../../services/osm/OSMService";
 
 const { height: winHeight } = Dimensions.get("window");
 
@@ -36,7 +37,7 @@ function haversineKm(
 	return R * c;
 }
 
-function matchesFilters(place: OSMPlace, filters: SearchCriteriaFilters): boolean {
+function matchesFilters(place: CatalogPlace, filters: SearchCriteriaFilters): boolean {
 	if (!filters || Object.keys(filters).length === 0) return true;
 	const acc = place.accessibility;
 	if (filters.wheelchairAccessible === true && !acc.wheelchairAccessible) return false;
@@ -58,34 +59,78 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 	const { searchCriteria, setCurrentStep } = usePlanner();
 	const { insertEvent, events, pendingInsertIndex } = useRoute();
 
-	const [viewMode, setViewMode] = useState<"list" | "map">("list");
-	const [selectedPlace, setSelectedPlace] = useState<OSMPlace | null>(null);
-	const [places, setPlaces] = useState<OSMPlace[]>([]);
+	const [results, setResults] = useState<CatalogPlace[]>([]);
 	const [loading, setLoading] = useState(false);
-	const [loadError, setLoadError] = useState<string | null>(null);
+	const [error, setError] = useState<string | null>(null);
+
+	const [viewMode, setViewMode] = useState<"list" | "map">("list");
+	const [selectedPlace, setSelectedPlace] = useState<CatalogPlace | null>(null);
 
 	useEffect(() => {
-		const load = async () => {
-			if (!searchCriteria) return;
+		if (!searchCriteria) {
+			setResults([]);
+			return;
+		}
+
+		let cancelled = false;
+
+		const load = async (criteria: SearchCriteria) => {
 			setLoading(true);
-			setLoadError(null);
+			setError(null);
+
+			const tags: OSMTagFilter[] = [];
+
+			if (criteria.categoryId) {
+				tags.push({ key: "amenity", value: criteria.categoryId });
+			} else {
+				tags.push({ key: "amenity" });
+			}
+
+			if (criteria.filters?.wheelchairAccessible) {
+				tags.push({ key: "wheelchair", value: "yes" });
+			}
+			if (criteria.filters?.wifi) {
+				tags.push({ key: "internet_access", value: "wlan" });
+			}
+
+			const radius = 2000;
+
 			try {
-				const data = await OSMService.searchAround(searchCriteria.startCoords, 2000, searchCriteria);
-				const filtered = data.filter((p) => matchesFilters(p, searchCriteria.filters ?? {}));
-				setPlaces(filtered);
+				const places = await OSMService.search({
+					center: criteria.startCoords,
+					radiusMeters: radius,
+					tags,
+				});
+
+				if (!cancelled) {
+					const filtered = places.filter((p) =>
+						matchesFilters(p, criteria.filters ?? {})
+					);
+					setResults(filtered);
+				}
 			} catch (e: any) {
-				setLoadError(e?.message || "Ошибка загрузки мест");
+				if (!cancelled) {
+					setError("Не удалось загрузить места из OSM");
+					setResults([]);
+				}
 			} finally {
-				setLoading(false);
+				if (!cancelled) {
+					setLoading(false);
+				}
 			}
 		};
-		load();
+
+		load(searchCriteria);
+
+		return () => {
+			cancelled = true;
+		};
 	}, [searchCriteria]);
 
 	const filteredWithDistance = useMemo(() => {
 		if (!searchCriteria) return [];
 		const start = searchCriteria.startCoords;
-		return places
+		return results
 			.map((place) => {
 				const distanceKm = haversineKm(
 					start.lat,
@@ -105,10 +150,10 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 				};
 			})
 			.sort((a, b) => a.distanceMeters - b.distanceMeters);
-	}, [searchCriteria, places]);
+	}, [results, searchCriteria]);
 
 	const handleAddToRoute = useCallback(
-		(place: OSMPlace) => {
+		(place: CatalogPlace) => {
 			const event: RouteEvent = {
 				id: `ev-${Date.now()}-${place.id}`,
 				placeId: place.id,
@@ -160,11 +205,7 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 					<Feather name="arrow-left" size={24} color="#374151" />
 				</TouchableOpacity>
 				<Text style={styles.title}>
-					{loading
-						? "Загрузка..."
-						: loadError
-						? loadError
-						: `Найдено: ${filteredWithDistance.length}`}
+					{loading ? "Загрузка..." : `Найдено: ${filteredWithDistance.length}`}
 				</Text>
 				<View style={styles.toggleRow}>
 					<TouchableOpacity
@@ -212,7 +253,12 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 					contentContainerStyle={styles.listContent}
 					showsVerticalScrollIndicator
 				>
-					{filteredWithDistance.length === 0 ? (
+					{error ? (
+						<View style={styles.emptyState}>
+							<Feather name="alert-triangle" size={48} color="#f97316" />
+							<Text style={styles.emptyStateText}>{error}</Text>
+						</View>
+					) : filteredWithDistance.length === 0 && !loading ? (
 						<View style={styles.emptyState}>
 							<Feather name="map-pin" size={48} color="#d1d5db" />
 							<Text style={styles.emptyStateText}>Места не найдены</Text>
