@@ -32,21 +32,58 @@ type OverpassElement = {
   tags?: Record<string, string>;
 };
 
+const CATEGORY_AMENITIES: Record<string, string[]> = {
+  food: ['restaurant', 'cafe', 'fast_food', 'bar', 'pub'],
+  entertainment: ['cinema', 'theatre', 'nightclub'],
+  sports: ['sports_centre', 'gym', 'stadium'],
+  culture: ['museum', 'theatre', 'arts_centre'],
+  walking: ['park', 'garden'],
+  shopping: ['mall', 'supermarket', 'department_store'],
+  health: ['pharmacy', 'clinic', 'hospital'],
+  transport: ['bus_station', 'train_station', 'tram_stop'],
+};
+
+const SUBCATEGORY_AMENITIES: Record<string, string[]> = {
+  restaurant: ['restaurant'],
+  cafe: ['cafe'],
+  fastfood: ['fast_food'],
+  bar: ['bar', 'pub'],
+  bakery: ['bakery', 'cafe'],
+  mall: ['mall'],
+  hypermarket: ['supermarket'],
+  pharmacy_24: ['pharmacy'],
+  cinema: ['cinema'],
+};
+
 const buildOverpassQuery = (center: { lat: number; lng: number }, radius: number, criteria?: SearchCriteria) => {
   const { lat, lng } = center;
 
   const amenityFilters: string[] = [];
 
-  if (criteria?.categoryId) {
-    amenityFilters.push(`node["amenity"="${criteria.categoryId}"](around:${radius},${lat},${lng});`);
-  } else {
-    amenityFilters.push(
-      `node["amenity"~"cafe|restaurant|fast_food|bar|pub"](around:${radius},${lat},${lng});`
-    );
+  const categoryId = criteria?.categoryId;
+  const subCategoryId = criteria?.subCategoryId;
+
+  let amenities: string[] =
+    (subCategoryId && SUBCATEGORY_AMENITIES[subCategoryId]) ||
+    (categoryId && CATEGORY_AMENITIES[categoryId]) || [];
+
+  if (!amenities.length) {
+    amenities = ['cafe', 'restaurant', 'fast_food', 'bar', 'pub'];
   }
 
-  const wifiFilter =
-    criteria?.filters?.wifi === true ? `["internet_access"="wlan"]` : "";
+  const amenityExpr =
+    amenities.length === 1
+      ? `node["amenity"="${amenities[0]}"]`
+      : `node["amenity"~"${amenities.join('|')}"]`;
+
+  amenityFilters.push(`${amenityExpr}(around:${radius},${lat},${lng});`);
+
+  const wifiRequested =
+    criteria?.filters?.wifi === true ||
+    criteria?.subCategoryId === 'wifi_place' ||
+    criteria?.goal === 'work';
+
+  const wifiFilter = wifiRequested ? `["internet_access"="wlan"]` : "";
 
   const amenityBlocks = amenityFilters
     .map((base) => base.replace("];", `${wifiFilter}];`))
@@ -83,6 +120,13 @@ const mapElementToPlace = (el: OverpassElement): OSMPlace => {
   const publicTransportNearby =
     tags.public_transport === "platform" || tags.highway === "bus_stop";
 
+  const rawRating = tags["rating"] || tags["stars"];
+  const parsedRating = rawRating ? Number(rawRating) : NaN;
+  const rating =
+    !Number.isNaN(parsedRating) && parsedRating > 0
+      ? Math.max(3.5, Math.min(5, parsedRating))
+      : 3.8 + Math.random() * 0.7;
+
   return {
     id: String(el.id),
     title,
@@ -94,7 +138,7 @@ const mapElementToPlace = (el: OverpassElement): OSMPlace => {
       lat: el.lat,
       lng: el.lon,
     },
-    rating: 4.2,
+    rating,
     accessibility: {
       wheelchairAccessible,
       elevatorOrRamp: false,

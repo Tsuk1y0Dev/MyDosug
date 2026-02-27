@@ -5,6 +5,7 @@ import React, {
   useMemo,
   useState,
   ReactNode,
+  useEffect,
 } from 'react';
 import {
   DayRouteState,
@@ -13,6 +14,7 @@ import {
   RouteSegment,
   TravelMode,
 } from '../../types/route';
+import { YandexRoutingService } from '../yandex/YandexRoutingService';
 
 interface RouteContextType extends DayRouteState {
   setOrigin: (origin: RouteOrigin) => void;
@@ -31,12 +33,6 @@ type RouteProviderProps = {
   children: ReactNode;
 };
 
-const DAY_START_TIME = '09:00';
-const DAY_START_MINUTES = 9 * 60;
-
-// Заглушка для вызова Яндекс API.
-// В реальной интеграции здесь должен быть запрос к маршрутизации,
-// сейчас логика упрощена и имитирует ответы API.
 const mockRouteSegment = (
   from: { lat: number; lng: number },
   to: { lat: number; lng: number },
@@ -64,6 +60,8 @@ const mockRouteSegment = (
   };
 };
 
+const START_MINUTES = 9 * 60;
+
 const recomputeArrivalTimes = (
   origin: RouteOrigin | null,
   events: RouteEvent[],
@@ -71,33 +69,32 @@ const recomputeArrivalTimes = (
 ): RouteEvent[] => {
   if (!events.length) return events;
 
-  let currentMinutes = DAY_START_MINUTES;
+  let currentMinutes = START_MINUTES;
   const updated: RouteEvent[] = [];
 
   for (let i = 0; i < events.length; i += 1) {
     const current = events[i];
-    let segment: RouteSegment | undefined;
+    let seg: RouteSegment | undefined;
 
     if (i === 0) {
       if (origin) {
-        segment = segments.find(
+        seg = segments.find(
           s => s.fromEventId === 'origin' && s.toEventId === current.id
         );
       }
     } else {
-      const prev = updated[i - 1];
-      const prevRaw = events[i - 1];
+      const prevEvent = updated[i - 1];
+      const prevOriginal = events[i - 1];
 
-      // Добавляем длительность предыдущего события
-      currentMinutes += prevRaw.duration;
+      currentMinutes += prevOriginal.duration;
 
-      segment = segments.find(
-        s => s.fromEventId === prev.id && s.toEventId === current.id
+      seg = segments.find(
+        s => s.fromEventId === prevEvent.id && s.toEventId === current.id
       );
     }
 
-    if (segment) {
-      currentMinutes += segment.durationMinutes;
+    if (seg) {
+      currentMinutes += seg.durationMinutes;
     }
 
     const hours = Math.floor(currentMinutes / 60) % 24;
@@ -128,122 +125,44 @@ export const RouteProvider = ({ children }: RouteProviderProps) => {
     if (segments.length === 0) {
       return null;
     }
-    // Упрощённая агрегация polyline на день
     return segments.map(s => s.geometry.polyline).join('|');
   }, []);
 
   const setOrigin = useCallback((origin: RouteOrigin) => {
-    setState(prev => {
-      const events = prev.events;
-      const segments = events.length
-        ? events.map((event, index) => {
-            if (index === 0) {
-              const base = mockRouteSegment(origin.coords, event.coords, 'driving');
-              return {
-                fromEventId: 'origin',
-                toEventId: event.id,
-                ...base,
-              };
-            }
-            const from = events[index - 1];
-            const base = mockRouteSegment(from.coords, event.coords, event.travelModeToNext);
-            return {
-              fromEventId: from.id,
-              toEventId: event.id,
-              ...base,
-            };
-          })
-        : [];
-
-      const updatedEvents = recomputeArrivalTimes(origin, events, segments);
-
-      return {
-        ...prev,
-        origin,
-        events: updatedEvents,
-        segments,
-        cachedPolyline: recomputeCachedPolyline(segments),
-      };
-    });
-  }, [recomputeCachedPolyline]);
+    setState(prev => ({
+      ...prev,
+      origin,
+    }));
+  }, []);
 
   const setEvents = useCallback((events: RouteEvent[]) => {
-    setState(prev => {
-      const segments: RouteSegment[] = [];
-      if (prev.origin && events.length) {
-        const first = events[0];
-        const baseFirst = mockRouteSegment(prev.origin.coords, first.coords, 'driving');
-        segments.push({
-          fromEventId: 'origin',
-          toEventId: first.id,
-          ...baseFirst,
-        });
-      }
-
-      for (let i = 1; i < events.length; i += 1) {
-        const from = events[i - 1];
-        const to = events[i];
-        const base = mockRouteSegment(from.coords, to.coords, from.travelModeToNext);
-        segments.push({
-          fromEventId: from.id,
-          toEventId: to.id,
-          ...base,
-        });
-      }
-
-      const updatedEvents = recomputeArrivalTimes(prev.origin, events, segments);
-
-      return {
-        ...prev,
-        events: updatedEvents,
-        segments,
-        cachedPolyline: recomputeCachedPolyline(segments),
-      };
-    });
-  }, [recomputeCachedPolyline]);
+    setState(prev => ({
+      ...prev,
+      events,
+    }));
+  }, []);
 
   const insertEvent = useCallback(
     (index: number, event: RouteEvent) => {
       setState(prev => {
-        const currentEvents = [...prev.events];
-        const safeIndex = Math.max(0, Math.min(index, currentEvents.length));
-        currentEvents.splice(safeIndex, 0, event);
-
-        const segments: RouteSegment[] = [];
-
-        if (prev.origin && currentEvents.length) {
-          const first = currentEvents[0];
-          const baseFirst = mockRouteSegment(prev.origin.coords, first.coords, 'driving');
-          segments.push({
-            fromEventId: 'origin',
-            toEventId: first.id,
-            ...baseFirst,
-          });
-        }
-
-        for (let i = 1; i < currentEvents.length; i += 1) {
-          const from = currentEvents[i - 1];
-          const to = currentEvents[i];
-          const base = mockRouteSegment(from.coords, to.coords, from.travelModeToNext);
-          segments.push({
-            fromEventId: from.id,
-            toEventId: to.id,
-            ...base,
-          });
-        }
-
-        const updatedEvents = recomputeArrivalTimes(prev.origin, currentEvents, segments);
-
+        const events = [...prev.events];
+        const safeIndex = Math.max(0, Math.min(index, events.length));
+        events.splice(safeIndex, 0, event);
         return {
           ...prev,
-          events: updatedEvents,
-          segments,
-          cachedPolyline: recomputeCachedPolyline(segments),
+          events,
         };
       });
     },
-    [recomputeCachedPolyline]
+    []
   );
+
+  const removeEvent = useCallback((eventId: string) => {
+    setState(prev => ({
+      ...prev,
+      events: prev.events.filter(e => e.id !== eventId),
+    }));
+  }, []);
 
   const updateTravelMode = useCallback(
     (index: number, mode: TravelMode) => {
@@ -251,26 +170,97 @@ export const RouteProvider = ({ children }: RouteProviderProps) => {
         if (index < 0 || index >= prev.events.length) {
           return prev;
         }
-
         const events = [...prev.events];
         events[index] = {
           ...events[index],
           travelModeToNext: mode,
         };
+        return {
+          ...prev,
+          events,
+        };
+      });
+    },
+    []
+  );
 
-        // Пересчитываем все сегменты с учётом нового режима
-        const segments: RouteSegment[] = [];
+  const clearRoute = useCallback(() => {
+    setState({
+      origin: null,
+      events: [],
+      segments: [],
+      cachedPolyline: null,
+    });
+    setPendingInsertIndex(null);
+  }, []);
 
-        if (prev.origin && events.length) {
+  useEffect(() => {
+    const updateRoute = async () => {
+      const origin = state.origin;
+      const events = state.events;
+      if (!origin || events.length === 0) {
+        setState(prev => ({
+          ...prev,
+          segments: [],
+          cachedPolyline: null,
+        }));
+        return;
+      }
+
+      const points: { lat: number; lng: number }[] = [
+        origin.coords,
+        ...events.map(e => e.coords),
+      ];
+
+      const routing = await YandexRoutingService.getRoute(points, 'driving');
+
+      let segments: RouteSegment[] = [];
+
+      if (routing && routing.legs.length >= points.length - 1) {
+        let legIndex = 0;
+
+        const firstLeg = routing.legs[legIndex++];
+        segments.push({
+          fromEventId: 'origin',
+          toEventId: events[0].id,
+          distanceMeters: firstLeg.distanceMeters,
+          durationMinutes: Math.max(
+            1,
+            Math.round(firstLeg.durationSeconds / 60)
+          ),
+          travelMode: 'driving',
+          geometry: { polyline: '' },
+        });
+
+        for (let i = 1; i < events.length; i += 1) {
+          const from = events[i - 1];
+          const to = events[i];
+          const leg = routing.legs[legIndex++] || {
+            distanceMeters: 0,
+            durationSeconds: 0,
+          };
+          segments.push({
+            fromEventId: from.id,
+            toEventId: to.id,
+            distanceMeters: leg.distanceMeters,
+            durationMinutes: Math.max(
+              1,
+              Math.round(leg.durationSeconds / 60)
+            ),
+            travelMode: from.travelModeToNext,
+            geometry: { polyline: '' },
+          });
+        }
+      } else {
+        if (origin && events.length) {
           const first = events[0];
-          const baseFirst = mockRouteSegment(prev.origin.coords, first.coords, 'driving');
+          const baseFirst = mockRouteSegment(origin.coords, first.coords, 'driving');
           segments.push({
             fromEventId: 'origin',
             toEventId: first.id,
             ...baseFirst,
           });
         }
-
         for (let i = 1; i < events.length; i += 1) {
           const from = events[i - 1];
           const to = events[i];
@@ -281,65 +271,21 @@ export const RouteProvider = ({ children }: RouteProviderProps) => {
             ...base,
           });
         }
-
-        const updatedEvents = recomputeArrivalTimes(prev.origin, events, segments);
-
-        const cachedPolyline = recomputeCachedPolyline(segments);
-
-        return {
-          ...prev,
-          events: updatedEvents,
-          segments,
-          cachedPolyline,
-        };
-      });
-    },
-    [recomputeCachedPolyline]
-  );
-
-  const clearRoute = useCallback(() => {
-    setState({
-      origin: null,
-      events: [],
-      segments: [],
-      cachedPolyline: null,
-    });
-  }, []);
-
-  const removeEvent = useCallback((eventId: string) => {
-    setState(prev => {
-      const events = prev.events.filter(e => e.id !== eventId);
-      const segments: RouteSegment[] = [];
-      if (prev.origin && events.length) {
-        const first = events[0];
-        const baseFirst = mockRouteSegment(prev.origin.coords, first.coords, 'driving');
-        segments.push({
-          fromEventId: 'origin',
-          toEventId: first.id,
-          ...baseFirst,
-        });
-      }
-      for (let i = 1; i < events.length; i += 1) {
-        const from = events[i - 1];
-        const to = events[i];
-        const base = mockRouteSegment(from.coords, to.coords, from.travelModeToNext);
-        segments.push({
-          fromEventId: from.id,
-          toEventId: to.id,
-          ...base,
-        });
       }
 
-      const updatedEvents = recomputeArrivalTimes(prev.origin, events, segments);
+      const updatedEvents = recomputeArrivalTimes(origin, events, segments);
+      const cachedPolyline = recomputeCachedPolyline(segments);
 
-      return {
+      setState(prev => ({
         ...prev,
         events: updatedEvents,
         segments,
-        cachedPolyline: recomputeCachedPolyline(segments),
-      };
-    });
-  }, [recomputeCachedPolyline]);
+        cachedPolyline,
+      }));
+    };
+
+    updateRoute();
+  }, [state.origin, state.events, recomputeCachedPolyline]);
 
   const value: RouteContextType = useMemo(
     () => ({
@@ -353,7 +299,16 @@ export const RouteProvider = ({ children }: RouteProviderProps) => {
       pendingInsertIndex,
       setPendingInsertIndex,
     }),
-    [state, setOrigin, setEvents, insertEvent, removeEvent, updateTravelMode, clearRoute, pendingInsertIndex]
+    [
+      state,
+      setOrigin,
+      setEvents,
+      insertEvent,
+      removeEvent,
+      updateTravelMode,
+      clearRoute,
+      pendingInsertIndex,
+    ]
   );
 
   return <RouteContext.Provider value={value}>{children}</RouteContext.Provider>;
