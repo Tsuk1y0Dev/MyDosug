@@ -16,10 +16,10 @@ import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../../navigation/types';
 import { Feather } from '@expo/vector-icons';
-import { mockStartPoints } from '../../data/mockPlaces';
 import { StartPoint } from '../../types/planner';
 import { useUser } from '../../context/UserContext';
 import { YandexMap } from '../../components/maps/YandexMap';
+import { defaultStartPoints } from '../../data/startPoints';
 
 type ProfileScreenNavigationProp = StackNavigationProp<RootStackParamList>;
 
@@ -43,7 +43,7 @@ export const ProfileScreen = () => {
     wheelchairAccessible: boolean;
     averageWalkingTime: number;
   }>({
-    defaultStartPoint: mockStartPoints[0] as StartPoint,
+    defaultStartPoint: defaultStartPoints[0] as StartPoint,
     defaultTransportMode: 'walking' as 'walking' | 'car' | 'public',
     notificationsEnabled: true,
     vegetarian: false,
@@ -62,7 +62,7 @@ export const ProfileScreen = () => {
 
   useEffect(() => {
     if (profile) {
-      const fallback = mockStartPoints[0];
+      const fallback = defaultStartPoints[0];
       const fromProfile = profile.defaultStartPoint as StartPoint | undefined;
       const nextStartPoint: StartPoint =
         fromProfile && ['home', 'work', 'current', 'custom'].includes(fromProfile.type)
@@ -239,14 +239,14 @@ export const ProfileScreen = () => {
           
           <SettingRow
             label="Точка старта"
-            value={mockStartPoints.find(p => p.type === settings.defaultStartPoint.type)?.label || settings.defaultStartPoint.address}
+            value={defaultStartPoints.find(p => p.type === settings.defaultStartPoint.type)?.label || settings.defaultStartPoint.address}
             icon="map-pin"
             onPress={() => {
               Alert.alert(
                 'Точка старта',
                 'Выберите точку старта по умолчанию',
                 [
-                  ...mockStartPoints.map(point => ({
+                  ...defaultStartPoints.map(point => ({
                     text: point.label,
                     onPress: () => {
                       setSettings(prev => ({ ...prev, defaultStartPoint: point }));

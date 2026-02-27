@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StartPoint } from '../types/planner';
-import { mockStartPoints } from '../data/mockPlaces';
 
 export type SavedLocationType = 'home' | 'office' | 'hotel' | 'other';
 
@@ -25,7 +24,7 @@ export interface UserProfile {
   id: string;
   name: string;
   email: string;
-  defaultStartPoint: StartPoint | typeof mockStartPoints[number];
+  defaultStartPoint: StartPoint;
   defaultTransportMode: 'walking' | 'car' | 'public';
   notificationsEnabled: boolean;
   vegetarian: boolean;
@@ -92,9 +91,9 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
             name: '',
             email: '',
             defaultStartPoint: {
-              type: 'home',
+              type: 'current',
               address: '',
-              label: 'Дом',
+              label: 'Текущая позиция',
             } as StartPoint,
             defaultTransportMode: 'walking',
             notificationsEnabled: true,
