@@ -75,7 +75,7 @@ export const PlannerContent: React.FC<PlannerContentProps> = ({
 					// Если custom, уже создали активность на шаге 2, возвращаемся
 					return <CustomActivityStep onPlanSaved={onPlanSaved} />;
 				}
-				return <SearchResultsStep />;
+				return <SearchResultsStep onPlanSaved={onPlanSaved} />;
 			case 4:
 				// Шаг 4: Планирование маршрута
 				return <RoutePlanningStep onPlanSaved={onPlanSaved} />;
