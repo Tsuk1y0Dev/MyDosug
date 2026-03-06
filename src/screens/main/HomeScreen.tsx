@@ -54,7 +54,9 @@ export const HomeScreen = () => {
 	const { profile } = useUser();
 
 	const [viewMode, setViewMode] = useState<ViewMode>("timeline");
-	const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>(CHITA_CENTER);
+	const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>(
+		CHITA_CENTER,
+	);
 	const [routeSummaryVisible, setRouteSummaryVisible] = useState(false);
 	const [selectedDate, setSelectedDate] = useState(() => new Date());
 	const [showDatePicker, setShowDatePicker] = useState(false);
@@ -68,7 +70,10 @@ export const HomeScreen = () => {
 	const DAY_START = "09:00";
 	const DAY_END = "23:00";
 
-	const findFirstFreeSlot = (list: RouteEvent[], minDurationMinutes: number) => {
+	const findFirstFreeSlot = (
+		list: RouteEvent[],
+		minDurationMinutes: number,
+	) => {
 		if (list.length === 0) {
 			const startMinutes = timeToMinutes(DAY_START);
 			return {
@@ -78,7 +83,7 @@ export const HomeScreen = () => {
 		}
 
 		const eventsSorted = [...list].sort(
-			(a, b) => timeToMinutes(a.arrivalTime) - timeToMinutes(b.arrivalTime)
+			(a, b) => timeToMinutes(a.arrivalTime) - timeToMinutes(b.arrivalTime),
 		);
 
 		let cursor = timeToMinutes(DAY_START);
@@ -113,7 +118,6 @@ export const HomeScreen = () => {
 	const openPlannerWithAutoSlot = (insertIndex: number | null = null) => {
 		let slot: { startTime: string; endTime: string };
 
-		// Если вставка между существующими событиями — пробуем занять именно этот промежуток
 		if (insertIndex != null && insertIndex > 0 && insertIndex < events.length) {
 			const prev = events[insertIndex - 1];
 			const next = events[insertIndex];
@@ -130,7 +134,11 @@ export const HomeScreen = () => {
 			} else {
 				slot = findFirstFreeSlot(events, MIN_ACTIVITY_DURATION_MIN);
 			}
-		} else if (insertIndex != null && insertIndex === events.length && events.length > 0) {
+		} else if (
+			insertIndex != null &&
+			insertIndex === events.length &&
+			events.length > 0
+		) {
 			// Вставка в конец — сразу после последнего события, если влезаем в рабочий день
 			const last = events[events.length - 1];
 			const lastStart = timeToMinutes(last.arrivalTime);
@@ -172,14 +180,17 @@ export const HomeScreen = () => {
 		const fromSaved =
 			startPoint.type === "current"
 				? CHITA_CENTER
-				: profile?.savedLocations?.find(
+				: (profile?.savedLocations?.find(
 						(l) =>
 							(l.type === "home" && startPoint.type === "home") ||
-							(l.type === "office" && startPoint.type === "work")
-					)?.coords ?? CHITA_CENTER;
+							(l.type === "office" && startPoint.type === "work"),
+					)?.coords ?? CHITA_CENTER);
 		const coords =
-			startPoint && "coordinates" in startPoint && (startPoint as { coordinates?: { lat: number; lng: number } }).coordinates
-				? (startPoint as { coordinates: { lat: number; lng: number } }).coordinates
+			startPoint &&
+			"coordinates" in startPoint &&
+			(startPoint as { coordinates?: { lat: number; lng: number } }).coordinates
+				? (startPoint as { coordinates: { lat: number; lng: number } })
+						.coordinates
 				: fromSaved;
 		setOrigin({
 			id: "profile_origin",
@@ -197,12 +208,15 @@ export const HomeScreen = () => {
 				lng: e.coords.lng,
 				title: e.customTitle || `Точка ${i + 1}`,
 			})),
-		[events]
+		[events],
 	);
 
 	// Линии маршрута между точками (origin -> event0 -> event1 -> ...)
 	const segmentLines = useMemo(() => {
-		const lines: Array<{ from: { lat: number; lng: number }; to: { lat: number; lng: number } }> = [];
+		const lines: Array<{
+			from: { lat: number; lng: number };
+			to: { lat: number; lng: number };
+		}> = [];
 		if (origin && events.length > 0) {
 			lines.push({ from: origin.coords, to: events[0].coords });
 		}
@@ -214,15 +228,15 @@ export const HomeScreen = () => {
 
 	const totalDistance = useMemo(
 		() => segments.reduce((sum, s) => sum + s.distanceMeters, 0),
-		[segments]
+		[segments],
 	);
 	const totalTravelMinutes = useMemo(
 		() => segments.reduce((sum, s) => sum + s.durationMinutes, 0),
-		[segments]
+		[segments],
 	);
 	const totalActivityMinutes = useMemo(
 		() => events.reduce((sum, e) => sum + e.duration, 0),
-		[events]
+		[events],
 	);
 
 	const handleEventPress = (event: RouteEvent) => {
@@ -276,13 +290,23 @@ export const HomeScreen = () => {
 				center={mapCenter}
 				zoom={14}
 				markers={mapMarkers}
-				origin={origin ? { lat: origin.coords.lat, lng: origin.coords.lng, label: origin.label } : undefined}
+				origin={
+					origin
+						? {
+								lat: origin.coords.lat,
+								lng: origin.coords.lng,
+								label: origin.label,
+							}
+						: undefined
+				}
 				segmentLines={segmentLines}
 				onMarkerPress={(id) => {
 					const ev = events.find((e) => e.id === id);
 					if (ev) setMapCenter(ev.coords);
 				}}
-				height={viewMode === "map" ? Dimensions.get("window").height - 120 : 240}
+				height={
+					viewMode === "map" ? Dimensions.get("window").height - 120 : 240
+				}
 				fitAllMarkers={true}
 			/>
 		</View>
@@ -290,7 +314,9 @@ export const HomeScreen = () => {
 
 	const segmentBetween = (fromIndex: number) => {
 		const seg = segments.find(
-			(s) => s.fromEventId === events[fromIndex]?.id && s.toEventId === events[fromIndex + 1]?.id
+			(s) =>
+				s.fromEventId === events[fromIndex]?.id &&
+				s.toEventId === events[fromIndex + 1]?.id,
 		);
 		if (!seg) return null;
 		const km = (seg.distanceMeters / 1000).toFixed(1);
@@ -305,8 +331,14 @@ export const HomeScreen = () => {
 						style={styles.legModeButton}
 						onPress={() => cycleTravelMode(fromIndex)}
 					>
-						<Feather name={travelModeIcon(seg.travelMode)} size={16} color="#3b82f6" />
-						<Text style={styles.legModeText}>{travelModeLabel(seg.travelMode)}</Text>
+						<Feather
+							name={travelModeIcon(seg.travelMode)}
+							size={16}
+							color="#3b82f6"
+						/>
+						<Text style={styles.legModeText}>
+							{travelModeLabel(seg.travelMode)}
+						</Text>
 					</TouchableOpacity>
 				</View>
 				<TouchableOpacity
@@ -344,30 +376,50 @@ export const HomeScreen = () => {
 							</View>
 							<View style={styles.eventReorderButtons}>
 								<TouchableOpacity
-									style={[styles.reorderBtn, index === 0 && styles.reorderBtnDisabled]}
+									style={[
+										styles.reorderBtn,
+										index === 0 && styles.reorderBtnDisabled,
+									]}
 									onPress={() => {
 										if (index > 0) {
 											const next = [...events];
-											[next[index - 1], next[index]] = [next[index], next[index - 1]];
+											[next[index - 1], next[index]] = [
+												next[index],
+												next[index - 1],
+											];
 											setEvents(next);
 										}
 									}}
 									disabled={index === 0}
 								>
-									<Feather name="chevron-up" size={18} color={index === 0 ? "#d1d5db" : "#374151"} />
+									<Feather
+										name="chevron-up"
+										size={18}
+										color={index === 0 ? "#d1d5db" : "#374151"}
+									/>
 								</TouchableOpacity>
 								<TouchableOpacity
-									style={[styles.reorderBtn, index === events.length - 1 && styles.reorderBtnDisabled]}
+									style={[
+										styles.reorderBtn,
+										index === events.length - 1 && styles.reorderBtnDisabled,
+									]}
 									onPress={() => {
 										if (index < events.length - 1) {
 											const next = [...events];
-											[next[index], next[index + 1]] = [next[index + 1], next[index]];
+											[next[index], next[index + 1]] = [
+												next[index + 1],
+												next[index],
+											];
 											setEvents(next);
 										}
 									}}
 									disabled={index === events.length - 1}
 								>
-									<Feather name="chevron-down" size={18} color={index === events.length - 1 ? "#d1d5db" : "#374151"} />
+									<Feather
+										name="chevron-down"
+										size={18}
+										color={index === events.length - 1 ? "#d1d5db" : "#374151"}
+									/>
 								</TouchableOpacity>
 							</View>
 						</View>
@@ -406,7 +458,9 @@ export const HomeScreen = () => {
 					onPress={() => setShowDatePicker(true)}
 				>
 					<Feather name="calendar" size={18} color="#3b82f6" />
-					<Text style={styles.dateChipText}>{formatPlanDate(selectedDate)}</Text>
+					<Text style={styles.dateChipText}>
+						{formatPlanDate(selectedDate)}
+					</Text>
 					<Feather name="chevron-down" size={16} color="#6b7280" />
 				</TouchableOpacity>
 				<TouchableOpacity
@@ -418,8 +472,17 @@ export const HomeScreen = () => {
 				</TouchableOpacity>
 			</View>
 			{showDatePicker && (
-				<Modal transparent animationType="fade" visible={showDatePicker} onRequestClose={() => setShowDatePicker(false)}>
-					<TouchableOpacity style={styles.datePickerOverlay} activeOpacity={1} onPress={() => setShowDatePicker(false)}>
+				<Modal
+					transparent
+					animationType="fade"
+					visible={showDatePicker}
+					onRequestClose={() => setShowDatePicker(false)}
+				>
+					<TouchableOpacity
+						style={styles.datePickerOverlay}
+						activeOpacity={1}
+						onPress={() => setShowDatePicker(false)}
+					>
 						<View style={styles.datePickerCard}>
 							<Text style={styles.datePickerTitle}>Выберите дату</Text>
 							{Platform.OS === "web" ? (
@@ -432,7 +495,9 @@ export const HomeScreen = () => {
 											setShowDatePicker(false);
 										}
 									}}
-									style={{ padding: 12, fontSize: 16, marginVertical: 8 } as any}
+									style={
+										{ padding: 12, fontSize: 16, marginVertical: 8 } as any
+									}
 								/>
 							) : (
 								<DateTimePicker
@@ -446,7 +511,10 @@ export const HomeScreen = () => {
 									}}
 								/>
 							)}
-							<TouchableOpacity style={styles.datePickerDone} onPress={() => setShowDatePicker(false)}>
+							<TouchableOpacity
+								style={styles.datePickerDone}
+								onPress={() => setShowDatePicker(false)}
+							>
 								<Text style={styles.datePickerDoneText}>Готово</Text>
 							</TouchableOpacity>
 						</View>
@@ -460,11 +528,16 @@ export const HomeScreen = () => {
 					{(["split", "map", "timeline"] as const).map((mode) => (
 						<TouchableOpacity
 							key={mode}
-							style={[styles.segmentButton, viewMode === mode && styles.segmentButtonActive]}
+							style={[
+								styles.segmentButton,
+								viewMode === mode && styles.segmentButtonActive,
+							]}
 							onPress={() => setViewMode(mode)}
 						>
 							<Feather
-								name={mode === "split" ? "layout" : mode === "map" ? "map" : "list"}
+								name={
+									mode === "split" ? "layout" : mode === "map" ? "map" : "list"
+								}
 								size={18}
 								color={viewMode === mode ? "#fff" : "#6b7280"}
 							/>
@@ -474,7 +547,11 @@ export const HomeScreen = () => {
 									viewMode === mode && styles.segmentLabelActive,
 								]}
 							>
-								{mode === "split" ? "50/50" : mode === "map" ? "Карта" : "Список"}
+								{mode === "split"
+									? "50/50"
+									: mode === "map"
+										? "Карта"
+										: "Список"}
 							</Text>
 						</TouchableOpacity>
 					))}
@@ -550,7 +627,11 @@ export const HomeScreen = () => {
 					activeOpacity={1}
 					onPress={() => setRouteSummaryVisible(false)}
 				>
-					<TouchableOpacity style={styles.modalCard} activeOpacity={1} onPress={() => {}}>
+					<TouchableOpacity
+						style={styles.modalCard}
+						activeOpacity={1}
+						onPress={() => {}}
+					>
 						<Text style={styles.modalTitle}>Сводка маршрута</Text>
 						<View style={styles.modalRow}>
 							<Text style={styles.modalLabel}>Точек:</Text>
@@ -559,19 +640,23 @@ export const HomeScreen = () => {
 						<View style={styles.modalRow}>
 							<Text style={styles.modalLabel}>В пути:</Text>
 							<Text style={styles.modalValue}>
-								{Math.floor(totalTravelMinutes / 60)} ч {totalTravelMinutes % 60} мин
+								{Math.floor(totalTravelMinutes / 60)} ч{" "}
+								{totalTravelMinutes % 60} мин
 							</Text>
 						</View>
 						<View style={styles.modalRow}>
 							<Text style={styles.modalLabel}>На месте:</Text>
 							<Text style={styles.modalValue}>
-								{Math.floor(totalActivityMinutes / 60)} ч {totalActivityMinutes % 60} мин
+								{Math.floor(totalActivityMinutes / 60)} ч{" "}
+								{totalActivityMinutes % 60} мин
 							</Text>
 						</View>
 						<View style={styles.modalRow}>
 							<Text style={styles.modalLabel}>Расстояние:</Text>
 							<Text style={styles.modalValue}>
-								{totalDistance >= 1000 ? `${(totalDistance / 1000).toFixed(1)} км` : `${totalDistance} м`}
+								{totalDistance >= 1000
+									? `${(totalDistance / 1000).toFixed(1)} км`
+									: `${totalDistance} м`}
 							</Text>
 						</View>
 						<View style={styles.modalRow}>

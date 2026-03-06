@@ -22,7 +22,10 @@ interface YandexMapProps {
 		priceLevel?: number;
 	}>;
 	origin?: { lat: number; lng: number; label?: string };
-	segmentLines?: Array<{ from: { lat: number; lng: number }; to: { lat: number; lng: number } }>;
+	segmentLines?: Array<{
+		from: { lat: number; lng: number };
+		to: { lat: number; lng: number };
+	}>;
 	onMarkerPress?: (markerId: string) => void;
 	height?: number;
 	fitAllMarkers?: boolean;
@@ -33,8 +36,6 @@ interface YandexMapProps {
 
 const { width } = Dimensions.get("window");
 
-// API ключ должен быть в переменных окружения
-// Для разработки можно использовать fallback, но НЕ коммитить реальный ключ
 const YANDEX_API_KEY = process.env.EXPO_PUBLIC_YANDEX_API_KEY || "";
 
 export const YandexMap: React.FC<YandexMapProps> = ({
@@ -88,17 +89,31 @@ export const YandexMap: React.FC<YandexMapProps> = ({
       `;
 		}
 
-		const allPoints: Array<{ id: string; lat: number; lng: number; title?: string }> = [];
+		const allPoints: Array<{
+			id: string;
+			lat: number;
+			lng: number;
+			title?: string;
+		}> = [];
 		if (origin) {
-			allPoints.push({ id: "origin", lat: origin.lat, lng: origin.lng, title: origin.label || "Старт" });
+			allPoints.push({
+				id: "origin",
+				lat: origin.lat,
+				lng: origin.lng,
+				title: origin.label || "Старт",
+			});
 		}
-		markers.forEach((m) => allPoints.push({ id: m.id, lat: m.lat, lng: m.lng, title: m.title }));
+		markers.forEach((m) =>
+			allPoints.push({ id: m.id, lat: m.lat, lng: m.lng, title: m.title }),
+		);
 
 		const markersScript = allPoints
 			.map((marker, index) => {
 				const isOrigin = marker.id === "origin";
 				const hintText = marker.title || marker.id;
-				const preset = isOrigin ? "islands#blueCircleDotIcon" : "islands#redDotIcon";
+				const preset = isOrigin
+					? "islands#blueCircleDotIcon"
+					: "islands#redDotIcon";
 				const iconColor = isOrigin ? "#3b82f6" : "#ef4444";
 
 				return `
@@ -304,8 +319,9 @@ export const YandexMap: React.FC<YandexMapProps> = ({
                 }
               }
 
-              ${selectionMode
-								? `
+              ${
+								selectionMode
+									? `
               // Режим выбора точки на карте
               myMap.events.add('click', function (e) {
                 var coords = e.get('coords');
@@ -326,7 +342,8 @@ export const YandexMap: React.FC<YandexMapProps> = ({
                 }
               });
               `
-								: ""}
+									: ""
+							}
             });
           </script>
         </body>
@@ -352,7 +369,15 @@ export const YandexMap: React.FC<YandexMapProps> = ({
 	// Для веба используем упрощенную визуализацию
 	if (Platform.OS === "web") {
 		const webMarkers = origin
-			? [{ id: "origin", lat: origin.lat, lng: origin.lng, title: origin.label }, ...markers]
+			? [
+					{
+						id: "origin",
+						lat: origin.lat,
+						lng: origin.lng,
+						title: origin.label,
+					},
+					...markers,
+				]
 			: markers;
 		const mapCenter =
 			webMarkers.length > 0
@@ -382,11 +407,27 @@ export const YandexMap: React.FC<YandexMapProps> = ({
 									]}
 									onPress={() => onMarkerPress?.(marker.id)}
 								>
-									<View style={[styles.markerPin, isOrigin && { backgroundColor: "#3b82f6" }]}>
-										<Feather name="map-pin" size={20} color={isOrigin ? "#1d4ed8" : "#ef4444"} />
+									<View
+										style={[
+											styles.markerPin,
+											isOrigin && { backgroundColor: "#3b82f6" },
+										]}
+									>
+										<Feather
+											name="map-pin"
+											size={20}
+											color={isOrigin ? "#1d4ed8" : "#ef4444"}
+										/>
 									</View>
-									<View style={[styles.markerLabel, isOrigin && { backgroundColor: "#3b82f6" }]}>
-										<Text style={styles.markerLabelText}>{isOrigin ? "Старт" : index}</Text>
+									<View
+										style={[
+											styles.markerLabel,
+											isOrigin && { backgroundColor: "#3b82f6" },
+										]}
+									>
+										<Text style={styles.markerLabelText}>
+											{isOrigin ? "Старт" : index}
+										</Text>
 									</View>
 								</TouchableOpacity>
 							);
@@ -398,7 +439,11 @@ export const YandexMap: React.FC<YandexMapProps> = ({
 							<Feather name="map" size={16} color="#374151" />
 							<Text style={styles.mapOverlayText}>
 								{webMarkers.length}{" "}
-								{webMarkers.length === 1 ? "точка" : webMarkers.length < 5 ? "точки" : "точек"}
+								{webMarkers.length === 1
+									? "точка"
+									: webMarkers.length < 5
+										? "точки"
+										: "точек"}
 							</Text>
 						</View>
 					</View>

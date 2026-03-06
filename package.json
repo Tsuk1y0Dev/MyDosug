@@ -17,6 +17,7 @@
     "@react-navigation/native": "^6.1.0",
     "@react-navigation/stack": "^6.3.0",
     "expo": "~53.0.23",
+    "expo-location": "^55.1.2",
     "expo-status-bar": "~2.2.3",
     "react": "19.0.0",
     "react-dom": "19.0.0",
