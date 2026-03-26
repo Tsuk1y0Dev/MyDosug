@@ -12,7 +12,11 @@ import { useUser } from "../../context/UserContext";
 import { Feather } from "@expo/vector-icons";
 import { activityCategories } from "../../data/categories";
 import { CategoryPickerModal } from "../CategoryPickerModal";
-import { SearchCriteria, SearchCriteriaFilters, GoalType } from "../../types/searchCriteria";
+import {
+	SearchCriteria,
+	SearchCriteriaFilters,
+	GoalType,
+} from "../../types/searchCriteria";
 
 const CHITA_CENTER = { lat: 52.03, lng: 113.5 };
 
@@ -39,12 +43,15 @@ const FILTER_CHIPS: { key: keyof SearchCriteriaFilters; label: string }[] = [
 ];
 
 export const ParametersStep = () => {
-	const { setCurrentStep, setSearchCriteria, updatePlanningRequest } = usePlanner();
+	const { setCurrentStep, setSearchCriteria, updatePlanningRequest } =
+		usePlanner();
 	const { profile } = useUser();
 
 	const savedLocations = profile?.savedLocations ?? [];
 	const [selectedStartId, setSelectedStartId] = useState<string | null>(null);
-	const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
+	const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(
+		null,
+	);
 	const [categoryId, setCategoryId] = useState<string | null>(null);
 	const [subCategoryId, setSubCategoryId] = useState<string | null>(null);
 	const [budgetMax, setBudgetMax] = useState(3000);
@@ -54,7 +61,8 @@ export const ParametersStep = () => {
 
 	const startCoords =
 		selectedStartId && savedLocations.length
-			? savedLocations.find((l) => l.id === selectedStartId)?.coords ?? CHITA_CENTER
+			? (savedLocations.find((l) => l.id === selectedStartId)?.coords ??
+				CHITA_CENTER)
 			: CHITA_CENTER;
 
 	const toggleFilter = useCallback((key: keyof SearchCriteriaFilters) => {
@@ -79,7 +87,7 @@ export const ParametersStep = () => {
 			budgetMax,
 			goal: goal ?? undefined,
 			filters: Object.fromEntries(
-				Object.entries(filters).filter(([, v]) => v === true)
+				Object.entries(filters).filter(([, v]) => v === true),
 			) as SearchCriteriaFilters,
 		};
 		setSearchCriteria(criteria);
@@ -98,13 +106,6 @@ export const ParametersStep = () => {
 				contentContainerStyle={styles.scrollContent}
 				showsVerticalScrollIndicator={false}
 			>
-				<View style={styles.header}>
-					<Text style={styles.title}>Параметры поиска</Text>
-					<Text style={styles.subtitle}>
-						Укажите точку старта, категорию и фильтры — покажем подходящие места в Чите
-					</Text>
-				</View>
-
 				{/* Точка старта — сохранённые места */}
 				<View style={styles.section}>
 					<Text style={styles.sectionTitle}>Точка старта</Text>
@@ -119,14 +120,19 @@ export const ParametersStep = () => {
 								onPress={() => setSelectedStartId(null)}
 							>
 								<Text style={styles.startChipIcon}>📍</Text>
-								<Text style={[styles.startChipText, styles.startChipTextSelected]}>
+								<Text
+									style={[styles.startChipText, styles.startChipTextSelected]}
+								>
 									Текущая геолокация
 								</Text>
 							</TouchableOpacity>
 						) : (
 							<>
 								<TouchableOpacity
-									style={[styles.startChip, selectedStartId === null && styles.startChipSelected]}
+									style={[
+										styles.startChip,
+										selectedStartId === null && styles.startChipSelected,
+									]}
 									onPress={() => setSelectedStartId(null)}
 								>
 									<Text style={styles.startChipIcon}>📍</Text>
@@ -152,7 +158,8 @@ export const ParametersStep = () => {
 										<Text
 											style={[
 												styles.startChipText,
-												selectedStartId === loc.id && styles.startChipTextSelected,
+												selectedStartId === loc.id &&
+													styles.startChipTextSelected,
 											]}
 											numberOfLines={1}
 										>
@@ -175,8 +182,9 @@ export const ParametersStep = () => {
 						<Text style={styles.categoryModalButtonText}>
 							{categoryId
 								? `${activityCategories.find((c) => c.id === categoryId)?.icon ?? "📋"} ${
-										activityCategories.find((c) => c.id === categoryId)?.name ?? ""
-								  }${subCategoryId ? ` → ${activityCategories.find((c) => c.id === categoryId)?.subcategories.find((s) => s.id === subCategoryId)?.name ?? ""}` : ""}`
+										activityCategories.find((c) => c.id === categoryId)?.name ??
+										""
+									}${subCategoryId ? ` → ${activityCategories.find((c) => c.id === categoryId)?.subcategories.find((s) => s.id === subCategoryId)?.name ?? ""}` : ""}`
 								: "Открыть выбор категории"}
 						</Text>
 						<Feather name="chevron-right" size={20} color="#6b7280" />
@@ -201,7 +209,11 @@ export const ParametersStep = () => {
 								<Text style={styles.accordionIcon}>{cat.icon}</Text>
 								<Text style={styles.accordionTitle}>{cat.name}</Text>
 								<Feather
-									name={expandedCategoryId === cat.id ? "chevron-up" : "chevron-down"}
+									name={
+										expandedCategoryId === cat.id
+											? "chevron-up"
+											: "chevron-down"
+									}
 									size={20}
 									color="#6b7280"
 								/>
@@ -211,7 +223,9 @@ export const ParametersStep = () => {
 									<TouchableOpacity
 										style={[
 											styles.subItem,
-											categoryId === cat.id && !subCategoryId && styles.subItemSelected,
+											categoryId === cat.id &&
+												!subCategoryId &&
+												styles.subItemSelected,
 										]}
 										onPress={() => {
 											setCategoryId(cat.id);
@@ -228,7 +242,9 @@ export const ParametersStep = () => {
 											key={sub.id}
 											style={[
 												styles.subItem,
-												categoryId === cat.id && subCategoryId === sub.id && styles.subItemSelected,
+												categoryId === cat.id &&
+													subCategoryId === sub.id &&
+													styles.subItemSelected,
 											]}
 											onPress={() => selectSubcategory(cat.id, sub.id)}
 										>
@@ -258,7 +274,10 @@ export const ParametersStep = () => {
 								onPress={() => toggleFilter(key)}
 							>
 								<Text
-									style={[styles.chipText, filters[key] && styles.chipTextSelected]}
+									style={[
+										styles.chipText,
+										filters[key] && styles.chipTextSelected,
+									]}
 									numberOfLines={1}
 								>
 									{label}
@@ -292,7 +311,10 @@ export const ParametersStep = () => {
 							</TouchableOpacity>
 							<View style={styles.sliderTrack}>
 								<View
-									style={[styles.sliderFill, { width: `${(budgetMax / 5000) * 100}%` }]}
+									style={[
+										styles.sliderFill,
+										{ width: `${(budgetMax / 5000) * 100}%` },
+									]}
 								/>
 							</View>
 							<TouchableOpacity
@@ -317,7 +339,10 @@ export const ParametersStep = () => {
 						{GOAL_OPTIONS.map((opt) => (
 							<TouchableOpacity
 								key={opt.value}
-								style={[styles.goalChip, goal === opt.value && styles.goalChipSelected]}
+								style={[
+									styles.goalChip,
+									goal === opt.value && styles.goalChipSelected,
+								]}
 								onPress={() => setGoal(goal === opt.value ? null : opt.value)}
 							>
 								<Feather
@@ -326,7 +351,10 @@ export const ParametersStep = () => {
 									color={goal === opt.value ? "#fff" : "#6b7280"}
 								/>
 								<Text
-									style={[styles.goalChipText, goal === opt.value && styles.goalChipTextSelected]}
+									style={[
+										styles.goalChipText,
+										goal === opt.value && styles.goalChipTextSelected,
+									]}
 								>
 									{opt.label}
 								</Text>
@@ -336,14 +364,22 @@ export const ParametersStep = () => {
 				</View>
 
 				{/* Своя активность */}
-				<TouchableOpacity style={styles.customButton} onPress={handleCustomActivity}>
+				<TouchableOpacity
+					style={styles.customButton}
+					onPress={handleCustomActivity}
+				>
 					<Feather name="edit-3" size={20} color="#f59e0b" />
 					<Text style={styles.customButtonText}>Создать свою активность</Text>
-					<Text style={styles.customButtonSubtext}>Название + точка на карте</Text>
+					<Text style={styles.customButtonSubtext}>
+						Название + точка на карте
+					</Text>
 				</TouchableOpacity>
 
 				{/* Показать результаты */}
-				<TouchableOpacity style={styles.primaryButton} onPress={handleShowResults}>
+				<TouchableOpacity
+					style={styles.primaryButton}
+					onPress={handleShowResults}
+				>
 					<Feather name="search" size={20} color="white" />
 					<Text style={styles.primaryButtonText}>Показать результаты</Text>
 				</TouchableOpacity>

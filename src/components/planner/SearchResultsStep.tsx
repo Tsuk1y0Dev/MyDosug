@@ -1,9 +1,9 @@
-import React, { useState, useMemo, useCallback, useEffect } from "react";
+import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import {
 	View,
 	Text,
 	StyleSheet,
-	ScrollView,
+	FlatList,
 	TouchableOpacity,
 	Dimensions,
 	Platform,
@@ -60,18 +60,42 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 
 	const [viewMode, setViewMode] = useState<"list" | "map">("list");
 	const [selectedPlace, setSelectedPlace] = useState<OSMPlace | null>(null);
+
+	const INITIAL_RADIUS = 2000;
+	const MAX_RADIUS = 20000;
+	const RADIUS_MULTIPLIER = 1.5;
+
 	const [places, setPlaces] = useState<OSMPlace[]>([]);
+	const placesSeenIdsRef = useRef<Set<string>>(new Set());
+
+	const [radius, setRadius] = useState(INITIAL_RADIUS);
+	const [hasMore, setHasMore] = useState(true);
+	const [loadingMore, setLoadingMore] = useState(false);
 	const [loading, setLoading] = useState(false);
 	const [loadError, setLoadError] = useState<string | null>(null);
+	const [sortMode, setSortMode] = useState<"distance" | "rating">("distance");
 
 	useEffect(() => {
 		const load = async () => {
 			if (!searchCriteria) return;
 			setLoading(true);
 			setLoadError(null);
+			setSelectedPlace(null);
+
+			setRadius(INITIAL_RADIUS);
+			setHasMore(INITIAL_RADIUS < MAX_RADIUS);
+			setLoadingMore(false);
+			setPlaces([]);
+			placesSeenIdsRef.current = new Set();
+
 			try {
-				const data = await OSMService.searchAround(searchCriteria.startCoords, 2000, searchCriteria);
+				const data = await OSMService.searchAround(
+					searchCriteria.startCoords,
+					INITIAL_RADIUS,
+					searchCriteria
+				);
 				const filtered = data.filter((p) => matchesFilters(p, searchCriteria.filters ?? {}));
+				filtered.forEach((p) => placesSeenIdsRef.current.add(p.id));
 				setPlaces(filtered);
 			} catch (e: any) {
 				setLoadError(e?.message || "Ошибка загрузки мест");
@@ -85,7 +109,7 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 	const filteredWithDistance = useMemo(() => {
 		if (!searchCriteria) return [];
 		const start = searchCriteria.startCoords;
-		return places
+		const items = places
 			.map((place) => {
 				const distanceKm = haversineKm(
 					start.lat,
@@ -104,8 +128,58 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 					durationMinutes,
 				};
 			})
-			.sort((a, b) => a.distanceMeters - b.distanceMeters);
-	}, [searchCriteria, places]);
+			.sort((a: any, b: any) => {
+				if (sortMode === "rating") {
+					const byRating = b.rating - a.rating;
+					return byRating !== 0 ? byRating : a.distanceMeters - b.distanceMeters;
+				}
+				return a.distanceMeters - b.distanceMeters;
+			});
+
+		return items;
+	}, [searchCriteria, places, sortMode]);
+
+	const fetchMore = useCallback(async () => {
+		if (!searchCriteria) return;
+		if (loadingMore || loading || !hasMore) return;
+
+		const nextRadius = Math.min(radius * RADIUS_MULTIPLIER, MAX_RADIUS);
+		if (nextRadius <= radius) {
+			setHasMore(false);
+			return;
+		}
+
+		setLoadingMore(true);
+		try {
+			const data = await OSMService.searchAround(
+				searchCriteria.startCoords,
+				nextRadius,
+				searchCriteria
+			);
+			const filtered = data.filter((p) =>
+				matchesFilters(p, searchCriteria.filters ?? {})
+			);
+
+			const toAdd = filtered.filter((p) => !placesSeenIdsRef.current.has(p.id));
+			toAdd.forEach((p) => placesSeenIdsRef.current.add(p.id));
+			setPlaces((prev) => [...prev, ...toAdd]);
+
+			setRadius(nextRadius);
+			if (nextRadius >= MAX_RADIUS && toAdd.length === 0) setHasMore(false);
+		} catch (e: any) {
+			setLoadError(e?.message || "Ошибка загрузки дополнительных мест");
+		} finally {
+			setLoadingMore(false);
+		}
+	}, [
+		searchCriteria,
+		loadingMore,
+		loading,
+		hasMore,
+		radius,
+		MAX_RADIUS,
+		RADIUS_MULTIPLIER,
+	]);
 
 	const handleAddToRoute = useCallback(
 		(place: OSMPlace) => {
@@ -207,11 +281,7 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 			</View>
 
 			{viewMode === "list" ? (
-				<ScrollView
-					style={styles.listScroll}
-					contentContainerStyle={styles.listContent}
-					showsVerticalScrollIndicator
-				>
+				<View style={styles.listScroll}>
 					{filteredWithDistance.length === 0 ? (
 						<View style={styles.emptyState}>
 							<Feather name="map-pin" size={48} color="#d1d5db" />
@@ -221,39 +291,138 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 							</Text>
 						</View>
 					) : (
-						filteredWithDistance.map((item) => (
-							<View key={item.id} style={styles.card}>
-								<Text style={styles.cardTitle}>{item.title}</Text>
-								{item.address ? (
-									<Text style={styles.cardAddress} numberOfLines={1}>
-										{item.address}
+						<FlatList
+							data={filteredWithDistance}
+							keyExtractor={(item) => item.id}
+							renderItem={({ item }) => (
+								<View style={styles.card}>
+									<Text style={styles.cardTitle}>{item.title}</Text>
+									{item.address ? (
+										<Text style={styles.cardAddress} numberOfLines={1}>
+											{item.address}
+										</Text>
+									) : null}
+									<Text style={styles.cardDescription} numberOfLines={2}>
+										{item.description}
 									</Text>
-								) : null}
-								<View style={styles.cardMeta}>
-									<View style={styles.metaItem}>
-										<Feather name="navigation" size={14} color="#6b7280" />
-										<Text style={styles.metaText}>
-											{item.distanceMeters < 1000
-												? `${item.distanceMeters} м`
-												: `${(item.distanceMeters / 1000).toFixed(1)} км`}
+
+									<View style={styles.cardMeta}>
+										<View style={styles.metaItem}>
+											<Feather name="star" size={14} color="#f59e0b" />
+											<Text style={styles.metaText}>
+												{item.rating.toFixed(2)}
+											</Text>
+										</View>
+										<View style={styles.metaItem}>
+											<Feather
+												name="navigation"
+												size={14}
+												color="#6b7280"
+											/>
+											<Text style={styles.metaText}>
+												{item.distanceMeters < 1000
+													? `${item.distanceMeters} м`
+													: `${(item.distanceMeters / 1000).toFixed(1)} км`}
+											</Text>
+										</View>
+										<View style={styles.metaItem}>
+											<Feather name="clock" size={14} color="#6b7280" />
+											<Text style={styles.metaText}>
+												~{item.durationMinutes} мин
+											</Text>
+										</View>
+									</View>
+
+									<View style={styles.cardTags}>
+										{item.accessibility.wheelchairAccessible && (
+											<View style={styles.tag}>
+												<Text style={styles.tagText}>♿</Text>
+											</View>
+										)}
+										{item.accessibility.elevatorOrRamp && (
+											<View style={styles.tag}>
+												<Text style={styles.tagText}>⬆</Text>
+											</View>
+										)}
+										{item.accessibility.parkingNearby && (
+											<View style={styles.tag}>
+												<Text style={styles.tagText}>🅿</Text>
+											</View>
+										)}
+										{item.accessibility.publicTransportNearby && (
+											<View style={styles.tag}>
+												<Text style={styles.tagText}>🚌</Text>
+											</View>
+										)}
+									</View>
+
+									<TouchableOpacity
+										style={styles.addBtn}
+										onPress={() => handleAddToRoute(item)}
+									>
+										<Feather name="plus" size={18} color="#fff" />
+										<Text style={styles.addBtnText}>Добавить в маршрут</Text>
+									</TouchableOpacity>
+								</View>
+							)}
+							contentContainerStyle={styles.listContent}
+							showsVerticalScrollIndicator
+							onEndReached={fetchMore}
+							onEndReachedThreshold={0.4}
+							ListHeaderComponent={
+								<View style={styles.sortRow}>
+									<TouchableOpacity
+										style={[
+											styles.sortBtn,
+											sortMode === "distance" && styles.sortBtnActive,
+										]}
+										onPress={() => setSortMode("distance")}
+									>
+										<Text
+											style={[
+												styles.sortBtnText,
+												sortMode === "distance" && styles.sortBtnTextActive,
+											]}
+										>
+											Сначала ближе
+										</Text>
+									</TouchableOpacity>
+									<TouchableOpacity
+										style={[
+											styles.sortBtn,
+											sortMode === "rating" && styles.sortBtnActive,
+										]}
+										onPress={() => setSortMode("rating")}
+									>
+										<Text
+											style={[
+												styles.sortBtnText,
+												sortMode === "rating" && styles.sortBtnTextActive,
+											]}
+										>
+											Сначала выше рейтинг
+										</Text>
+									</TouchableOpacity>
+								</View>
+							}
+							ListFooterComponent={
+								loadingMore ? (
+									<View style={styles.listFooter}>
+										<Text style={styles.listFooterText}>Загрузка...</Text>
+									</View>
+								) : !hasMore ? (
+									<View style={styles.listFooter}>
+										<Text style={styles.listFooterText}>
+											Больше нет результатов
 										</Text>
 									</View>
-									<View style={styles.metaItem}>
-										<Feather name="clock" size={14} color="#6b7280" />
-										<Text style={styles.metaText}>~{item.durationMinutes} мин</Text>
-									</View>
-								</View>
-								<TouchableOpacity
-									style={styles.addBtn}
-									onPress={() => handleAddToRoute(item)}
-								>
-									<Feather name="plus" size={18} color="#fff" />
-									<Text style={styles.addBtnText}>Добавить в маршрут</Text>
-								</TouchableOpacity>
-							</View>
-						))
+								) : (
+									<View style={{ height: 24 }} />
+								)
+							}
+						/>
 					)}
-				</ScrollView>
+				</View>
 			) : (
 				<View style={styles.mapWrap}>
 					{filteredWithDistance.length > 0 ? (
@@ -285,6 +454,12 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 									<Text style={styles.bottomCardTitle}>{selectedPlace.title}</Text>
 									<Text style={styles.bottomCardAddress} numberOfLines={1}>
 										{selectedPlace.address || "—"}
+									</Text>
+									<Text style={styles.bottomCardRating}>
+										Рейтинг: {selectedPlace.rating.toFixed(2)}
+									</Text>
+									<Text style={styles.bottomCardDescription} numberOfLines={2}>
+										{selectedPlace.description}
 									</Text>
 									<TouchableOpacity
 										style={styles.addBtn}
@@ -366,6 +541,31 @@ const styles = StyleSheet.create({
 		padding: 16,
 		paddingBottom: 32,
 	},
+	sortRow: {
+		flexDirection: "row",
+		gap: 8,
+		marginBottom: 16,
+	},
+	sortBtn: {
+		backgroundColor: "white",
+		borderRadius: 999,
+		paddingHorizontal: 14,
+		paddingVertical: 8,
+		borderWidth: 1,
+		borderColor: "#e5e7eb",
+	},
+	sortBtnActive: {
+		backgroundColor: "#3b82f6",
+		borderColor: "#3b82f6",
+	},
+	sortBtnText: {
+		fontSize: 13,
+		fontWeight: "600",
+		color: "#374151",
+	},
+	sortBtnTextActive: {
+		color: "white",
+	},
 	card: {
 		backgroundColor: "#fff",
 		borderRadius: 12,
@@ -385,10 +585,17 @@ const styles = StyleSheet.create({
 		color: "#6b7280",
 		marginBottom: 10,
 	},
+	cardDescription: {
+		fontSize: 13,
+		color: "#6b7280",
+		marginBottom: 10,
+		lineHeight: 18,
+	},
 	cardMeta: {
 		flexDirection: "row",
 		gap: 16,
 		marginBottom: 12,
+		flexWrap: "wrap",
 	},
 	metaItem: {
 		flexDirection: "row",
@@ -398,6 +605,22 @@ const styles = StyleSheet.create({
 	metaText: {
 		fontSize: 13,
 		color: "#6b7280",
+	},
+	cardTags: {
+		flexDirection: "row",
+		flexWrap: "wrap",
+		gap: 6,
+		marginBottom: 12,
+	},
+	tag: {
+		paddingHorizontal: 8,
+		paddingVertical: 4,
+		borderRadius: 8,
+		backgroundColor: "#eff6ff",
+	},
+	tagText: {
+		fontSize: 12,
+		color: "#0369a1",
 	},
 	addBtn: {
 		flexDirection: "row",
@@ -413,6 +636,15 @@ const styles = StyleSheet.create({
 		fontSize: 14,
 		fontWeight: "600",
 		color: "#fff",
+	},
+	listFooter: {
+		paddingVertical: 14,
+		alignItems: "center",
+		justifyContent: "center",
+	},
+	listFooterText: {
+		fontSize: 13,
+		color: "#6b7280",
 	},
 	emptyState: {
 		flex: 1,
@@ -472,6 +704,17 @@ const styles = StyleSheet.create({
 	bottomCardAddress: {
 		fontSize: 13,
 		color: "#6b7280",
+		marginBottom: 6,
+	},
+	bottomCardRating: {
+		fontSize: 13,
+		color: "#6b7280",
+		marginBottom: 8,
+	},
+	bottomCardDescription: {
+		fontSize: 13,
+		color: "#6b7280",
 		marginBottom: 12,
+		lineHeight: 18,
 	},
 });

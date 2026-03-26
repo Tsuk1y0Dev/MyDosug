@@ -288,7 +288,7 @@ export const HomeScreen = () => {
 		<View style={styles.mapWrapper}>
 			<YandexMap
 				center={mapCenter}
-				zoom={14}
+				zoom={0}
 				markers={mapMarkers}
 				origin={
 					origin

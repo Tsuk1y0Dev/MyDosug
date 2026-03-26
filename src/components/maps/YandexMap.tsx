@@ -34,13 +34,11 @@ interface YandexMapProps {
 	onSelectPoint?: (coords: { lat: number; lng: number }) => void;
 }
 
-const { width } = Dimensions.get("window");
-
 const YANDEX_API_KEY = process.env.EXPO_PUBLIC_YANDEX_API_KEY || "";
 
 export const YandexMap: React.FC<YandexMapProps> = ({
-	center = { lat: 52.0339, lng: 113.501 }, // Чита по умолчанию
-	zoom = 12,
+	center = { lat: 52.0339, lng: 113.501 },
+	zoom = 0,
 	markers = [],
 	origin,
 	segmentLines = [],
@@ -140,6 +138,8 @@ export const YandexMap: React.FC<YandexMapProps> = ({
 			.join("\n");
 
 		const apiKey = YANDEX_API_KEY ? `&apikey=${YANDEX_API_KEY}` : "";
+		const segmentLinesJson = JSON.stringify(segmentLines ?? []);
+		const hasRoutingKey = YANDEX_API_KEY.trim().length > 0;
 
 		const selectionInit = selectionMode
 			? selectedPoint
@@ -199,6 +199,34 @@ export const YandexMap: React.FC<YandexMapProps> = ({
               ${markersScript}
               
               ${selectionInit}
+
+              // Фолбэк-линия: отрисовываем прямые отрезки между точками,
+              // чтобы маршрут был виден даже если MultiRoute не построился (например, в APK).
+              var segmentLinesData = ${segmentLinesJson};
+              function drawSegmentLines() {
+                try {
+                  if (!segmentLinesData || !segmentLinesData.length) return;
+                  segmentLinesData.forEach(function (l) {
+                    if (!l || !l.from || !l.to) return;
+                    var coords = [
+                      [l.from.lat, l.from.lng],
+                      [l.to.lat, l.to.lng]
+                    ];
+                    var pl = new ymaps.Polyline(
+                      coords,
+                      {},
+                      { strokeColor: '#3b82f6', strokeWidth: 4, strokeOpacity: 0.6 }
+                    );
+                    myMap.geoObjects.add(pl);
+                  });
+                } catch (e) {}
+              }
+
+              // Если ключ не передан — MultiRoute почти наверняка не сможет построиться.
+              // Рисуем фолбэк-линии сразу.
+              if (!${hasRoutingKey}) {
+                drawSegmentLines();
+              }
 
               // Строим маршрут по дорогам через MultiRoute
               try {
@@ -289,6 +317,7 @@ export const YandexMap: React.FC<YandexMapProps> = ({
                 // Ошибка запроса к маршрутизатору
                 multiRoute.model.events.add('requestfail', function () {
                   showRouteError('Не удалось построить маршрут по дорогам. Попробуйте изменить точки.');
+                  drawSegmentLines();
                   if (window.ReactNativeWebView) {
                     window.ReactNativeWebView.postMessage(JSON.stringify({
                       type: 'routeError',
@@ -311,6 +340,7 @@ export const YandexMap: React.FC<YandexMapProps> = ({
                   }
                 });
               } catch (e) {
+                drawSegmentLines();
                 if (window.ReactNativeWebView) {
                   window.ReactNativeWebView.postMessage(JSON.stringify({
                     type: 'routeError',
