@@ -11,7 +11,6 @@ import { usePlanner } from "../../services/planner/PlannerContext";
 import { useUser } from "../../context/UserContext";
 import { Feather } from "@expo/vector-icons";
 import { activityCategories } from "../../data/categories";
-import { CategoryPickerModal } from "../CategoryPickerModal";
 import {
 	SearchCriteria,
 	SearchCriteriaFilters,
@@ -49,15 +48,14 @@ export const ParametersStep = () => {
 
 	const savedLocations = profile?.savedLocations ?? [];
 	const [selectedStartId, setSelectedStartId] = useState<string | null>(null);
+	const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
+	const [selectedSubCategoryIds, setSelectedSubCategoryIds] = useState<string[]>([]);
 	const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(
 		null,
 	);
-	const [categoryId, setCategoryId] = useState<string | null>(null);
-	const [subCategoryId, setSubCategoryId] = useState<string | null>(null);
 	const [budgetMax, setBudgetMax] = useState(3000);
 	const [goal, setGoal] = useState<GoalType | null>(null);
 	const [filters, setFilters] = useState<SearchCriteriaFilters>({});
-	const [showCategoryModal, setShowCategoryModal] = useState(false);
 
 	const startCoords =
 		selectedStartId && savedLocations.length
@@ -69,20 +67,11 @@ export const ParametersStep = () => {
 		setFilters((prev) => ({ ...prev, [key]: !prev[key] }));
 	}, []);
 
-	const toggleCategory = (catId: string) => {
-		setExpandedCategoryId((prev) => (prev === catId ? null : catId));
-	};
-
-	const selectSubcategory = (catId: string, subId: string) => {
-		setCategoryId(catId);
-		setSubCategoryId(subId);
-	};
-
 	const handleShowResults = () => {
 		const criteria: SearchCriteria = {
 			startCoords,
-			categoryId: categoryId ?? undefined,
-			subCategoryId: subCategoryId ?? undefined,
+			categoryIds: selectedCategoryIds.length ? selectedCategoryIds : undefined,
+			subCategoryIds: selectedSubCategoryIds.length ? selectedSubCategoryIds : undefined,
 			budgetMin: 0,
 			budgetMax,
 			goal: goal ?? undefined,
@@ -162,6 +151,7 @@ export const ParametersStep = () => {
 													styles.startChipTextSelected,
 											]}
 											numberOfLines={1}
+											ellipsizeMode="tail"
 										>
 											{loc.name}
 										</Text>
@@ -172,95 +162,116 @@ export const ParametersStep = () => {
 					</ScrollView>
 				</View>
 
-				{/* Категории — модальное меню + аккордеон */}
+				{/* Категории — список с выпадающими подкатегориями */}
 				<View style={styles.section}>
 					<Text style={styles.sectionTitle}>Категория</Text>
-					<TouchableOpacity
-						style={styles.categoryModalButton}
-						onPress={() => setShowCategoryModal(true)}
-					>
-						<Text style={styles.categoryModalButtonText}>
-							{categoryId
-								? `${activityCategories.find((c) => c.id === categoryId)?.icon ?? "📋"} ${
-										activityCategories.find((c) => c.id === categoryId)?.name ??
-										""
-									}${subCategoryId ? ` → ${activityCategories.find((c) => c.id === categoryId)?.subcategories.find((s) => s.id === subCategoryId)?.name ?? ""}` : ""}`
-								: "Открыть выбор категории"}
-						</Text>
-						<Feather name="chevron-right" size={20} color="#6b7280" />
-					</TouchableOpacity>
-					<CategoryPickerModal
-						visible={showCategoryModal}
-						onClose={() => setShowCategoryModal(false)}
-						selectedCategoryId={categoryId}
-						selectedSubCategoryId={subCategoryId}
-						onSelect={(catId, subId) => {
-							setCategoryId(catId);
-							setSubCategoryId(subId ?? null);
-						}}
-					/>
-					{activityCategories.map((cat) => (
-						<View key={cat.id} style={styles.accordionItem}>
-							<TouchableOpacity
-								style={styles.accordionHeader}
-								onPress={() => toggleCategory(cat.id)}
-								activeOpacity={0.7}
-							>
-								<Text style={styles.accordionIcon}>{cat.icon}</Text>
-								<Text style={styles.accordionTitle}>{cat.name}</Text>
-								<Feather
-									name={
-										expandedCategoryId === cat.id
-											? "chevron-up"
-											: "chevron-down"
+					{activityCategories.map((cat) => {
+						const subIds = cat.subcategories.map((s) => s.id);
+						const isAllInCategorySelected = selectedCategoryIds.includes(cat.id);
+						const selectedCountFromSubs = subIds.filter((id) =>
+							selectedSubCategoryIds.includes(id),
+						).length;
+						const displayCount = isAllInCategorySelected
+							? subIds.length
+							: selectedCountFromSubs;
+						const isExpanded = expandedCategoryId === cat.id;
+
+						return (
+							<View key={cat.id} style={styles.accordionItem}>
+								<TouchableOpacity
+									style={[
+										styles.accordionHeader,
+										displayCount > 0 ? styles.accordionHeaderSelected : null,
+									]}
+									onPress={() =>
+										setExpandedCategoryId((prev) =>
+											prev === cat.id ? null : cat.id,
+										)
 									}
-									size={20}
-									color="#6b7280"
-								/>
-							</TouchableOpacity>
-							{expandedCategoryId === cat.id && (
-								<View style={styles.accordionBody}>
-									<TouchableOpacity
-										style={[
-											styles.subItem,
-											categoryId === cat.id &&
-												!subCategoryId &&
-												styles.subItemSelected,
-										]}
-										onPress={() => {
-											setCategoryId(cat.id);
-											setSubCategoryId(null);
-										}}
-									>
-										<Text style={styles.subItemText}>Все в категории</Text>
-										{categoryId === cat.id && !subCategoryId && (
-											<Feather name="check" size={18} color="#3b82f6" />
-										)}
-									</TouchableOpacity>
-									{cat.subcategories.map((sub) => (
+									activeOpacity={0.7}
+								>
+									<Text style={styles.accordionIcon}>{cat.icon}</Text>
+									<Text style={styles.accordionTitle}>{cat.name}</Text>
+
+									{displayCount > 0 && (
+										<Text style={styles.categoryCount}>{displayCount}</Text>
+									)}
+
+									<Feather
+										name={isExpanded ? "chevron-up" : "chevron-down"}
+										size={20}
+										color="#6b7280"
+									/>
+								</TouchableOpacity>
+
+								{isExpanded && (
+									<View style={styles.accordionBody}>
+										{/* Выбор всей категории */}
 										<TouchableOpacity
-											key={sub.id}
 											style={[
 												styles.subItem,
-												categoryId === cat.id &&
-													subCategoryId === sub.id &&
-													styles.subItemSelected,
+												isAllInCategorySelected && styles.subItemSelected,
 											]}
-											onPress={() => selectSubcategory(cat.id, sub.id)}
+											onPress={() => {
+												setSelectedSubCategoryIds((prev) =>
+													prev.filter((id) => !subIds.includes(id)),
+												);
+												setSelectedCategoryIds((prev) => {
+													const already = prev.includes(cat.id);
+													if (already) return prev.filter((id) => id !== cat.id);
+													return [...prev, cat.id];
+												});
+											}}
 										>
-											<Text style={styles.subItemIcon}>{sub.icon || "•"}</Text>
-											<Text style={styles.subItemText} numberOfLines={1}>
-												{sub.name}
-											</Text>
-											{categoryId === cat.id && subCategoryId === sub.id && (
+											<Text style={styles.subItemText}>Все в категории</Text>
+											{isAllInCategorySelected && (
 												<Feather name="check" size={18} color="#3b82f6" />
 											)}
 										</TouchableOpacity>
-									))}
-								</View>
-							)}
-						</View>
-					))}
+
+										{/* Выбор подкатегорий */}
+										{cat.subcategories.map((sub) => {
+											const isSelected = selectedSubCategoryIds.includes(sub.id);
+
+											return (
+												<TouchableOpacity
+													key={sub.id}
+													style={[
+														styles.subItem,
+														isSelected && styles.subItemSelected,
+													]}
+													onPress={() => {
+														// Если выбрали конкретную подкатегорию — “вся категория” больше не активна.
+														setSelectedCategoryIds((prev) =>
+															prev.filter((id) => id !== cat.id),
+														);
+														setSelectedSubCategoryIds((prev) => {
+															if (prev.includes(sub.id)) {
+																return prev.filter((id) => id !== sub.id);
+															}
+															return [...prev, sub.id];
+														});
+													}}
+												>
+													<Text style={styles.subItemIcon}>{sub.icon || "•"}</Text>
+													<Text
+														style={styles.subItemText}
+														numberOfLines={1}
+														ellipsizeMode="tail"
+													>
+														{sub.name}
+													</Text>
+													{isSelected && (
+														<Feather name="check" size={18} color="#3b82f6" />
+													)}
+												</TouchableOpacity>
+											);
+										})}
+									</View>
+								)}
+							</View>
+						);
+					})}
 				</View>
 
 				{/* Фильтры — чипы */}
@@ -279,6 +290,7 @@ export const ParametersStep = () => {
 										filters[key] && styles.chipTextSelected,
 									]}
 									numberOfLines={1}
+									ellipsizeMode="tail"
 								>
 									{label}
 								</Text>
@@ -474,6 +486,7 @@ const styles = StyleSheet.create({
 	},
 	startChipText: {
 		fontSize: 14,
+		lineHeight: 18,
 		fontWeight: "500",
 		color: "#374151",
 		maxWidth: 120,
@@ -492,6 +505,11 @@ const styles = StyleSheet.create({
 		paddingHorizontal: 4,
 		gap: 10,
 	},
+	accordionHeaderSelected: {
+		backgroundColor: "#eff6ff",
+		borderRadius: 12,
+		paddingHorizontal: 6,
+	},
 	accordionIcon: {
 		fontSize: 22,
 	},
@@ -504,6 +522,12 @@ const styles = StyleSheet.create({
 	accordionBody: {
 		paddingLeft: 32,
 		paddingBottom: 12,
+	},
+	categoryCount: {
+		fontSize: 14,
+		fontWeight: "600",
+		color: "#6b7280", // тёмно-серый счетчик
+		marginRight: 4,
 	},
 	subItem: {
 		flexDirection: "row",
@@ -522,6 +546,7 @@ const styles = StyleSheet.create({
 	subItemText: {
 		flex: 1,
 		fontSize: 14,
+		lineHeight: 18,
 		color: "#374151",
 	},
 	chipsWrap: {
@@ -543,6 +568,7 @@ const styles = StyleSheet.create({
 	},
 	chipText: {
 		fontSize: 13,
+		lineHeight: 16,
 		color: "#374151",
 	},
 	chipTextSelected: {

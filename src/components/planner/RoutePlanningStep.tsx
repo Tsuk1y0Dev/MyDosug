@@ -144,7 +144,11 @@ const savePlanConfirmed = () => {
           <Text style={styles.activityTime}>
             {activity.startTime} - {activity.endTime}
           </Text>
-          <Text style={styles.activityAddress} numberOfLines={1}>
+          <Text
+            style={styles.activityAddress}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
             {activity.place.address}
           </Text>
         </View>
@@ -435,18 +439,21 @@ const styles = StyleSheet.create({
   },
   activityName: {
     fontSize: 16,
+    lineHeight: 20,
     fontWeight: '600',
     color: '#1f2937',
     marginBottom: 4,
   },
   activityTime: {
     fontSize: 14,
+    lineHeight: 18,
     color: '#3b82f6',
     fontWeight: '500',
     marginBottom: 2,
   },
   activityAddress: {
     fontSize: 12,
+    lineHeight: 16,
     color: '#6b7280',
   },
   removeButton: {

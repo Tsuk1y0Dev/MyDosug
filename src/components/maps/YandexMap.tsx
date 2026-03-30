@@ -32,13 +32,18 @@ interface YandexMapProps {
 	selectionMode?: boolean;
 	selectedPoint?: { lat: number; lng: number };
 	onSelectPoint?: (coords: { lat: number; lng: number }) => void;
+	/**
+	 * Включает построение маршрута между точками (MultiRoute) и связанные визуализации.
+	 * Для режима поиска/результатов планирования оставляем `false`, чтобы не рисовать "дорогу".
+	 */
+	routingEnabled?: boolean;
 }
 
 const YANDEX_API_KEY = process.env.EXPO_PUBLIC_YANDEX_API_KEY || "";
 
 export const YandexMap: React.FC<YandexMapProps> = ({
 	center = { lat: 52.0339, lng: 113.501 },
-	zoom = 0,
+	zoom = 5,
 	markers = [],
 	origin,
 	segmentLines = [],
@@ -48,13 +53,15 @@ export const YandexMap: React.FC<YandexMapProps> = ({
 	selectionMode = false,
 	selectedPoint,
 	onSelectPoint,
+	routingEnabled = false,
 }) => {
 	const webViewRef = useRef<WebView>(null);
 
 	const generateHTML = () => {
 		const hasOrigin = origin != null;
 		const hasMarkers = markers && markers.length > 0;
-		if (!hasOrigin && !hasMarkers) {
+		// Разрешаем selectionMode даже без origin/markers (например, выбор точки на карте).
+		if (!hasOrigin && !hasMarkers && !selectionMode) {
 			return `
         <!DOCTYPE html>
         <html>
@@ -222,14 +229,28 @@ export const YandexMap: React.FC<YandexMapProps> = ({
                 } catch (e) {}
               }
 
-              // Если ключ не передан — MultiRoute почти наверняка не сможет построиться.
-              // Рисуем фолбэк-линии сразу.
-              if (!${hasRoutingKey}) {
+              // Фолбэк-линия: рисуем прямые отрезки только когда:
+              // 1) маршрутизация включена (главный экран)
+              // 2) ключ маршрутизатора отсутствует (MultiRoute не сможет построиться)
+              if (${routingEnabled} && !${hasRoutingKey}) {
                 drawSegmentLines();
               }
 
-              // Строим маршрут по дорогам через MultiRoute
-              try {
+              // Для режимов без маршрутизации или без ключа — просто подстроим зум под точки.
+              if (!${routingEnabled} || !${hasRoutingKey}) {
+                try {
+                  if (myMap.geoObjects.getLength() > 0) {
+                    var bounds = myMap.geoObjects.getBounds();
+                    if (bounds) {
+                      myMap.setBounds(bounds, { checkZoomRange: true, duration: 300 });
+                    }
+                  }
+                } catch (e) {}
+              }
+
+              // Строим маршрут по дорогам через MultiRoute (только если разрешено)
+              if (${routingEnabled}) {
+                try {
                 var allCoords = [];
                 myMap.geoObjects.each(function (obj) {
                   if (obj.geometry && typeof obj.geometry.getCoordinates === 'function') {
@@ -347,6 +368,7 @@ export const YandexMap: React.FC<YandexMapProps> = ({
                     message: 'Ошибка при подготовке данных для маршрута.'
                   }));
                 }
+              }
               }
 
               ${

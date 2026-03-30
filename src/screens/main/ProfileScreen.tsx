@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -18,7 +18,6 @@ import { RootStackParamList } from '../../navigation/types';
 import { Feather } from '@expo/vector-icons';
 import { StartPoint } from '../../types/planner';
 import { useUser } from '../../context/UserContext';
-import { YandexMap } from '../../components/maps/YandexMap';
 import { defaultStartPoints } from '../../data/startPoints';
 
 type ProfileScreenNavigationProp = StackNavigationProp<RootStackParamList>;
@@ -26,7 +25,7 @@ type ProfileScreenNavigationProp = StackNavigationProp<RootStackParamList>;
 export const ProfileScreen = () => {
   const { user, logout } = useAuth();
   const navigation = useNavigation<ProfileScreenNavigationProp>();
-  const { profile, updateProfile, addSavedLocation, removeSavedLocation, updateAccessibilitySettings } = useUser();
+  const { profile, updateProfile, updateAccessibilitySettings } = useUser();
 
   // Редирект на авторизацию, если пользователь не залогинен
   useEffect(() => {
@@ -52,13 +51,6 @@ export const ProfileScreen = () => {
   });
   const [editingWalkingTime, setEditingWalkingTime] = useState(false);
   const [walkingTimeInput, setWalkingTimeInput] = useState(settings.averageWalkingTime.toString());
-  const [newLocationName, setNewLocationName] = useState('');
-  const [newLocationType, setNewLocationType] = useState<'home' | 'office' | 'hotel' | 'other'>('home');
-  const [newLocationCoords, setNewLocationCoords] = useState<{ lat: number; lng: number }>({
-    lat: 52.03,
-    lng: 113.5,
-  });
-  const [mapPickerVisible, setMapPickerVisible] = useState(false);
 
   useEffect(() => {
     if (profile) {
@@ -110,32 +102,6 @@ export const ProfileScreen = () => {
     } else {
       Alert.alert('Ошибка', 'Введите корректное значение (1-120 минут)');
     }
-  };
-
-  const savedLocations = useMemo(
-    () => profile?.savedLocations || [],
-    [profile]
-  );
-
-  const handleAddLocation = () => {
-    if (!newLocationName.trim()) {
-      Alert.alert('Ошибка', 'Введите название точки');
-      return;
-    }
-    addSavedLocation({
-      type: newLocationType,
-      name: newLocationName.trim(),
-      icon:
-        newLocationType === 'home'
-          ? '🏠'
-          : newLocationType === 'office'
-          ? '💼'
-          : newLocationType === 'hotel'
-          ? '🏨'
-          : '📍',
-      coords: newLocationCoords,
-    });
-    setNewLocationName('');
   };
 
 
@@ -389,92 +355,6 @@ export const ProfileScreen = () => {
           />
         </View>
 
-        {/* Любимые места */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Любимые места</Text>
-
-          <View style={styles.savedLocationInputRow}>
-            <TextInput
-              style={styles.savedLocationInput}
-              placeholder="Название точки (Дом, Офис, Отель)..."
-              value={newLocationName}
-              onChangeText={setNewLocationName}
-            />
-          </View>
-
-          <View style={styles.savedLocationTypeRow}>
-            {[
-              { type: 'home' as const, label: 'Дом', icon: '🏠' },
-              { type: 'office' as const, label: 'Офис', icon: '💼' },
-              { type: 'hotel' as const, label: 'Отель', icon: '🏨' },
-              { type: 'other' as const, label: 'Другое', icon: '📍' },
-            ].map(option => (
-              <TouchableOpacity
-                key={option.type}
-                style={[
-                  styles.locationTypeChip,
-                  newLocationType === option.type && styles.locationTypeChipActive,
-                ]}
-                onPress={() => setNewLocationType(option.type)}
-              >
-                <Text style={styles.locationTypeChipIcon}>{option.icon}</Text>
-                <Text
-                  style={[
-                    styles.locationTypeChipText,
-                    newLocationType === option.type && styles.locationTypeChipTextActive,
-                  ]}
-                >
-                  {option.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <TouchableOpacity
-            style={styles.addLocationMapButton}
-            onPress={() => setMapPickerVisible(true)}
-          >
-            <Feather name="map-pin" size={18} color="#3b82f6" />
-            <Text style={styles.addLocationMapButtonText}>
-              Выбрать точку на карте
-            </Text>
-          </TouchableOpacity>
-
-          <Text style={styles.savedLocationCoordsPreview}>
-            Координаты: {newLocationCoords.lat.toFixed(4)}, {newLocationCoords.lng.toFixed(4)}
-          </Text>
-
-          <TouchableOpacity style={styles.addLocationButton} onPress={handleAddLocation}>
-            <Feather name="plus-circle" size={18} color="#3b82f6" />
-            <Text style={styles.addLocationButtonText}>Добавить точку</Text>
-          </TouchableOpacity>
-
-          {savedLocations.length === 0 ? (
-            <Text style={styles.savedLocationEmpty}>
-              Добавьте любимые точки (дом, офис, отель), чтобы быстрее строить маршруты.
-            </Text>
-          ) : (
-            <View style={styles.savedLocationList}>
-              {savedLocations.map(location => (
-                <View key={location.id} style={styles.savedLocationRow}>
-                  <View style={styles.savedLocationLeft}>
-                    <Text style={styles.savedLocationIcon}>{location.icon}</Text>
-                    <View>
-                      <Text style={styles.savedLocationName}>{location.name}</Text>
-                      <Text style={styles.savedLocationCoords}>
-                        {location.coords.lat.toFixed(3)}, {location.coords.lng.toFixed(3)}
-                      </Text>
-                    </View>
-                  </View>
-                  <TouchableOpacity onPress={() => removeSavedLocation(location.id)}>
-                    <Feather name="trash-2" size={18} color="#ef4444" />
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </View>
-          )}
-        </View>
-
         {/* Дополнительные действия */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Дополнительно</Text>
@@ -507,41 +387,6 @@ export const ProfileScreen = () => {
         <View style={styles.footer}>
           <Text style={styles.footerText}>Версия 1.0.0</Text>
         </View>
-
-        {mapPickerVisible && (
-          <View style={styles.mapPickerOverlay}>
-            <View style={styles.mapPickerCard}>
-              <Text style={styles.mapPickerTitle}>Выберите точку на карте</Text>
-              <View style={styles.mapPickerMap}>
-                <YandexMap
-                  center={newLocationCoords}
-                  markers={[]}
-                  height={260}
-                  selectionMode
-                  selectedPoint={newLocationCoords}
-                  onSelectPoint={(coords) => setNewLocationCoords(coords)}
-                />
-              </View>
-              <Text style={styles.mapPickerCoords}>
-                {newLocationCoords.lat.toFixed(4)}, {newLocationCoords.lng.toFixed(4)}
-              </Text>
-              <View style={styles.mapPickerButtons}>
-                <TouchableOpacity
-                  style={styles.mapPickerCancel}
-                  onPress={() => setMapPickerVisible(false)}
-                >
-                  <Text style={styles.mapPickerCancelText}>Отмена</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.mapPickerSave}
-                  onPress={() => setMapPickerVisible(false)}
-                >
-                  <Text style={styles.mapPickerSaveText}>Готово</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -578,6 +423,7 @@ const styles = StyleSheet.create({
   userEmail: {
     fontSize: 14,
     color: '#6b7280',
+    lineHeight: 18,
   },
   profileChips: {
     flexDirection: 'row',
@@ -626,6 +472,7 @@ const styles = StyleSheet.create({
   settingLabel: {
     fontSize: 16,
     color: '#374151',
+    lineHeight: 20,
   },
   settingRight: {
     flexDirection: 'row',
@@ -635,6 +482,7 @@ const styles = StyleSheet.create({
   settingValue: {
     fontSize: 16,
     color: '#6b7280',
+    lineHeight: 20,
   },
   budgetEdit: {
     flexDirection: 'row',

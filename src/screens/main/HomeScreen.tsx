@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import {
 	View,
 	Text,
@@ -15,6 +15,7 @@ import { useRoute } from "../../services/planner/RouteContext";
 import { useUser } from "../../context/UserContext";
 import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
+import * as Location from "expo-location";
 import { YandexMap } from "../../components/maps/YandexMap";
 import { RouteEvent, TravelMode } from "../../types/route";
 import { PlannerModal } from "./PlannerModal";
@@ -57,6 +58,11 @@ export const HomeScreen = () => {
 	const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>(
 		CHITA_CENTER,
 	);
+	const [deviceCoords, setDeviceCoords] = useState<{
+		lat: number;
+		lng: number;
+	} | null>(null);
+	const hasSetInitialMapCenterRef = useRef(false);
 	const [routeSummaryVisible, setRouteSummaryVisible] = useState(false);
 	const [selectedDate, setSelectedDate] = useState(() => new Date());
 	const [showDatePicker, setShowDatePicker] = useState(false);
@@ -169,35 +175,102 @@ export const HomeScreen = () => {
 		setPlannerVisible(true);
 	};
 
+	// Текущая геолокация пользователя для центровки карты (не центр Читы).
+	useEffect(() => {
+		let cancelled = false;
+
+		async function loadLocation() {
+			try {
+				const { status } = await Location.requestForegroundPermissionsAsync();
+				if (status !== "granted") return;
+
+				const pos = await Location.getCurrentPositionAsync({
+					accuracy: Location.Accuracy.High,
+				});
+
+				if (cancelled) return;
+
+				setDeviceCoords({
+					lat: pos.coords.latitude,
+					lng: pos.coords.longitude,
+				});
+			} catch (e) {
+				// молча игнорируем: приложение продолжит работать с CHITA_CENTER
+			}
+		}
+
+		loadLocation();
+
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+
+	// Ставим начальный центр карты один раз после получения геолокации.
+	useEffect(() => {
+		if (!deviceCoords) return;
+		if (hasSetInitialMapCenterRef.current) return;
+		setMapCenter(deviceCoords);
+		hasSetInitialMapCenterRef.current = true;
+	}, [deviceCoords]);
+
 	// Инициализация origin из профиля или по умолчанию (Чита)
 	useEffect(() => {
-		if (origin != null) return;
 		const startPoint = profile?.defaultStartPoint;
+
+		const coordsEqual = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) =>
+			Math.abs(a.lat - b.lat) < 1e-6 && Math.abs(a.lng - b.lng) < 1e-6;
+
 		if (!startPoint) {
-			setOrigin({ id: "default", label: "Чита", coords: CHITA_CENTER });
+			const next = { id: "default", label: "Чита", coords: CHITA_CENTER };
+			if (
+				origin &&
+				origin.id === next.id &&
+				origin.label === next.label &&
+				coordsEqual(origin.coords, next.coords)
+			) {
+				return;
+			}
+			setOrigin(next);
 			return;
 		}
-		const fromSaved =
-			startPoint.type === "current"
-				? CHITA_CENTER
-				: (profile?.savedLocations?.find(
-						(l) =>
-							(l.type === "home" && startPoint.type === "home") ||
-							(l.type === "office" && startPoint.type === "work"),
-					)?.coords ?? CHITA_CENTER);
-		const coords =
-			startPoint &&
-			"coordinates" in startPoint &&
-			(startPoint as { coordinates?: { lat: number; lng: number } }).coordinates
-				? (startPoint as { coordinates: { lat: number; lng: number } })
-						.coordinates
-				: fromSaved;
-		setOrigin({
+
+		let nextCoords: { lat: number; lng: number };
+
+		if (startPoint.type === "current") {
+			// Для "current" всегда используем полученную геолокацию (или CHITA_CENTER как fallback),
+			// не полагаясь на `startPoint.coordinates`, если они вдруг сохранены в профиле.
+			nextCoords = deviceCoords ?? CHITA_CENTER;
+		} else {
+			const fromSaved =
+				(profile?.savedLocations?.find(
+					(l) =>
+						(l.type === "home" && startPoint.type === "home") ||
+						(l.type === "office" && startPoint.type === "work"),
+				)?.coords ?? CHITA_CENTER);
+
+			nextCoords =
+				startPoint.coordinates ??
+				fromSaved;
+		}
+
+		const next = {
 			id: "profile_origin",
 			label: startPoint.label || "Старт",
-			coords,
-		});
-	}, [profile, origin, setOrigin]);
+			coords: nextCoords,
+		};
+
+		if (
+			origin &&
+			origin.id === next.id &&
+			origin.label === next.label &&
+			coordsEqual(origin.coords, next.coords)
+		) {
+			return;
+		}
+
+		setOrigin(next);
+	}, [profile, deviceCoords, setOrigin]);
 
 	// Маркеры для карты: события с порядковыми номерами
 	const mapMarkers = useMemo(
@@ -300,6 +373,7 @@ export const HomeScreen = () => {
 						: undefined
 				}
 				segmentLines={segmentLines}
+				routingEnabled={true}
 				onMarkerPress={(id) => {
 					const ev = events.find((e) => e.id === id);
 					if (ev) setMapCenter(ev.coords);
@@ -362,8 +436,15 @@ export const HomeScreen = () => {
 					<Feather name="map-pin" size={48} color="#d1d5db" />
 					<Text style={styles.emptyTitle}>Маршрут пуст</Text>
 					<Text style={styles.emptySubtitle}>
-						Добавьте точки: «Спланировать» или экран Поиск
+						Начните план на сегодня
 					</Text>
+					<TouchableOpacity
+						style={styles.planDayButton}
+						onPress={() => openPlannerWithAutoSlot(0)}
+					>
+						<Feather name="plus-circle" size={18} color="white" />
+						<Text style={styles.planDayButtonText}>Спланировать сегодня</Text>
+					</TouchableOpacity>
 				</View>
 			)}
 			{events.map((event, index) => (
@@ -429,7 +510,11 @@ export const HomeScreen = () => {
 							activeOpacity={0.8}
 						>
 							<View style={styles.eventBody}>
-								<Text style={styles.eventTitle} numberOfLines={1}>
+										<Text
+											style={styles.eventTitle}
+											numberOfLines={1}
+											ellipsizeMode="tail"
+										>
 									{event.customTitle || `Точка ${index + 1}`}
 								</Text>
 								<Text style={styles.eventCategory}>Досуг</Text>
@@ -597,7 +682,7 @@ export const HomeScreen = () => {
 				</View>
 			)}
 
-			{(viewMode === "timeline" || viewMode === "split") && (
+			{viewMode === "split" && (
 				<TouchableOpacity style={styles.fab} onPress={openPlannerWithAutoSlot}>
 					<Feather name="plus" size={24} color="white" />
 				</TouchableOpacity>
@@ -904,6 +989,7 @@ const styles = StyleSheet.create({
 		fontSize: 16,
 		fontWeight: "600",
 		color: "#111827",
+		lineHeight: 20,
 	},
 	eventCategory: {
 		fontSize: 12,
@@ -982,6 +1068,7 @@ const styles = StyleSheet.create({
 	showMapFloatingButton: {
 		position: "absolute",
 		bottom: 24,
+		// В режиме списка `fab` скрыт, поэтому ставим кнопку карты на место.
 		right: 20,
 		flexDirection: "row",
 		alignItems: "center",
@@ -1057,11 +1144,13 @@ const styles = StyleSheet.create({
 	modalLabel: {
 		fontSize: 15,
 		color: "#6b7280",
+		lineHeight: 20,
 	},
 	modalValue: {
 		fontSize: 15,
 		fontWeight: "600",
 		color: "#111827",
+		lineHeight: 20,
 	},
 	modalCloseButton: {
 		marginTop: 20,

@@ -25,6 +25,17 @@ export interface OSMPlace {
 
 const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
 
+// Throttle + retry, чтобы уменьшить шанс 429 и не показывать ошибки пользователю.
+let lastOverpassRequestAt = 0;
+const MIN_OVERPASS_INTERVAL_MS = 700;
+const MAX_RETRIES = 4;
+const RETRY_BASE_DELAY_MS = 800;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const isRetryableStatus = (status: number) =>
+	status === 429 || status === 504;
+
 type OverpassElement = {
 	id: number;
 	type?: string; // node/way/relation
@@ -64,19 +75,26 @@ const buildOverpassQuery = (
 ) => {
 	const { lat, lng } = center;
 
-	const categoryId = criteria?.categoryId;
-	const subCategoryId = criteria?.subCategoryId;
+	const categoryIds = criteria?.categoryIds ?? [];
+	const subCategoryIds = criteria?.subCategoryIds ?? [];
 
 	// Важно: Wi‑Fi фильтр в OSM встречается как `internet_access=wlan`.
 	const wifiRequested =
 		criteria?.filters?.wifi === true ||
-		criteria?.subCategoryId === "wifi_place" ||
+		subCategoryIds.includes("wifi_place") ||
 		criteria?.goal === "work";
 
 	const CATEGORY_EXPRESSIONS: Record<string, string[]> = {
 		food: [`nwr["amenity"~"restaurant|cafe|fast_food|bar|pub|bakery"]`],
 		entertainment: [`nwr["amenity"~"cinema|theatre|nightclub"]`],
-		sports: [`nwr["amenity"~"sports_centre|gym|stadium"]`],
+		sports: [
+			// Общие спортивные объекты
+			`nwr["amenity"~"sports_centre|gym|stadium"]`,
+			// Часто фитнес/бассейны размечают через leisure
+			`nwr["leisure"~"fitness_centre|sports_centre|swimming_pool|ice_rink|yoga_studio"]`,
+			// Командные/контактные виды спорта через sport=*
+			`nwr["sport"~"hockey|football|basketball|volleyball|tennis|handball|rugby|ice_skating|roller_skating"]`,
+		],
 		culture: [
 			`nwr["amenity"~"museum|arts_centre|gallery|library"]`,
 			`nwr["tourism"~"museum|artwork|attraction"]`,
@@ -111,11 +129,6 @@ const buildOverpassQuery = (
 			`nwr["aeroway"~"aerodrome|terminal"]`,
 			`nwr["amenity"="car_rental"]`,
 		],
-		for_employee: [
-			`nwr["amenity"="coworking"]`,
-			`nwr["office"]`,
-			`nwr["amenity"="hotel"]`,
-		],
 	};
 
 	const SUBCATEGORY_EXPRESSIONS: Record<string, string[]> = {
@@ -126,10 +139,6 @@ const buildOverpassQuery = (
 		bar: [`nwr["amenity"~"bar|pub"]`],
 		bakery: [`nwr["amenity"~"bakery|cafe"]`],
 
-		// Work / for_employee
-		wifi_place: [`nwr["amenity"~"restaurant|cafe|fast_food|hotel|office"]`],
-		coworking: [`nwr["amenity"="coworking"]`],
-
 		// Shopping
 		mall: [`nwr["shop"="mall"]`],
 		hypermarket: [`nwr["shop"="supermarket"]`],
@@ -139,6 +148,38 @@ const buildOverpassQuery = (
 		bookstore: [`nwr["shop"~"books|bookshop"]`],
 		market: [`nwr["shop"~"marketplace|convenience|supermarket"]`],
 		souvenir: [`nwr["shop"="gift"]`],
+
+		// Sports subcategories (gym/pool/yoga/skating/rent/team/outdoor)
+		gym: [
+			`nwr["amenity"~"gym|fitness_centre"]`,
+			`nwr["leisure"~"fitness_centre"]`,
+		],
+		pool: [
+			`nwr["leisure"~"swimming_pool|pool"]`,
+			`nwr["amenity"~"swimming_pool"]`,
+		],
+		yoga: [
+			`nwr["amenity"~"yoga|yoga_studio"]`,
+			`nwr["leisure"~"yoga|yoga_studio"]`,
+		],
+		skating: [
+			`nwr["leisure"~"ice_rink|roller_rink"]`,
+			`nwr["sport"~"ice_skating|roller_skating"]`,
+		],
+		equipment_rent: [
+			`nwr["amenity"~"sports_rental|rental"]`,
+			`nwr["shop"~"sports|outdoor"]`,
+			`nwr["craft"="rental"]`,
+		],
+		team_sports: [
+			`nwr["sport"~"football|basketball|volleyball|rugby|handball|ice_hockey"]`,
+			`nwr["leisure"~"sports_centre|stadium"]`,
+		],
+		outdoor_active: [
+			`nwr["sport"~"hiking|cycling|running|climbing"]`,
+			`nwr["leisure"~"track|park"]`,
+			`nwr["highway"~"path|footway|cycleway"]`,
+		],
 
 		// Health
 		pharmacy_24: [`nwr["amenity"="pharmacy"]`],
@@ -168,18 +209,27 @@ const buildOverpassQuery = (
 
 	const ALL_EXPRESSIONS = Object.values(CATEGORY_EXPRESSIONS).flat();
 
-	const expressions: string[] = (() => {
-		if (subCategoryId && SUBCATEGORY_EXPRESSIONS[subCategoryId]) {
-			return SUBCATEGORY_EXPRESSIONS[subCategoryId];
+	const expressionsSet = new Set<string>();
+	for (const catId of categoryIds) {
+		for (const expr of CATEGORY_EXPRESSIONS[catId] ?? []) {
+			expressionsSet.add(expr);
 		}
-		if (categoryId && CATEGORY_EXPRESSIONS[categoryId]) {
-			return CATEGORY_EXPRESSIONS[categoryId];
+	}
+
+	for (const subId of subCategoryIds) {
+		if (SUBCATEGORY_EXPRESSIONS[subId]) {
+			for (const expr of SUBCATEGORY_EXPRESSIONS[subId]) {
+				expressionsSet.add(expr);
+			}
+		} else if (categoryIds.includes("food")) {
+			// "food special-case": если subId не распознан как подкатегория,
+			// пытаемся сопоставить это как cuisine=* для категории "food".
+			expressionsSet.add(`nwr["cuisine"="${subId}"]`);
 		}
-		if (categoryId === "food" && subCategoryId) {
-			return [`nwr["cuisine"="${subCategoryId}"]`];
-		}
-		return ALL_EXPRESSIONS;
-	})();
+	}
+
+	const expressions: string[] =
+		expressionsSet.size > 0 ? Array.from(expressionsSet) : ALL_EXPRESSIONS;
 
 	const elementBlocks = expressions
 		.map((expr) => {
@@ -275,24 +325,58 @@ export const OSMService = {
 		criteria?: SearchCriteria,
 	): Promise<OSMPlace[]> {
 		const query = buildOverpassQuery(center, radius, criteria);
+		let lastError: any = null;
 
-		const response = await fetch(OVERPASS_URL, {
-			method: "POST",
-			headers: {
-				"Content-Type": "text/plain;charset=UTF-8",
-			},
-			body: query,
-		});
+		for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+			// Клиентский throttle: минимальный интервал между запросами.
+			const now = Date.now();
+			const elapsed = now - lastOverpassRequestAt;
+			if (elapsed < MIN_OVERPASS_INTERVAL_MS) {
+				await sleep(MIN_OVERPASS_INTERVAL_MS - elapsed);
+			}
+			lastOverpassRequestAt = Date.now();
 
-		if (!response.ok) {
-			throw new Error(`Overpass API error: ${response.status}`);
+			try {
+				const response = await fetch(OVERPASS_URL, {
+					method: "POST",
+					headers: {
+						"Content-Type": "text/plain;charset=UTF-8",
+					},
+					body: query,
+				});
+
+				if (response.ok) {
+					const json = await response.json();
+					const elements: OverpassElement[] = Array.isArray(json.elements)
+						? json.elements
+						: [];
+
+					return elements.map(mapElementToPlace).filter(Boolean) as OSMPlace[];
+				}
+
+				// Для 429/504 — тихая повторная попытка с экспоненциальной задержкой.
+				if (isRetryableStatus(response.status) && attempt < MAX_RETRIES) {
+					const delay =
+						RETRY_BASE_DELAY_MS * Math.pow(2, attempt) + Math.round(Math.random() * 250);
+					await sleep(delay);
+					continue;
+				}
+
+				const err: any = new Error(`Overpass API error: ${response.status}`);
+				err.status = response.status;
+				throw err;
+			} catch (e: any) {
+				lastError = e;
+
+				// Если fetch упал, но это похоже на сеть — пробуем ещё раз.
+				if (attempt < MAX_RETRIES) {
+					const delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
+					await sleep(delay);
+					continue;
+				}
+			}
 		}
 
-		const json = await response.json();
-		const elements: OverpassElement[] = Array.isArray(json.elements)
-			? json.elements
-			: [];
-
-		return elements.map(mapElementToPlace).filter(Boolean) as OSMPlace[];
+		throw lastError || new Error("Overpass API error");
 	},
 };

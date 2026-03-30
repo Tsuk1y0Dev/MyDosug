@@ -56,6 +56,22 @@ export interface CreateSavedLocationRequest {
   is_default_start?: boolean;
 }
 
+// --- User-created locations (own places) ---
+// Требование снаружи: POST /user/locations/add|update|remove
+// payload (body): { token, data } (или { token, id, data } / { token, id })
+export interface UserLocationAddData {
+  lat: number;
+  long: number;
+  name: string;
+  description?: string;
+}
+
+export type UserLocationUpdateData = Partial<Omit<UserLocationAddData, "lat" | "long" | "name">> & {
+  lat: number;
+  long: number;
+  name?: string;
+};
+
 // Моковые данные
 let mockProfile: UserProfile | null = null;
 const mockSavedLocations: SavedLocation[] = [];
@@ -182,6 +198,41 @@ export const userApi = {
 
     // Реальная реализация (раскомментировать когда бэкенд готов):
     // return apiClient.delete<void>(`/user/locations/${id}`);
+  },
+
+  /**
+   * POST /api/user/locations/add
+   * Body: { token, data: { lat, long, name, description? } }
+   */
+  async addUserLocation(
+    token: string,
+    data: UserLocationAddData,
+  ): Promise<ApiResponse<any>> {
+    // Токен продублирован в body (как в требовании), но apiClient также может поставить Bearer.
+    return apiClient.post<any>('/user/locations/add', { token, data });
+  },
+
+  /**
+   * POST /api/user/locations/update
+   * Body: { token, id, data }
+   */
+  async updateUserLocation(
+    token: string,
+    id: number,
+    data: UserLocationAddData,
+  ): Promise<ApiResponse<any>> {
+    return apiClient.post<any>('/user/locations/update', { token, id, data });
+  },
+
+  /**
+   * POST /api/user/locations/remove
+   * Body: { token, id }
+   */
+  async removeUserLocation(
+    token: string,
+    id: number,
+  ): Promise<ApiResponse<void>> {
+    return apiClient.post<void>('/user/locations/remove', { token, id });
   },
 };
 

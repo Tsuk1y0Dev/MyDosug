@@ -6,9 +6,12 @@ import React, {
 	useCallback,
 } from "react";
 import {
+	ActivityIndicator,
+	Animated,
 	View,
 	Text,
 	StyleSheet,
+	PanResponder,
 	ScrollView,
 	FlatList,
 	TouchableOpacity,
@@ -17,6 +20,7 @@ import {
 	Dimensions,
 	Platform,
 	Modal,
+	Easing,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { activityCategories } from "../../data/categories";
@@ -65,9 +69,10 @@ function haversineMeters(
 export const SearchScreen = () => {
 	const { profile } = useUser();
 	const [searchQuery, setSearchQuery] = useState("");
-	const [categoryId, setCategoryId] = useState<string | null>(null);
-	const [subCategoryId, setSubCategoryId] = useState<string | null>(null);
+	const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
+	const [selectedSubCategoryIds, setSelectedSubCategoryIds] = useState<string[]>([]);
 	const [showFilters, setShowFilters] = useState(false);
+	const [filtersMounted, setFiltersMounted] = useState(false);
 	const [selectedPlace, setSelectedPlace] = useState<OSMPlace | null>(null);
 	const [mapView, setMapView] = useState(false);
 	const [minRating, setMinRating] = useState(0);
@@ -83,6 +88,92 @@ export const SearchScreen = () => {
 	const INITIAL_RADIUS = 20000;
 	const MAX_RADIUS = 80000;
 	const RADIUS_MULTIPLIER = 1.4;
+
+	const FILTER_SHEET_HEIGHT = Math.min(
+		520,
+		Dimensions.get("window").height * 0.65,
+	);
+	const filtersTranslateY = useRef(new Animated.Value(FILTER_SHEET_HEIGHT)).current;
+
+	const openFilters = () => {
+		// Снапшот текущих примененных категорий в черновики.
+		setDraftCategoryIds(selectedCategoryIds);
+		setDraftSubCategoryIds(selectedSubCategoryIds);
+		setExpandedCategoryIdInModal(null);
+
+		setFiltersMounted(true);
+		setShowFilters(true);
+		Animated.timing(filtersTranslateY, {
+			toValue: 0,
+			duration: 220,
+			easing: Easing.out(Easing.cubic),
+			useNativeDriver: false,
+		}).start();
+	};
+
+	const closeFilters = () => {
+		Animated.timing(filtersTranslateY, {
+			toValue: FILTER_SHEET_HEIGHT,
+			duration: 200,
+			easing: Easing.in(Easing.cubic),
+			useNativeDriver: false,
+		}).start(() => {
+			setShowFilters(false);
+			setFiltersMounted(false);
+		});
+	};
+
+	const toggleFilters = () => {
+		if (showFilters) closeFilters();
+		else openFilters();
+	};
+
+	const arraysEqual = (a: string[], b: string[]) =>
+		a.length === b.length && a.every((x) => b.includes(x));
+
+	const applyDraftFilters = () => {
+		const same =
+			arraysEqual(draftCategoryIds, selectedCategoryIds) &&
+			arraysEqual(draftSubCategoryIds, selectedSubCategoryIds);
+		if (!same) {
+			setSelectedCategoryIds(draftCategoryIds);
+			setSelectedSubCategoryIds(draftSubCategoryIds);
+		}
+
+		setShowCategoryModal(false);
+		setExpandedCategoryIdInModal(null);
+		closeFilters();
+	};
+
+	const panStartTranslateY = useRef(0);
+	const sheetPanResponder = useRef(
+		PanResponder.create({
+			onMoveShouldSetPanResponder: (_, gesture) =>
+				Math.abs(gesture.dy) > 8,
+			onPanResponderGrant: () => {
+				filtersTranslateY.stopAnimation();
+				panStartTranslateY.current = (filtersTranslateY as any).__getValue?.() ?? 0;
+			},
+			onPanResponderMove: (_, gesture) => {
+				const next = panStartTranslateY.current + gesture.dy;
+				const clamped = Math.max(0, Math.min(FILTER_SHEET_HEIGHT, next));
+				filtersTranslateY.setValue(clamped);
+			},
+			onPanResponderRelease: (_, gesture) => {
+				const currentY = (filtersTranslateY as any).__getValue?.() ?? 0;
+				if (currentY > FILTER_SHEET_HEIGHT * 0.35 || gesture.dy > 80) {
+					closeFilters();
+					return;
+				}
+				Animated.timing(filtersTranslateY, {
+					toValue: 0,
+					duration: 180,
+					easing: Easing.out(Easing.cubic),
+					useNativeDriver: false,
+				}).start();
+			},
+		}),
+	).current;
 
 	type PlaceListItem = {
 		place: OSMPlace;
@@ -108,17 +199,28 @@ export const SearchScreen = () => {
 			lng: (profile.defaultStartPoint as any).coordinates.lng,
 		}) || { lat: 52.0339, lng: 113.501 };
 
+	// Draft-выбор фильтров (применяем только по кнопке “Подтвердить”),
+	// чтобы не триггерить Overpass на каждый тап в категориях.
+	const [draftCategoryIds, setDraftCategoryIds] = useState<string[]>([]);
+	const [draftSubCategoryIds, setDraftSubCategoryIds] = useState<string[]>([]);
+	const [expandedCategoryIdInModal, setExpandedCategoryIdInModal] = useState<string | null>(null);
+
 	const osmCriteria = useMemo(() => {
 		return {
 			startCoords: centerCoords,
-			categoryId: categoryId ?? undefined,
-			subCategoryId: subCategoryId ?? undefined,
+			categoryIds: selectedCategoryIds.length ? selectedCategoryIds : undefined,
+			subCategoryIds: selectedSubCategoryIds.length ? selectedSubCategoryIds : undefined,
 			budgetMin: 0,
 			budgetMax: 3000,
 			goal: undefined,
 			filters: {},
 		} as SearchCriteria;
-	}, [centerCoords.lat, centerCoords.lng, categoryId, subCategoryId]);
+	}, [
+		centerCoords.lat,
+		centerCoords.lng,
+		selectedCategoryIds,
+		selectedSubCategoryIds,
+	]);
 
 	useEffect(() => {
 		const load = async () => {
@@ -141,17 +243,33 @@ export const SearchScreen = () => {
 
 				setHasMore(INITIAL_RADIUS < MAX_RADIUS);
 			} catch (e: any) {
-				setLoadError(e?.message || "Ошибка загрузки мест");
+				const status = e?.status;
+				if (status === 429 || status === 504) {
+					// Ошибки 429/504 не показываем пользователю: OSMService уже делает ретраи.
+					setLoadError(null);
+				} else {
+					setLoadError(e?.message || "Ошибка загрузки мест");
+				}
 			} finally {
 				setLoading(false);
 			}
 		};
 
 		load();
-	}, [centerCoords.lat, centerCoords.lng, categoryId, subCategoryId]);
+	}, [
+		centerCoords.lat,
+		centerCoords.lng,
+		selectedCategoryIds,
+		selectedSubCategoryIds,
+	]);
+
+	const lastFetchMoreAtRef = useRef(0);
 
 	const fetchMore = useCallback(async () => {
 		if (loadingMore || loading || !hasMore) return;
+		const now = Date.now();
+		if (now - lastFetchMoreAtRef.current < 900) return;
+		lastFetchMoreAtRef.current = now;
 		const nextRadius = Math.min(radius * RADIUS_MULTIPLIER, MAX_RADIUS);
 		if (nextRadius <= radius) {
 			setHasMore(false);
@@ -173,7 +291,12 @@ export const SearchScreen = () => {
 			setRadius(nextRadius);
 			if (nextRadius >= MAX_RADIUS && toAdd.length === 0) setHasMore(false);
 		} catch (e: any) {
-			setLoadError(e?.message || "Ошибка загрузки дополнительных мест");
+			const status = e?.status;
+			if (status === 429 || status === 504) {
+				setLoadError(null);
+			} else {
+				setLoadError(e?.message || "Ошибка загрузки дополнительных мест");
+			}
 		} finally {
 			setLoadingMore(false);
 		}
@@ -237,9 +360,17 @@ export const SearchScreen = () => {
 		sortMode,
 	]);
 
-	const selectedCategory = categoryId
-		? activityCategories.find((c) => c.id === categoryId)
-		: null;
+	const firstSelectedSubId = selectedSubCategoryIds[0];
+	const categoryForIcon =
+		(firstSelectedSubId
+			? activityCategories.find((c) =>
+					c.subcategories.some((s) => s.id === firstSelectedSubId),
+				)
+			: undefined) ??
+		(selectedCategoryIds[0]
+			? activityCategories.find((c) => c.id === selectedCategoryIds[0])
+			: undefined) ??
+		null;
 
 	const PlaceCard = ({ item }: { item: PlaceListItem }) => {
 		const { place, distanceMeters, durationMinutes } = item;
@@ -254,20 +385,28 @@ export const SearchScreen = () => {
 			>
 				<View style={styles.placeImagePlaceholder}>
 					<Text style={styles.placeImageEmoji}>
-						{selectedCategory?.icon || "Imgg"}
+						{categoryForIcon?.icon || "Imgg"}
 					</Text>
 				</View>
 				<View style={styles.placeInfo}>
 					<Text style={styles.placeName}>{place.title}</Text>
 					{place.address ? (
-						<Text style={styles.placeAddress} numberOfLines={1}>
+						<Text
+							style={styles.placeAddress}
+							numberOfLines={1}
+							ellipsizeMode="tail"
+						>
 							<Feather name="map-pin" size={12} color="#6b7280" />{" "}
 							{place.address}
 						</Text>
 					) : null}
 
 					{place.description ? (
-						<Text style={styles.placeDescription} numberOfLines={2}>
+						<Text
+							style={styles.placeDescription}
+							numberOfLines={2}
+							ellipsizeMode="tail"
+						>
 							{place.description}
 						</Text>
 					) : null}
@@ -350,10 +489,11 @@ export const SearchScreen = () => {
 				</View>
 				<TouchableOpacity
 					style={styles.filterButton}
-					onPress={() => setShowFilters(!showFilters)}
+					onPress={toggleFilters}
 				>
 					<Feather name="filter" size={20} color="#374151" />
-					{(categoryId ||
+					{(draftSubCategoryIds.length > 0 ||
+						draftCategoryIds.length > 0 ||
 						minRating > 0 ||
 						Object.values(accessibilityFilters).some(Boolean)) && (
 						<View style={styles.filterIndicator} />
@@ -379,30 +519,47 @@ export const SearchScreen = () => {
 				</TouchableOpacity>
 			</View>
 
-			{/* Фильтры */}
-			{showFilters && (
-				<View style={styles.filtersPanel}>
+			{/* Фильтры (bottom-sheet) */}
+			{filtersMounted && (
+				<Animated.View
+					style={[
+						styles.filtersPanel,
+						{
+							height: FILTER_SHEET_HEIGHT,
+							transform: [{ translateY: filtersTranslateY }],
+						},
+					]}
+				>
+					<View style={styles.filtersSheetHandle} {...sheetPanResponder.panHandlers}>
+						<View style={styles.filtersSheetGrip} />
+					</View>
 					<ScrollView showsVerticalScrollIndicator={false}>
 						<View style={styles.filtersContent}>
 							<View style={styles.filterSection}>
 								<Text style={styles.filterLabel}>Категория</Text>
 								<TouchableOpacity
 									style={styles.categoryButton}
-									onPress={() => setShowCategoryModal(true)}
+									onPress={() => {
+										setExpandedCategoryIdInModal(null);
+										setShowCategoryModal(true);
+									}}
 								>
 									<Text style={styles.categoryButtonText}>
-										{selectedCategory
-											? `${selectedCategory.icon} ${selectedCategory.name}`
-											: "Все категории"}
+										{draftSubCategoryIds.length
+											? `Выбрано: ${draftSubCategoryIds.length} подкатегорий`
+											: draftCategoryIds.length
+												? `Выбрано: ${draftCategoryIds.length} категорий`
+												: "Все категории"}
 									</Text>
 									<Feather name="chevron-right" size={18} color="#6b7280" />
 								</TouchableOpacity>
-								{selectedCategory && (
+								{(draftSubCategoryIds.length > 0 ||
+									draftCategoryIds.length > 0) && (
 									<TouchableOpacity
 										style={styles.clearCategoryBtn}
 										onPress={() => {
-											setCategoryId(null);
-											setSubCategoryId(null);
+											setDraftCategoryIds([]);
+											setDraftSubCategoryIds([]);
 										}}
 									>
 										<Text style={styles.clearCategoryText}>
@@ -474,101 +631,191 @@ export const SearchScreen = () => {
 							</View>
 						</View>
 					</ScrollView>
-				</View>
+
+					<View style={styles.filtersFooter}>
+						<TouchableOpacity
+							style={[
+								styles.confirmFiltersButton,
+								(loading || loadingMore) && styles.confirmFiltersButtonDisabled,
+							]}
+							onPress={applyDraftFilters}
+							disabled={loading || loadingMore}
+						>
+							<Text style={styles.confirmFiltersButtonText}>Подтвердить</Text>
+						</TouchableOpacity>
+					</View>
+				</Animated.View>
 			)}
 
-			{/* Модальное окно выбора категории */}
-			<Modal
-				visible={showCategoryModal}
-				animationType="slide"
-				transparent
-				onRequestClose={() => setShowCategoryModal(false)}
-			>
-				<TouchableOpacity
-					style={styles.modalOverlay}
-					activeOpacity={1}
-					onPress={() => setShowCategoryModal(false)}
+			{/* Модальное окно выбора категорий (multi-select) — только для экрана поиска */}
+			{showCategoryModal && (
+				<Modal
+					visible={showCategoryModal}
+					animationType="slide"
+					transparent
+					onRequestClose={() => setShowCategoryModal(false)}
 				>
 					<TouchableOpacity
-						style={styles.categoryModalContent}
+						style={styles.modalOverlay}
 						activeOpacity={1}
-						onPress={(e) => e.stopPropagation()}
+						onPress={() => setShowCategoryModal(false)}
 					>
-						<View style={styles.categoryModalHeader}>
-							<Text style={styles.categoryModalTitle}>Выберите категорию</Text>
-							<TouchableOpacity onPress={() => setShowCategoryModal(false)}>
-								<Feather name="x" size={24} color="#374151" />
-							</TouchableOpacity>
-						</View>
-						<ScrollView
-							style={styles.categoryModalScroll}
-							showsVerticalScrollIndicator={false}
+						<TouchableOpacity
+							style={styles.categoryModalContent}
+							activeOpacity={1}
+							onPress={(e) => {
+								// Чтобы клик внутри не закрывал модалку
+								(e as any)?.stopPropagation?.();
+							}}
 						>
-							<TouchableOpacity
-								style={[
-									styles.categoryModalRow,
-									!categoryId && styles.categoryModalRowSelected,
-								]}
-								onPress={() => {
-									setCategoryId(null);
-									setSubCategoryId(null);
-									setShowCategoryModal(false);
-								}}
+							<View style={styles.categoryModalHeader}>
+								<Text style={styles.categoryModalTitle}>Выберите категории</Text>
+								<TouchableOpacity onPress={() => setShowCategoryModal(false)}>
+									<Feather name="x" size={24} color="#374151" />
+								</TouchableOpacity>
+							</View>
+
+							<ScrollView
+								style={styles.categoryModalScroll}
+								showsVerticalScrollIndicator={false}
 							>
-								<Text style={styles.categoryModalRowIcon}>📋</Text>
-								<Text style={styles.categoryModalRowText}>Все категории</Text>
-							</TouchableOpacity>
-							{activityCategories.map((cat) => (
-								<View key={cat.id}>
-									<TouchableOpacity
-										style={[
-											styles.categoryModalRow,
-											categoryId === cat.id &&
-												!subCategoryId &&
-												styles.categoryModalRowSelected,
-										]}
-										onPress={() => {
-											setCategoryId(cat.id);
-											setSubCategoryId(null);
-											if (cat.subcategories.length === 0)
-												setShowCategoryModal(false);
-										}}
-									>
-										<Text style={styles.categoryModalRowIcon}>{cat.icon}</Text>
-										<Text style={styles.categoryModalRowText}>{cat.name}</Text>
-										{cat.subcategories.length > 0 && (
-											<Feather name="chevron-right" size={18} color="#9ca3af" />
-										)}
-									</TouchableOpacity>
-									{categoryId === cat.id && cat.subcategories.length > 0 && (
-										<View style={styles.subcategoryList}>
-											{cat.subcategories.map((sub) => (
-												<TouchableOpacity
-													key={sub.id}
-													style={[
-														styles.subcategoryRow,
-														subCategoryId === sub.id &&
-															styles.categoryModalRowSelected,
-													]}
-													onPress={() => {
-														setSubCategoryId(sub.id);
-														setShowCategoryModal(false);
-													}}
-												>
-													<Text style={styles.subcategoryIcon}>
-														{sub.icon || "•"}
-													</Text>
-													<Text style={styles.subcategoryText}>{sub.name}</Text>
-												</TouchableOpacity>
-											))}
+								<TouchableOpacity
+									style={[
+										styles.categoryModalRow,
+										draftCategoryIds.length === 0 &&
+											draftSubCategoryIds.length === 0 &&
+											styles.categoryModalRowSelected,
+									]}
+									onPress={() => {
+										setDraftCategoryIds([]);
+										setDraftSubCategoryIds([]);
+										setExpandedCategoryIdInModal(null);
+									}}
+								>
+									<Text style={styles.categoryModalRowIcon}>📋</Text>
+									<Text style={styles.categoryModalRowText}>Все категории</Text>
+								</TouchableOpacity>
+
+								{activityCategories.map((cat) => {
+									const subIds = cat.subcategories.map((s) => s.id);
+									const selectedCountFromSubs = subIds.filter((id) =>
+										draftSubCategoryIds.includes(id),
+									).length;
+
+									const allSubSelected =
+										subIds.length > 0 &&
+										selectedCountFromSubs === subIds.length;
+
+									const isAllRowSelected =
+										draftCategoryIds.includes(cat.id) || allSubSelected;
+
+									const displayCount = isAllRowSelected
+										? subIds.length
+										: selectedCountFromSubs;
+
+									const isExpanded = expandedCategoryIdInModal === cat.id;
+
+									return (
+										<View key={cat.id}>
+											<TouchableOpacity
+												style={[
+													styles.categoryModalRow,
+													displayCount > 0 && styles.categoryModalRowSelected,
+												]}
+												onPress={() =>
+													setExpandedCategoryIdInModal((prev) =>
+														prev === cat.id ? null : cat.id,
+													)
+												}
+											>
+												<Text style={styles.categoryModalRowIcon}>{cat.icon}</Text>
+												<Text style={styles.categoryModalRowText}>{cat.name}</Text>
+												{displayCount > 0 ? (
+													<Text style={styles.categoryCountText}>{displayCount}</Text>
+												) : null}
+												<Feather
+													name={isExpanded ? "chevron-up" : "chevron-down"}
+													size={18}
+													color="#6b7280"
+												/>
+											</TouchableOpacity>
+
+											{isExpanded && (
+												<View style={styles.accordionBody}>
+													{/* Все в категории */}
+													<TouchableOpacity
+														style={[
+															styles.subcategoryRow,
+															isAllRowSelected && styles.categoryModalRowSelected,
+														]}
+														onPress={() => {
+															if (isAllRowSelected) {
+																setDraftCategoryIds((prev) =>
+																	prev.filter((id) => id !== cat.id),
+																);
+																setDraftSubCategoryIds((prev) =>
+																	prev.filter((id) => !subIds.includes(id)),
+																);
+															} else {
+																setDraftCategoryIds((prev) => {
+																	if (prev.includes(cat.id)) return prev;
+																	return [...prev, cat.id];
+																});
+																// “вся категория” обнуляет индивидуальные подкатегории
+																setDraftSubCategoryIds((prev) =>
+																	prev.filter((id) => !subIds.includes(id)),
+																);
+															}
+														}}
+													>
+														<Text style={styles.subcategoryIcon}>📋</Text>
+														<Text style={styles.subcategoryText}>Все в категории</Text>
+														{isAllRowSelected && (
+															<Feather name="check" size={18} color="#3b82f6" />
+														)}
+													</TouchableOpacity>
+
+													{cat.subcategories.map((sub) => {
+														const isSelected = draftSubCategoryIds.includes(sub.id);
+														return (
+															<TouchableOpacity
+																key={sub.id}
+																style={[
+																	styles.subcategoryRow,
+																	isSelected && styles.categoryModalRowSelected,
+																]}
+																onPress={() => {
+																	setDraftCategoryIds((prev) =>
+																		prev.filter((id) => id !== cat.id),
+																	);
+																	setDraftSubCategoryIds((prev) => {
+																		if (prev.includes(sub.id)) {
+																			return prev.filter((id) => id !== sub.id);
+																		}
+																		return [...prev, sub.id];
+																	});
+																}}
+															>
+																<Text style={styles.subcategoryIcon}>
+																	{sub.icon || "•"}
+																</Text>
+																<Text style={styles.subcategoryText}>{sub.name}</Text>
+																{isSelected && (
+																	<Feather name="check" size={18} color="#3b82f6" />
+																)}
+															</TouchableOpacity>
+														);
+													})}
+												</View>
+											)}
 										</View>
-									)}
-								</View>
-							))}
-						</ScrollView>
+									);
+								})}
+							</ScrollView>
+						</TouchableOpacity>
 					</TouchableOpacity>
-				</TouchableOpacity>
-			</Modal>
+				</Modal>
+			)}
 
 			{/* Контент */}
 			<View style={styles.content}>
@@ -592,6 +839,7 @@ export const SearchScreen = () => {
 									);
 									if (item) setSelectedPlace(item.place);
 								}}
+								routingEnabled={false}
 								height={Dimensions.get("window").height - 200}
 							/>
 						) : (
@@ -607,11 +855,7 @@ export const SearchScreen = () => {
 					<View style={styles.listFullContainer}>
 						<View style={styles.listHeader}>
 							<Text style={styles.listHeaderTitle}>
-								{loading
-									? "Загрузка мест..."
-									: loadError
-										? loadError
-										: `Найдено мест: ${displayPlaces.length}`}
+								{loadError ? loadError : `Найдено мест: ${displayPlaces.length}`}
 							</Text>
 							<View style={styles.sortRow}>
 								<TouchableOpacity
@@ -648,7 +892,15 @@ export const SearchScreen = () => {
 								</TouchableOpacity>
 							</View>
 						</View>
-						{displayPlaces.length === 0 ? (
+						{loading ? (
+							<View style={styles.emptyState}>
+								<ActivityIndicator size="large" color="#3b82f6" />
+								<Text style={styles.emptyStateText}>Загрузка мест...</Text>
+								<Text style={styles.emptyStateSubtext}>
+									Пожалуйста, подождите
+								</Text>
+							</View>
+						) : displayPlaces.length === 0 ? (
 							<View style={styles.emptyState}>
 								<Feather name="search" size={48} color="#d1d5db" />
 								<Text style={styles.emptyStateText}>Ничего не найдено</Text>
@@ -697,7 +949,7 @@ export const SearchScreen = () => {
 					<ScrollView style={styles.detailsScroll}>
 						<View style={styles.placeImagePlaceholder}>
 							<Text style={styles.placeImageEmojiLarge}>
-								{selectedCategory?.icon || "📍"}
+								{categoryForIcon?.icon || "📍"}
 							</Text>
 						</View>
 						<View style={styles.detailsContent}>
@@ -820,9 +1072,47 @@ const styles = StyleSheet.create({
 		borderBottomWidth: 1,
 		borderBottomColor: "#f1f5f9",
 		paddingVertical: 12,
+		position: "absolute",
+		left: 0,
+		right: 0,
+		bottom: 0,
+		borderTopLeftRadius: 18,
+		borderTopRightRadius: 18,
+		zIndex: 50,
+	},
+	filtersSheetHandle: {
+		height: 28,
+		alignItems: "center",
+		justifyContent: "center",
+	},
+	filtersSheetGrip: {
+		width: 44,
+		height: 5,
+		borderRadius: 3,
+		backgroundColor: "#e5e7eb",
 	},
 	filtersContent: {
 		paddingHorizontal: 16,
+		paddingBottom: 96,
+	},
+	filtersFooter: {
+		paddingHorizontal: 16,
+		paddingBottom: 20,
+	},
+	confirmFiltersButton: {
+		backgroundColor: "#3b82f6",
+		borderRadius: 16,
+		paddingVertical: 14,
+		alignItems: "center",
+		justifyContent: "center",
+	},
+	confirmFiltersButtonDisabled: {
+		opacity: 0.65,
+	},
+	confirmFiltersButtonText: {
+		fontSize: 16,
+		fontWeight: "700",
+		color: "white",
 	},
 	filterSection: {
 		marginBottom: 12,
@@ -942,7 +1232,7 @@ const styles = StyleSheet.create({
 		backgroundColor: "white",
 		borderRadius: 16,
 		marginBottom: 16,
-		overflow: "hidden",
+		overflow: "visible",
 		...(Platform.OS === "web"
 			? {
 					boxShadow: "0 4px 12px rgba(0, 0, 0, 0.08)",
@@ -969,9 +1259,11 @@ const styles = StyleSheet.create({
 	},
 	placeImageEmoji: {
 		fontSize: 40,
+		lineHeight: 40,
 	},
 	placeImageEmojiLarge: {
 		fontSize: 56,
+		lineHeight: 56,
 	},
 	placeInfo: {
 		padding: 16,
@@ -985,6 +1277,7 @@ const styles = StyleSheet.create({
 	placeAddress: {
 		fontSize: 13,
 		color: "#6b7280",
+		lineHeight: 18,
 		marginBottom: 10,
 	},
 	placeDescription: {
@@ -1096,6 +1389,16 @@ const styles = StyleSheet.create({
 		fontSize: 16,
 		fontWeight: "500",
 		color: "#111827",
+	},
+	accordionBody: {
+		paddingLeft: 44,
+		paddingBottom: 8,
+	},
+	categoryCountText: {
+		fontSize: 14,
+		fontWeight: "700",
+		color: "#6b7280", // тёмно-серый
+		marginRight: 2,
 	},
 	subcategoryList: {
 		paddingLeft: 44,

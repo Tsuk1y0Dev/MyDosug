@@ -52,6 +52,7 @@ const defaultPlanningRequest: PlanningRequest = {
     address: '',
     label: 'Текущая позиция',
   } as StartPoint,
+	planType: 'single',
   budget: 2000,
   activityType: 'food',
   mood: 'fun',
@@ -93,7 +94,7 @@ export const PlannerProvider = ({
   initialTimeSlot,
   selectedDate,
   initialStep,
-  initialPlanType,
+	initialPlanType: _initialPlanType,
 }: PlannerProviderProps) => {
   const [currentStep, setCurrentStep] = useState(initialStep ?? 0);
   const [planningDate] = useState<Date>(selectedDate || new Date());
@@ -102,9 +103,6 @@ export const PlannerProvider = ({
     ...(initialTimeSlot && {
       startTime: initialTimeSlot.startTime,
       endTime: initialTimeSlot.endTime,
-    }),
-    ...(initialPlanType && {
-      planType: initialPlanType,
     }),
   });
   const [searchResults, setSearchResults] = useState<Place[]>([]);
@@ -159,7 +157,12 @@ export const PlannerProvider = ({
   }, []);
 
   const updatePlanningRequest = (updates: Partial<PlanningRequest>) => {
-    setPlanningRequest(prev => ({ ...prev, ...updates }));
+		// План теперь всегда "single": цепочку больше не поддерживаем.
+		const normalizedUpdates: Partial<PlanningRequest> =
+			updates.planType && updates.planType !== 'single'
+				? { ...updates, planType: 'single' }
+				: updates;
+		setPlanningRequest(prev => ({ ...prev, ...normalizedUpdates }));
   };
 
   const searchPlaces = () => {

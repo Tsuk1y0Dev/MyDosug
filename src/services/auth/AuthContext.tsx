@@ -7,6 +7,207 @@ import React, {
 } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+import { apiClient } from "../api/client";
+import { authApi } from "../api/authApi";
+
+type User = {
+	id: string;
+	name: string;
+	email: string;
+};
+
+type AuthContextType = {
+	user: User | null;
+	isLoading: boolean;
+	login: (
+		email: string,
+		password: string,
+	) => Promise<{ success: boolean; error?: string }>;
+	register: (
+		email: string,
+		password: string,
+		name: string,
+	) => Promise<{ success: boolean; error?: string }>;
+	logout: () => Promise<void>;
+};
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+// Требование: токен храним под ключом @mydosug_token
+const STORAGE_TOKEN_KEY = "@mydosug_token";
+// Нам нужен user для экранов (чтобы не редиректило обратно в Auth)
+const STORAGE_USER_KEY = "@mydosug_user";
+
+type AuthProviderProps = {
+	children: ReactNode;
+};
+
+export const AuthProvider = ({ children }: AuthProviderProps) => {
+	const [user, setUser] = useState<User | null>(null);
+	const [isLoading, setIsLoading] = useState(true);
+
+	useEffect(() => {
+		loadSession();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
+
+	const loadSession = async () => {
+		try {
+			const token = await AsyncStorage.getItem(STORAGE_TOKEN_KEY);
+			if (!token) {
+				setUser(null);
+				return;
+			}
+
+			apiClient.setToken(token);
+
+			const storedUser = await AsyncStorage.getItem(STORAGE_USER_KEY);
+			if (storedUser) {
+				setUser(JSON.parse(storedUser) as User);
+			} else {
+				// Если токен есть, но user не сохранился — не редиректим обратно в auth.
+				// Пользовательский UI может показывать пустые значения, но сессия должна считаться активной.
+				setUser({ id: "", name: "", email: "" });
+			}
+		} catch (e) {
+			console.warn("Auth session load error:", e);
+			setUser(null);
+		} finally {
+			setIsLoading(false);
+		}
+	};
+
+	const persistSession = async (token: string, userData: User) => {
+		await AsyncStorage.setItem(STORAGE_TOKEN_KEY, token);
+		await AsyncStorage.setItem(STORAGE_USER_KEY, JSON.stringify(userData));
+		apiClient.setToken(token);
+		setUser(userData);
+	};
+
+	const login = async (
+		email: string,
+		password: string,
+	): Promise<{ success: boolean; error?: string }> => {
+		setIsLoading(true);
+		try {
+			const res = await authApi.login({ email, password });
+			const authData = res.data as any;
+
+			const token =
+				authData.token ??
+				authData.access_token ??
+				authData.accessToken ??
+				authData.data?.token;
+
+			if (!token) {
+				return { success: false, error: "Бэкенд не вернул токен" };
+			}
+
+			const apiUser = authData.user ?? authData.me ?? authData.data?.user;
+			const userData: User = {
+				id: String(apiUser?.id ?? ""),
+				name: apiUser?.name ?? "",
+				email: apiUser?.email ?? email,
+			};
+
+			await persistSession(token, userData);
+			return { success: true };
+		} catch (e: any) {
+			return { success: false, error: e?.message || "Ошибка при входе" };
+		} finally {
+			setIsLoading(false);
+		}
+	};
+
+	const register = async (
+		email: string,
+		password: string,
+		name: string,
+	): Promise<{ success: boolean; error?: string }> => {
+		setIsLoading(true);
+		try {
+			const res = await authApi.register({ email, password, name });
+			const authData = res.data as any;
+
+			const token =
+				authData.token ??
+				authData.access_token ??
+				authData.accessToken ??
+				authData.data?.token;
+
+			if (!token) {
+				return { success: false, error: "Бэкенд не вернул токен" };
+			}
+
+			const apiUser = authData.user ?? authData.me ?? authData.data?.user;
+			const userData: User = {
+				id: String(apiUser?.id ?? ""),
+				name: apiUser?.name ?? name,
+				email: apiUser?.email ?? email,
+			};
+
+			await persistSession(token, userData);
+			return { success: true };
+		} catch (e: any) {
+			return {
+				success: false,
+				error: e?.message || "Ошибка при регистрации",
+			};
+		} finally {
+			setIsLoading(false);
+		}
+	};
+
+	const logout = async (): Promise<void> => {
+		try {
+			await AsyncStorage.removeItem(STORAGE_TOKEN_KEY);
+			await AsyncStorage.removeItem(STORAGE_USER_KEY);
+			apiClient.setToken(null);
+			setUser(null);
+		} catch (error) {
+			console.error("Error logging out:", error);
+		} finally {
+			setIsLoading(false);
+		}
+	};
+
+	return (
+		<AuthContext.Provider value={{ user, isLoading, login, register, logout }}>
+			{children}
+		</AuthContext.Provider>
+	);
+};
+
+export const useAuth = () => {
+	const context = useContext(AuthContext);
+	if (context === undefined) {
+		throw new Error("useAuth must be used within an AuthProvider");
+	}
+	return context;
+};
+
+/*
+	OLD IMPLEMENTATION (LOCAL/MOCK):
+	- Хранили пользователей в AsyncStorage
+	- login/register сверяли email+password со списком
+	- не было Bearer токена и интеграции с реальным бэкендом
+
+	Оставлено закомментированным для быстрого бэка.
+*/
+
+/*
+// ===========================
+// PREV_VERSION_FULL (копия)
+// ===========================
+import React, {
+	createContext,
+	useState,
+	useContext,
+	ReactNode,
+	useEffect,
+} from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 type User = {
 	id: string;
 	name: string;
@@ -74,12 +275,10 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 	): Promise<{ success: boolean; error?: string }> => {
 		setIsLoading(true);
 		try {
-			// Получаем список пользователей
 			const usersData = await AsyncStorage.getItem(USERS_KEY);
 			const users: Array<{ email: string; password: string; user: User }> =
 				usersData ? JSON.parse(usersData) : [];
 
-			// Ищем пользователя
 			const foundUser = users.find(
 				(u) => u.email === email && u.password === password,
 			);
@@ -105,7 +304,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 	): Promise<{ success: boolean; error?: string }> => {
 		setIsLoading(true);
 		try {
-			// Валидация
 			if (!email || !password || !name) {
 				setIsLoading(false);
 				return { success: false, error: "Заполните все поля" };
@@ -119,7 +317,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 				};
 			}
 
-			// Проверяем, существует ли пользователь
 			const usersData = await AsyncStorage.getItem(USERS_KEY);
 			const users: Array<{ email: string; password: string; user: User }> =
 				usersData ? JSON.parse(usersData) : [];
@@ -132,18 +329,15 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 				};
 			}
 
-			// Создаем нового пользователя
 			const newUser: User = {
 				id: `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
 				name: name,
 				email: email,
 			};
 
-			// Сохраняем пользователя в список
 			users.push({ email, password, user: newUser });
 			await AsyncStorage.setItem(USERS_KEY, JSON.stringify(users));
 
-			// Автоматически входим
 			await saveUser(newUser);
 			setIsLoading(false);
 			return { success: true };
@@ -176,3 +370,4 @@ export const useAuth = () => {
 	}
 	return context;
 };
+*/

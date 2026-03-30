@@ -112,7 +112,7 @@ export const RoutesScreen = () => {
               <Text style={styles.activityNumberText}>{index + 1}</Text>
             </View>
             <View style={styles.activityInfo}>
-              <Text style={styles.activityName} numberOfLines={1}>
+              <Text style={styles.activityName} numberOfLines={1} ellipsizeMode="tail">
                 {activity.place.name}
               </Text>
               <Text style={styles.activityTime}>
@@ -153,8 +153,10 @@ export const RoutesScreen = () => {
           </View>
         )}
         <View style={styles.favoriteInfo}>
-          <Text style={styles.favoriteName} numberOfLines={1}>{place.name}</Text>
-          <Text style={styles.favoriteAddress} numberOfLines={1}>
+          <Text style={styles.favoriteName} numberOfLines={1} ellipsizeMode="tail">
+            {place.name}
+          </Text>
+          <Text style={styles.favoriteAddress} numberOfLines={1} ellipsizeMode="tail">
             <Feather name="map-pin" size={12} color="#6b7280" /> {place.address}
           </Text>
           <View style={styles.favoriteMeta}>
@@ -359,6 +361,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#1f2937',
+    lineHeight: 18,
     marginBottom: 2,
   },
   activityTime: {
@@ -398,11 +401,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#1f2937',
+    lineHeight: 18,
     marginBottom: 4,
   },
   favoriteAddress: {
     fontSize: 12,
     color: '#6b7280',
+    lineHeight: 16,
     marginBottom: 8,
   },
   favoriteMeta: {

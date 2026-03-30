@@ -3,7 +3,10 @@
  * Пока использует моковые данные, но структура готова для интеграции с реальным API
  */
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://api.mydosug.ru/api';
+// В этом проекте реальный бэкенд используется через chess.electroscope.ru.
+// Для токена и auth/endpoints храним и ходим относительно /api.
+const API_BASE_URL =
+	process.env.EXPO_PUBLIC_API_URL || "https://chess.electroscope.ru/api";
 
 export interface ApiResponse<T> {
   data: T;

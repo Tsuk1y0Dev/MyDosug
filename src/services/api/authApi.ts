@@ -54,7 +54,11 @@ export const authApi = {
    * POST /api/auth/register
    */
   async register(data: RegisterRequest): Promise<ApiResponse<AuthResponse>> {
-    // Моковая реализация
+    // Реальная реализация
+    return apiClient.post<AuthResponse>('/auth/register', data);
+
+    // ---- MOCK (оставлено закомментированным для быстрого бэка) ----
+    /*
     if (mockUsers.find(u => u.email === data.email)) {
       throw { message: 'Пользователь с таким email уже существует', code: 'EMAIL_EXISTS', status: 400 };
     }
@@ -77,9 +81,7 @@ export const authApi = {
         name: newUser.name,
       },
     });
-
-    // Реальная реализация (раскомментировать когда бэкенд готов):
-    // return apiClient.post<AuthResponse>('/auth/register', data);
+    */
   },
 
   /**
@@ -87,7 +89,11 @@ export const authApi = {
    * POST /api/auth/login
    */
   async login(data: LoginRequest): Promise<ApiResponse<AuthResponse>> {
-    // Моковая реализация
+    // Реальная реализация
+    return apiClient.post<AuthResponse>('/auth/login', data);
+
+    // ---- MOCK (оставлено закомментированным для быстрого бэка) ----
+    /*
     const user = mockUsers.find(u => u.email === data.email && u.password === data.password);
     
     if (!user) {
@@ -104,9 +110,7 @@ export const authApi = {
         avatar_url: user.avatar_url,
       },
     });
-
-    // Реальная реализация (раскомментировать когда бэкенд готов):
-    // return apiClient.post<AuthResponse>('/auth/login', data);
+    */
   },
 
   /**

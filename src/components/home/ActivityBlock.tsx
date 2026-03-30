@@ -228,7 +228,11 @@ export const ActivityBlock: React.FC<ActivityBlockProps> = ({
             {activity.startTime} - {activity.endTime}
           </Text>
           {activity.location && (
-            <Text style={styles.activityLocation} numberOfLines={1}>
+            <Text
+              style={styles.activityLocation}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
               {activity.location}
             </Text>
           )}
@@ -287,7 +291,11 @@ export const ActivityBlock: React.FC<ActivityBlockProps> = ({
             {activity.startTime} - {activity.endTime}
           </Text>
           {activity.location && (
-            <Text style={styles.activityLocation} numberOfLines={1}>
+            <Text
+              style={styles.activityLocation}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
               {activity.location}
             </Text>
           )}
@@ -366,6 +374,7 @@ const styles = StyleSheet.create({
   },
   activityLocation: {
     fontSize: 11,
+    lineHeight: 15,
     color: '#9ca3af',
     fontStyle: 'italic',
   },

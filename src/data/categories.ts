@@ -528,43 +528,6 @@ export const activityCategories: Category[] = [
 			},
 		],
 	},
-	{
-		id: "for_employee",
-		name: "Для сотрудника",
-		icon: "💼",
-		subcategories: [
-			{
-				id: "coworking",
-				name: "Коворкинги",
-				icon: "👨‍💻",
-				description: "Пространства для работы и встреч",
-			},
-			{
-				id: "grk_office",
-				name: "Офисы ГРК Быстринское",
-				icon: "🏢",
-				description: "Представительства и офисы компании в городе",
-			},
-			{
-				id: "wifi_place",
-				name: "Места с быстрым Wi‑Fi",
-				icon: "📶",
-				description: "Кафе и пространства с устойчивым интернетом для работы",
-			},
-			{
-				id: "business_lunch",
-				name: "Бизнес-ланчи рядом",
-				icon: "🥗",
-				description: "Места с быстрыми комплексными обедами для сотрудников",
-			},
-			{
-				id: "business_hotel",
-				name: "Отели для командировок",
-				icon: "🏨",
-				description: "Отели и апартаменты с удобной инфраструктурой для работы",
-			},
-		],
-	},
 ];
 
 /**

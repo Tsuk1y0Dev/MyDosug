@@ -3,6 +3,7 @@ import {
 	View,
 	Text,
 	StyleSheet,
+	ActivityIndicator,
 	FlatList,
 	TouchableOpacity,
 	Dimensions,
@@ -98,7 +99,12 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 				filtered.forEach((p) => placesSeenIdsRef.current.add(p.id));
 				setPlaces(filtered);
 			} catch (e: any) {
-				setLoadError(e?.message || "Ошибка загрузки мест");
+				const status = e?.status;
+				if (status === 429 || status === 504) {
+					setLoadError(null);
+				} else {
+					setLoadError(e?.message || "Ошибка загрузки мест");
+				}
 			} finally {
 				setLoading(false);
 			}
@@ -167,7 +173,14 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 			setRadius(nextRadius);
 			if (nextRadius >= MAX_RADIUS && toAdd.length === 0) setHasMore(false);
 		} catch (e: any) {
-			setLoadError(e?.message || "Ошибка загрузки дополнительных мест");
+			const status = e?.status;
+			if (status === 429 || status === 504) {
+				setLoadError(null);
+			} else {
+				setLoadError(
+					e?.message || "Ошибка загрузки дополнительных мест",
+				);
+			}
 		} finally {
 			setLoadingMore(false);
 		}
@@ -282,7 +295,15 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 
 			{viewMode === "list" ? (
 				<View style={styles.listScroll}>
-					{filteredWithDistance.length === 0 ? (
+					{loading ? (
+						<View style={styles.emptyState}>
+							<ActivityIndicator size="large" color="#3b82f6" />
+							<Text style={styles.emptyStateText}>Загрузка...</Text>
+							<Text style={styles.emptyStateSubtext}>
+								Подбираем места
+							</Text>
+						</View>
+					) : filteredWithDistance.length === 0 ? (
 						<View style={styles.emptyState}>
 							<Feather name="map-pin" size={48} color="#d1d5db" />
 							<Text style={styles.emptyStateText}>Места не найдены</Text>
@@ -298,7 +319,11 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 								<View style={styles.card}>
 									<Text style={styles.cardTitle}>{item.title}</Text>
 									{item.address ? (
-										<Text style={styles.cardAddress} numberOfLines={1}>
+										<Text
+											style={styles.cardAddress}
+											numberOfLines={1}
+											ellipsizeMode="tail"
+										>
 											{item.address}
 										</Text>
 									) : null}
@@ -425,7 +450,15 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 				</View>
 			) : (
 				<View style={styles.mapWrap}>
-					{filteredWithDistance.length > 0 ? (
+					{loading ? (
+						<View style={styles.emptyState}>
+							<ActivityIndicator size="large" color="#3b82f6" />
+							<Text style={styles.emptyStateText}>Загрузка...</Text>
+							<Text style={styles.emptyStateSubtext}>
+								Проверяем доступность рядом
+							</Text>
+						</View>
+					) : filteredWithDistance.length > 0 ? (
 						<>
 							<YandexMap
 								center={
@@ -448,11 +481,16 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 								}}
 								height={Platform.OS === "web" ? 400 : Math.max(300, winHeight - 220)}
 								fitAllMarkers
+								routingEnabled={false}
 							/>
 							{selectedPlace && (
 								<View style={styles.mapBottomCard}>
 									<Text style={styles.bottomCardTitle}>{selectedPlace.title}</Text>
-									<Text style={styles.bottomCardAddress} numberOfLines={1}>
+									<Text
+										style={styles.bottomCardAddress}
+										numberOfLines={1}
+										ellipsizeMode="tail"
+									>
 										{selectedPlace.address || "—"}
 									</Text>
 									<Text style={styles.bottomCardRating}>
@@ -583,6 +621,7 @@ const styles = StyleSheet.create({
 	cardAddress: {
 		fontSize: 13,
 		color: "#6b7280",
+		lineHeight: 18,
 		marginBottom: 10,
 	},
 	cardDescription: {
@@ -704,6 +743,7 @@ const styles = StyleSheet.create({
 	bottomCardAddress: {
 		fontSize: 13,
 		color: "#6b7280",
+		lineHeight: 18,
 		marginBottom: 6,
 	},
 	bottomCardRating: {

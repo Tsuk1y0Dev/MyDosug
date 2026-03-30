@@ -2,8 +2,6 @@ import type React from "react";
 import { useMemo } from "react";
 import { View, StyleSheet } from "react-native";
 import { usePlanner } from "../../services/planner/PlannerContext";
-import { PlanTypeStep } from "../../components/planner/PlanTypeStep";
-import { TimeSelectionStep } from "../../components/planner/TimeSelectionStep";
 import { ParametersStep } from "../../components/planner/ParametersStep";
 import { SearchResultsStep } from "../../components/planner/SearchResultsStep";
 import { RoutePlanningStep } from "../../components/planner/RoutePlanningStep";
@@ -21,47 +19,31 @@ export const PlannerContent: React.FC<PlannerContentProps> = ({
 
 	// Определяем общее количество шагов и метки
 	const { totalSteps, stepLabels } = useMemo(() => {
-		if (planningRequest.planType === "single") {
-			// Для одного мероприятия: тип плана -> параметры -> результаты -> маршрут (4 шага)
-			return {
-				totalSteps: 4,
-				stepLabels: ["Тип", "Параметры", "Результаты", "Маршрут"],
-			};
-		} else {
-			// Для цепочки: тип плана -> время -> параметры -> результаты -> маршрут (5 шагов)
-			return {
-				totalSteps: 5,
-				stepLabels: ["Тип", "Время", "Параметры", "Результаты", "Маршрут"],
-			};
-		}
-	}, [planningRequest.planType]);
+		// Убираем выбор "single/chain": везде логика работает как "single".
+		// Оставляем 4 шага для визуальной совместимости, но шаг "Тип" не отображаем.
+		return {
+			totalSteps: 4,
+			stepLabels: ["", "Параметры", "Результаты", "Маршрут"],
+		};
+	}, []);
 
 	// Нормализуем текущий шаг для индикатора
 	const normalizedStep = useMemo(() => {
-		if (planningRequest.planType === "single") {
-			// Для single: 0->0, 1->1 (ParametersStep), 2->1 (если custom), 3->2, 4->3
-			if (currentStep === 0) return 0;
-			if (currentStep === 1 || currentStep === 2) return 1;
-			if (currentStep === 3) return 2;
-			if (currentStep === 4) return 3;
-			return 0;
-		} else {
-			// Для chain: 0->0, 1->1, 2->2, 3->3, 4->4
-			return Math.min(currentStep, totalSteps - 1);
-		}
-	}, [currentStep, planningRequest.planType, totalSteps]);
+		// Для single: 0->0, 1->1, 2->1, 3->2, 4->3
+		if (currentStep === 0) return 0;
+		if (currentStep === 1 || currentStep === 2) return 1;
+		if (currentStep === 3) return 2;
+		if (currentStep === 4) return 3;
+		return 0;
+	}, [currentStep]);
 
 	const renderStep = () => {
 		switch (currentStep) {
 			case 0:
-				// Шаг 0: Выбор типа плана (одно мероприятие или цепочка)
-				return <PlanTypeStep />;
+				// Шаг 0: больше не показываем выбор типа (цепочка отключена)
+				return <ParametersStep />;
 			case 1:
-				// Шаг 1: Выбор времени (только для цепочки) или параметры (для одного мероприятия)
-				if (planningRequest.planType === "chain") {
-					return <TimeSelectionStep />;
-				}
-				// Для одного мероприятия сразу переходим к параметрам
+				// Шаг 1: для single всегда сразу параметры
 				return <ParametersStep />;
 			case 2:
 				// Шаг 2: Параметры поиска или создание кастомной активности
@@ -80,7 +62,7 @@ export const PlannerContent: React.FC<PlannerContentProps> = ({
 				// Шаг 4: Планирование маршрута
 				return <RoutePlanningStep onPlanSaved={onPlanSaved} />;
 			default:
-				return <PlanTypeStep />;
+				return <ParametersStep />;
 		}
 	};
 

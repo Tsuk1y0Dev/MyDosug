@@ -15,8 +15,8 @@ export interface SearchCriteriaFilters {
 
 export interface SearchCriteria {
   startCoords: { lat: number; lng: number };
-  categoryId?: string;
-  subCategoryId?: string;
+  categoryIds?: string[];
+  subCategoryIds?: string[];
   budgetMin: number;
   budgetMax: number;
   goal?: GoalType;
