@@ -5,6 +5,10 @@ import React, {
 	useRef,
 	useCallback,
 } from "react";
+import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/native";
+import type { RouteProp } from "@react-navigation/native";
+import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
+import type { MainTabParamList } from "../../navigation/types";
 import {
 	ActivityIndicator,
 	Animated,
@@ -21,13 +25,32 @@ import {
 	Platform,
 	Modal,
 	Easing,
+	Alert,
+	Linking,
+	Pressable,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { activityCategories } from "../../data/categories";
 import { YandexMap } from "../../components/maps/YandexMap";
 import { OSMService, OSMPlace } from "../../services/osm/OSMService";
 import { useUser } from "../../context/UserContext";
-import type { SearchCriteria } from "../../types/searchCriteria";
+import { useAuth } from "../../services/auth/AuthContext";
+import { useFavorites } from "../../services/favorites/FavoritesContext";
+import { osmPlaceToPlace } from "../../utils/placeConverters";
+import type { GoalType, SearchCriteria } from "../../types/searchCriteria";
+import {
+	filterOsmPlaces,
+	matchesExtendedSearchCriteria,
+} from "../../utils/osmPlaceFilters";
+import { formatOsmBudgetCaption } from "../../utils/osmPlaceCaption";
+import { useDeviceCoords } from "../../hooks/useDeviceCoords";
+import {
+	getOpeningSummaryToday,
+	formatOpeningHoursDetailRu,
+	extractPlacePhone,
+	extractPlaceWebsite,
+	getMinutesUntilClosingToday,
+} from "../../utils/openingHoursRu";
 
 function matchesAccessibility(
 	place: OSMPlace,
@@ -68,14 +91,47 @@ function haversineMeters(
 
 export const SearchScreen = () => {
 	const { profile } = useUser();
+	const deviceCoords = useDeviceCoords();
+	const { user } = useAuth();
+	const { addFavoritePlace, removeFavoritePlace, isFavorite } = useFavorites();
+	const route = useRoute<RouteProp<MainTabParamList, "Search">>();
+	const navigation =
+		useNavigation<BottomTabNavigationProp<MainTabParamList, "Search">>();
+
+	const openExternalUrl = useCallback((url: string) => {
+		Linking.openURL(url).catch(() => {});
+	}, []);
+	const dialPhone = useCallback(
+		(raw: string) => {
+			const d = raw.replace(/[^\d+]/g, "");
+			if (d.length >= 3) void openExternalUrl(`tel:${d}`);
+		},
+		[openExternalUrl],
+	);
+	const openWebsite = useCallback(
+		(w: string) => {
+			const u = /^https?:\/\//i.test(w) ? w : `https://${w}`;
+			void openExternalUrl(u);
+		},
+		[openExternalUrl],
+	);
+
+	/** Не грузим Overpass при первом открытии экрана без явного действия пользователя */
+	const [readyToFetch, setReadyToFetch] = useState(false);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
-	const [selectedSubCategoryIds, setSelectedSubCategoryIds] = useState<string[]>([]);
+	const [selectedSubCategoryIds, setSelectedSubCategoryIds] = useState<
+		string[]
+	>([]);
 	const [showFilters, setShowFilters] = useState(false);
 	const [filtersMounted, setFiltersMounted] = useState(false);
 	const [selectedPlace, setSelectedPlace] = useState<OSMPlace | null>(null);
 	const [mapView, setMapView] = useState(false);
 	const [minRating, setMinRating] = useState(0);
+	const [searchBudgetMax, setSearchBudgetMax] = useState(3000);
+	const [searchGoal, setSearchGoal] = useState<GoalType | null>(null);
+	const [draftSearchBudgetMax, setDraftSearchBudgetMax] = useState(3000);
+	const [draftSearchGoal, setDraftSearchGoal] = useState<GoalType | null>(null);
 	const [showCategoryModal, setShowCategoryModal] = useState(false);
 	const [accessibilityFilters, setAccessibilityFilters] = useState({
 		wheelchair: false,
@@ -93,12 +149,16 @@ export const SearchScreen = () => {
 		520,
 		Dimensions.get("window").height * 0.65,
 	);
-	const filtersTranslateY = useRef(new Animated.Value(FILTER_SHEET_HEIGHT)).current;
+	const filtersTranslateY = useRef(
+		new Animated.Value(FILTER_SHEET_HEIGHT),
+	).current;
 
 	const openFilters = () => {
 		// Снапшот текущих примененных категорий в черновики.
 		setDraftCategoryIds(selectedCategoryIds);
 		setDraftSubCategoryIds(selectedSubCategoryIds);
+		setDraftSearchBudgetMax(searchBudgetMax);
+		setDraftSearchGoal(searchGoal);
 		setExpandedCategoryIdInModal(null);
 
 		setFiltersMounted(true);
@@ -139,20 +199,32 @@ export const SearchScreen = () => {
 			setSelectedCategoryIds(draftCategoryIds);
 			setSelectedSubCategoryIds(draftSubCategoryIds);
 		}
+		setSearchBudgetMax(draftSearchBudgetMax);
+		setSearchGoal(draftSearchGoal);
 
+		setReadyToFetch(true);
 		setShowCategoryModal(false);
 		setExpandedCategoryIdInModal(null);
 		closeFilters();
 	};
 
+	useFocusEffect(
+		useCallback(() => {
+			if (route.params?.allowFullSearch) {
+				setReadyToFetch(true);
+				navigation.setParams({ allowFullSearch: undefined });
+			}
+		}, [navigation, route.params?.allowFullSearch]),
+	);
+
 	const panStartTranslateY = useRef(0);
 	const sheetPanResponder = useRef(
 		PanResponder.create({
-			onMoveShouldSetPanResponder: (_, gesture) =>
-				Math.abs(gesture.dy) > 8,
+			onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 8,
 			onPanResponderGrant: () => {
 				filtersTranslateY.stopAnimation();
-				panStartTranslateY.current = (filtersTranslateY as any).__getValue?.() ?? 0;
+				panStartTranslateY.current =
+					(filtersTranslateY as any).__getValue?.() ?? 0;
 			},
 			onPanResponderMove: (_, gesture) => {
 				const next = panStartTranslateY.current + gesture.dy;
@@ -192,27 +264,33 @@ export const SearchScreen = () => {
 
 	const [sortMode, setSortMode] = useState<"distance" | "rating">("distance");
 
-	const centerCoords = (profile?.defaultStartPoint &&
-		"coordinates" in profile.defaultStartPoint &&
-		(profile.defaultStartPoint as any).coordinates && {
-			lat: (profile.defaultStartPoint as any).coordinates.lat,
-			lng: (profile.defaultStartPoint as any).coordinates.lng,
-		}) || { lat: 52.0339, lng: 113.501 };
+	const centerCoords = useMemo(() => {
+		if (deviceCoords) return deviceCoords;
+		const p = profile?.defaultStartPoint;
+		const c =
+			p && "coordinates" in p && (p as { coordinates?: { lat: number; lng: number } }).coordinates;
+		if (c) return { lat: c.lat, lng: c.lng };
+		return { lat: 55.75, lng: 37.62 };
+	}, [deviceCoords, profile?.defaultStartPoint]);
 
 	// Draft-выбор фильтров (применяем только по кнопке “Подтвердить”),
 	// чтобы не триггерить Overpass на каждый тап в категориях.
 	const [draftCategoryIds, setDraftCategoryIds] = useState<string[]>([]);
 	const [draftSubCategoryIds, setDraftSubCategoryIds] = useState<string[]>([]);
-	const [expandedCategoryIdInModal, setExpandedCategoryIdInModal] = useState<string | null>(null);
+	const [expandedCategoryIdInModal, setExpandedCategoryIdInModal] = useState<
+		string | null
+	>(null);
 
 	const osmCriteria = useMemo(() => {
 		return {
 			startCoords: centerCoords,
 			categoryIds: selectedCategoryIds.length ? selectedCategoryIds : undefined,
-			subCategoryIds: selectedSubCategoryIds.length ? selectedSubCategoryIds : undefined,
+			subCategoryIds: selectedSubCategoryIds.length
+				? selectedSubCategoryIds
+				: undefined,
 			budgetMin: 0,
-			budgetMax: 3000,
-			goal: undefined,
+			budgetMax: searchBudgetMax,
+			goal: searchGoal ?? undefined,
 			filters: {},
 		} as SearchCriteria;
 	}, [
@@ -220,9 +298,16 @@ export const SearchScreen = () => {
 		centerCoords.lng,
 		selectedCategoryIds,
 		selectedSubCategoryIds,
+		searchBudgetMax,
+		searchGoal,
 	]);
 
 	useEffect(() => {
+		if (!readyToFetch) {
+			setLoading(false);
+			return;
+		}
+
 		const load = async () => {
 			setLoading(true);
 			setLoadError(null);
@@ -257,6 +342,7 @@ export const SearchScreen = () => {
 
 		load();
 	}, [
+		readyToFetch,
 		centerCoords.lat,
 		centerCoords.lng,
 		selectedCategoryIds,
@@ -266,7 +352,7 @@ export const SearchScreen = () => {
 	const lastFetchMoreAtRef = useRef(0);
 
 	const fetchMore = useCallback(async () => {
-		if (loadingMore || loading || !hasMore) return;
+		if (!readyToFetch || loadingMore || loading || !hasMore) return;
 		const now = Date.now();
 		if (now - lastFetchMoreAtRef.current < 900) return;
 		lastFetchMoreAtRef.current = now;
@@ -310,12 +396,35 @@ export const SearchScreen = () => {
 		osmCriteria,
 		MAX_RADIUS,
 		RADIUS_MULTIPLIER,
+		readyToFetch,
 	]);
+
+	const startFullCategorySearch = useCallback(() => {
+		Alert.alert(
+			"Поиск по всем категориям",
+			"Вы уверены, что хотите начать поиск мест из всех категорий? Это может занять некоторое время.",
+			[
+				{ text: "Отмена", style: "cancel" },
+				{
+					text: "Начать",
+					onPress: () => {
+						setSelectedCategoryIds([]);
+						setSelectedSubCategoryIds([]);
+						setDraftCategoryIds([]);
+						setDraftSubCategoryIds([]);
+						setReadyToFetch(true);
+					},
+				},
+			],
+		);
+	}, []);
 
 	const displayPlaces = useMemo((): PlaceListItem[] => {
 		const q = searchQuery.trim().toLowerCase();
 
-		let results = places;
+		let results = filterOsmPlaces(places).filter((p) =>
+			matchesExtendedSearchCriteria(p, osmCriteria),
+		);
 		if (q) {
 			results = results.filter(
 				(p) =>
@@ -358,6 +467,7 @@ export const SearchScreen = () => {
 		centerCoords.lat,
 		centerCoords.lng,
 		sortMode,
+		osmCriteria,
 	]);
 
 	const firstSelectedSubId = selectedSubCategoryIds[0];
@@ -374,15 +484,44 @@ export const SearchScreen = () => {
 
 	const PlaceCard = ({ item }: { item: PlaceListItem }) => {
 		const { place, distanceMeters, durationMinutes } = item;
+		const untilClose = getMinutesUntilClosingToday(place);
+		const favorite = isFavorite(place.id);
+		const toggleFavorite = () => {
+			if (!user) {
+				Alert.alert(
+					"Вход в аккаунт",
+					"Чтобы сохранять места в избранное, войдите или зарегистрируйтесь.",
+				);
+				return;
+			}
+			if (favorite) {
+				removeFavoritePlace(place.id);
+			} else {
+				addFavoritePlace(osmPlaceToPlace(place));
+			}
+		};
 		return (
-			<TouchableOpacity
+			<View
 				style={[
 					styles.placeCard,
 					selectedPlace?.id === place.id && styles.placeCardSelected,
 				]}
-				onPress={() => setSelectedPlace(place)}
-				activeOpacity={0.85}
 			>
+				<TouchableOpacity
+					style={styles.placeFavoriteBtn}
+					onPress={toggleFavorite}
+					hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+				>
+					<Feather
+						name="heart"
+						size={22}
+						color={favorite ? "#ef4444" : "#cbd5e1"}
+					/>
+				</TouchableOpacity>
+				<TouchableOpacity
+					activeOpacity={0.85}
+					onPress={() => setSelectedPlace(place)}
+				>
 				<View style={styles.placeImagePlaceholder}>
 					<Text style={styles.placeImageEmoji}>
 						{categoryForIcon?.icon || "Imgg"}
@@ -400,16 +539,17 @@ export const SearchScreen = () => {
 							{place.address}
 						</Text>
 					) : null}
-
-					{place.description ? (
-						<Text
-							style={styles.placeDescription}
-							numberOfLines={2}
-							ellipsizeMode="tail"
-						>
-							{place.description}
+					<Text style={styles.placeCaptionLine} numberOfLines={2}>
+						🕐 {getOpeningSummaryToday(place)}
+					</Text>
+					{untilClose != null && untilClose > 0 ? (
+						<Text style={styles.placeClosingHint}>
+							До закрытия ~{untilClose} мин
 						</Text>
 					) : null}
+					<Text style={styles.placeCaptionLine} numberOfLines={2}>
+						💳 {formatOsmBudgetCaption(place)}
+					</Text>
 
 					<View style={styles.placeMeta}>
 						<View style={styles.metaItem}>
@@ -459,7 +599,8 @@ export const SearchScreen = () => {
 						)}
 					</View>
 				</View>
-			</TouchableOpacity>
+				</TouchableOpacity>
+			</View>
 		);
 	};
 
@@ -487,10 +628,7 @@ export const SearchScreen = () => {
 						</TouchableOpacity>
 					)}
 				</View>
-				<TouchableOpacity
-					style={styles.filterButton}
-					onPress={toggleFilters}
-				>
+				<TouchableOpacity style={styles.filterButton} onPress={toggleFilters}>
 					<Feather name="filter" size={20} color="#374151" />
 					{(draftSubCategoryIds.length > 0 ||
 						draftCategoryIds.length > 0 ||
@@ -519,7 +657,403 @@ export const SearchScreen = () => {
 				</TouchableOpacity>
 			</View>
 
-			{/* Фильтры (bottom-sheet) */}
+			{/* Модальное окно выбора категорий (multi-select) — только для экрана поиска */}
+			{showCategoryModal && (
+				<Modal
+					visible={showCategoryModal}
+					animationType="slide"
+					transparent
+					onRequestClose={() => setShowCategoryModal(false)}
+				>
+					<TouchableOpacity
+						style={styles.modalOverlay}
+						activeOpacity={1}
+						onPress={() => setShowCategoryModal(false)}
+					>
+						<TouchableOpacity
+							style={styles.categoryModalContent}
+							activeOpacity={1}
+							onPress={(e) => {
+								// Чтобы клик внутри не закрывал модалку
+								(e as any)?.stopPropagation?.();
+							}}
+						>
+							<View style={styles.categoryModalHeader}>
+								<Text style={styles.categoryModalTitle}>
+									Выберите категории
+								</Text>
+								<TouchableOpacity onPress={() => setShowCategoryModal(false)}>
+									<Feather name="x" size={24} color="#374151" />
+								</TouchableOpacity>
+							</View>
+
+							<ScrollView
+								style={styles.categoryModalScroll}
+								showsVerticalScrollIndicator={false}
+							>
+								<TouchableOpacity
+									style={[
+										styles.categoryModalRow,
+										draftCategoryIds.length === 0 &&
+											draftSubCategoryIds.length === 0 &&
+											styles.categoryModalRowSelected,
+									]}
+									onPress={() => {
+										setDraftCategoryIds([]);
+										setDraftSubCategoryIds([]);
+										setExpandedCategoryIdInModal(null);
+									}}
+								>
+									<Text style={styles.categoryModalRowIcon}>📋</Text>
+									<Text style={styles.categoryModalRowText}>Все категории</Text>
+								</TouchableOpacity>
+
+								{activityCategories.map((cat) => {
+									const subIds = cat.subcategories.map((s) => s.id);
+									const selectedCountFromSubs = subIds.filter((id) =>
+										draftSubCategoryIds.includes(id),
+									).length;
+
+									const allSubSelected =
+										subIds.length > 0 &&
+										selectedCountFromSubs === subIds.length;
+
+									const isAllRowSelected =
+										draftCategoryIds.includes(cat.id) || allSubSelected;
+
+									const displayCount = isAllRowSelected
+										? subIds.length
+										: selectedCountFromSubs;
+
+									const isExpanded = expandedCategoryIdInModal === cat.id;
+
+									return (
+										<View key={cat.id}>
+											<TouchableOpacity
+												style={[
+													styles.categoryModalRow,
+													displayCount > 0 && styles.categoryModalRowSelected,
+												]}
+												onPress={() =>
+													setExpandedCategoryIdInModal((prev) =>
+														prev === cat.id ? null : cat.id,
+													)
+												}
+											>
+												<Text style={styles.categoryModalRowIcon}>
+													{cat.icon}
+												</Text>
+												<Text style={styles.categoryModalRowText}>
+													{cat.name}
+												</Text>
+												{displayCount > 0 ? (
+													<Text style={styles.categoryCountText}>
+														{displayCount}
+													</Text>
+												) : null}
+												<Feather
+													name={isExpanded ? "chevron-up" : "chevron-down"}
+													size={18}
+													color="#6b7280"
+												/>
+											</TouchableOpacity>
+
+											{isExpanded && (
+												<View style={styles.accordionBody}>
+													{/* Все в категории */}
+													<TouchableOpacity
+														style={[
+															styles.subcategoryRow,
+															isAllRowSelected &&
+																styles.categoryModalRowSelected,
+														]}
+														onPress={() => {
+															if (isAllRowSelected) {
+																setDraftCategoryIds((prev) =>
+																	prev.filter((id) => id !== cat.id),
+																);
+																setDraftSubCategoryIds((prev) =>
+																	prev.filter((id) => !subIds.includes(id)),
+																);
+															} else {
+																setDraftCategoryIds((prev) => {
+																	if (prev.includes(cat.id)) return prev;
+																	return [...prev, cat.id];
+																});
+																// “вся категория” обнуляет индивидуальные подкатегории
+																setDraftSubCategoryIds((prev) =>
+																	prev.filter((id) => !subIds.includes(id)),
+																);
+															}
+														}}
+													>
+														<Text style={styles.subcategoryIcon}>📋</Text>
+														<Text style={styles.subcategoryText}>
+															Все в категории
+														</Text>
+														{isAllRowSelected && (
+															<Feather name="check" size={18} color="#3b82f6" />
+														)}
+													</TouchableOpacity>
+
+													{cat.subcategories.map((sub) => {
+														const isSelected = draftSubCategoryIds.includes(
+															sub.id,
+														);
+														return (
+															<TouchableOpacity
+																key={sub.id}
+																style={[
+																	styles.subcategoryRow,
+																	isSelected && styles.categoryModalRowSelected,
+																]}
+																onPress={() => {
+																	setDraftCategoryIds((prev) =>
+																		prev.filter((id) => id !== cat.id),
+																	);
+																	setDraftSubCategoryIds((prev) => {
+																		if (prev.includes(sub.id)) {
+																			return prev.filter((id) => id !== sub.id);
+																		}
+																		return [...prev, sub.id];
+																	});
+																}}
+															>
+																<Text style={styles.subcategoryIcon}>
+																	{sub.icon || "•"}
+																</Text>
+																<Text style={styles.subcategoryText}>
+																	{sub.name}
+																</Text>
+																{isSelected && (
+																	<Feather
+																		name="check"
+																		size={18}
+																		color="#3b82f6"
+																	/>
+																)}
+															</TouchableOpacity>
+														);
+													})}
+												</View>
+											)}
+										</View>
+									);
+								})}
+							</ScrollView>
+						</TouchableOpacity>
+					</TouchableOpacity>
+				</Modal>
+			)}
+
+			{/* Контент */}
+			<View
+				style={[styles.content, showFilters && styles.contentWhenFiltersOpen]}
+				pointerEvents={showFilters ? "box-none" : "auto"}
+			>
+				{mapView ? (
+					<View style={styles.mapFullContainer}>
+						{displayPlaces.length > 0 ? (
+							<>
+								<YandexMap
+									center={{
+										lat: displayPlaces[0].place.coords.lat,
+										lng: displayPlaces[0].place.coords.lng,
+									}}
+									markers={displayPlaces.map(({ place }) => ({
+										id: place.id,
+										lat: place.coords.lat,
+										lng: place.coords.lng,
+										title: place.title,
+									}))}
+									onMarkerPress={(markerId) => {
+										const item = displayPlaces.find(
+											(x) => x.place.id === markerId,
+										);
+										if (item) setSelectedPlace(item.place);
+									}}
+									routingEnabled={false}
+									height={Dimensions.get("window").height - 200}
+								/>
+								{readyToFetch ? (
+									<View style={styles.mapSortOverlay} pointerEvents="box-none">
+										<View style={styles.mapSortInner}>
+											<Text style={styles.mapSortTitle} numberOfLines={1}>
+												Найдено: {displayPlaces.length} · сортировка
+											</Text>
+											<View style={styles.sortRow}>
+												<TouchableOpacity
+													style={[
+														styles.sortBtn,
+														sortMode === "distance" && styles.sortBtnActive,
+													]}
+													onPress={() => setSortMode("distance")}
+												>
+													<Text
+														style={[
+															styles.sortBtnText,
+															sortMode === "distance" &&
+																styles.sortBtnTextActive,
+														]}
+														numberOfLines={1}
+													>
+														Ближе
+													</Text>
+												</TouchableOpacity>
+												<TouchableOpacity
+													style={[
+														styles.sortBtn,
+														sortMode === "rating" && styles.sortBtnActive,
+													]}
+													onPress={() => setSortMode("rating")}
+												>
+													<Text
+														style={[
+															styles.sortBtnText,
+															sortMode === "rating" && styles.sortBtnTextActive,
+														]}
+														numberOfLines={1}
+													>
+														Рейтинг
+													</Text>
+												</TouchableOpacity>
+											</View>
+										</View>
+									</View>
+								) : null}
+							</>
+						) : (
+							<View style={styles.mapEmpty}>
+								<Feather name="map" size={32} color="#d1d5db" />
+								<Text style={styles.mapEmptyText}>
+									Нет мест для отображения
+								</Text>
+							</View>
+						)}
+					</View>
+				) : (
+					<View style={styles.listFullContainer}>
+						{!readyToFetch ? (
+							<View style={styles.nearbySearchOnly}>
+								<TouchableOpacity
+									style={styles.centerFullSearchButton}
+									onPress={startFullCategorySearch}
+									activeOpacity={0.88}
+								>
+									<Feather name="map-pin" size={22} color="#1d4ed8" />
+									<Text
+										style={styles.centerFullSearchButtonText}
+										numberOfLines={3}
+									>
+										Поиск всех мест поблизости
+									</Text>
+								</TouchableOpacity>
+							</View>
+						) : (
+							<>
+								<View style={styles.listHeader}>
+									<Text
+										style={styles.listHeaderTitle}
+										numberOfLines={4}
+										ellipsizeMode="tail"
+									>
+										{loadError
+											? loadError
+											: `Найдено мест: ${displayPlaces.length}`}
+									</Text>
+									<View style={styles.sortRow}>
+										<TouchableOpacity
+											style={[
+												styles.sortBtn,
+												sortMode === "distance" && styles.sortBtnActive,
+											]}
+											onPress={() => setSortMode("distance")}
+										>
+											<Text
+												style={[
+													styles.sortBtnText,
+													sortMode === "distance" && styles.sortBtnTextActive,
+												]}
+												numberOfLines={1}
+											>
+												Ближе
+											</Text>
+										</TouchableOpacity>
+										<TouchableOpacity
+											style={[
+												styles.sortBtn,
+												sortMode === "rating" && styles.sortBtnActive,
+											]}
+											onPress={() => setSortMode("rating")}
+										>
+											<Text
+												style={[
+													styles.sortBtnText,
+													sortMode === "rating" && styles.sortBtnTextActive,
+												]}
+												numberOfLines={1}
+											>
+												Рейтинг
+											</Text>
+										</TouchableOpacity>
+									</View>
+								</View>
+						{loading ? (
+							<View style={styles.emptyState}>
+								<ActivityIndicator size="large" color="#3b82f6" />
+								<Text style={styles.emptyStateText}>Загрузка мест...</Text>
+								<Text style={styles.emptyStateSubtext}>
+									Пожалуйста, подождите
+								</Text>
+							</View>
+						) : displayPlaces.length === 0 ? (
+							<View style={styles.emptyState}>
+								<Feather name="search" size={48} color="#d1d5db" />
+								<Text style={styles.emptyStateText}>Ничего не найдено</Text>
+								<Text style={styles.emptyStateSubtext}>
+									Попробуйте изменить параметры поиска
+								</Text>
+							</View>
+						) : (
+							<FlatList
+								data={displayPlaces}
+								keyExtractor={(item) => item.place.id}
+								renderItem={({ item }) => <PlaceCard item={item} />}
+								contentContainerStyle={styles.placesListContent}
+								onEndReached={fetchMore}
+								onEndReachedThreshold={0.4}
+								ListFooterComponent={
+									loadingMore ? (
+										<View style={styles.listFooter}>
+											<Text style={styles.listFooterText}>Загрузка...</Text>
+										</View>
+									) : !hasMore ? (
+										<View style={styles.listFooter}>
+											<Text style={styles.listFooterText}>
+												Больше нет результатов
+											</Text>
+										</View>
+									) : (
+										<View style={{ height: 24 }} />
+									)
+								}
+							/>
+						)}
+							</>
+						)}
+					</View>
+				)}
+			</View>
+
+			{/* Затемнение и фильтры: подложка под панелью, чтобы контент не «всплывал» поверх */}
+			{filtersMounted && (
+				<Pressable
+					style={styles.filtersBackdrop}
+					onPress={closeFilters}
+					accessibilityRole="button"
+					accessibilityLabel="Закрыть параметры поиска"
+				/>
+			)}
 			{filtersMounted && (
 				<Animated.View
 					style={[
@@ -530,7 +1064,10 @@ export const SearchScreen = () => {
 						},
 					]}
 				>
-					<View style={styles.filtersSheetHandle} {...sheetPanResponder.panHandlers}>
+					<View
+						style={styles.filtersSheetHandle}
+						{...sheetPanResponder.panHandlers}
+					>
 						<View style={styles.filtersSheetGrip} />
 					</View>
 					<ScrollView showsVerticalScrollIndicator={false}>
@@ -606,6 +1143,73 @@ export const SearchScreen = () => {
 								</View>
 							</View>
 							<View style={styles.filterSection}>
+								<Text style={styles.filterLabel}>Бюджет до</Text>
+								<Text style={styles.budgetDraftValue}>
+									{draftSearchBudgetMax} ₽
+								</Text>
+								<View style={styles.filterChips}>
+									<TouchableOpacity
+										style={styles.filterChip}
+										onPress={() =>
+											setDraftSearchBudgetMax((v) => Math.max(0, v - 500))
+										}
+									>
+										<Text style={styles.filterChipText}>−</Text>
+									</TouchableOpacity>
+									<TouchableOpacity
+										style={styles.filterChip}
+										onPress={() =>
+											setDraftSearchBudgetMax((v) => Math.min(8000, v + 500))
+										}
+									>
+										<Text style={styles.filterChipText}>+</Text>
+									</TouchableOpacity>
+								</View>
+								<Text style={styles.filterHintSmall}>
+									Учитывается при отборе по «уровню» места (грубая оценка)
+								</Text>
+							</View>
+							<View style={styles.filterSection}>
+								<Text style={styles.filterLabel}>Цель</Text>
+								<View style={styles.goalDraftRow}>
+									{(
+										[
+											{ value: "work" as const, label: "Работа" },
+											{ value: "relax" as const, label: "Релакс" },
+											{ value: "fun" as const, label: "Весело" },
+											{ value: "romantic" as const, label: "Романтика" },
+											{ value: "active" as const, label: "Актив" },
+											{
+												value: "educational" as const,
+												label: "Познание",
+											},
+										] as const
+									).map(({ value, label }) => (
+										<TouchableOpacity
+											key={value}
+											style={[
+												styles.goalDraftChip,
+												draftSearchGoal === value &&
+													styles.goalDraftChipSelected,
+											]}
+											onPress={() =>
+												setDraftSearchGoal((g) => (g === value ? null : value))
+											}
+										>
+											<Text
+												style={[
+													styles.goalDraftChipText,
+													draftSearchGoal === value &&
+														styles.goalDraftChipTextSelected,
+												]}
+											>
+												{label}
+											</Text>
+										</TouchableOpacity>
+									))}
+								</View>
+							</View>
+							<View style={styles.filterSection}>
 								<Text style={styles.filterLabel}>Рейтинг от</Text>
 								<View style={styles.filterChips}>
 									{[0, 3.5, 4, 4.5].map((r) => (
@@ -647,295 +1251,7 @@ export const SearchScreen = () => {
 				</Animated.View>
 			)}
 
-			{/* Модальное окно выбора категорий (multi-select) — только для экрана поиска */}
-			{showCategoryModal && (
-				<Modal
-					visible={showCategoryModal}
-					animationType="slide"
-					transparent
-					onRequestClose={() => setShowCategoryModal(false)}
-				>
-					<TouchableOpacity
-						style={styles.modalOverlay}
-						activeOpacity={1}
-						onPress={() => setShowCategoryModal(false)}
-					>
-						<TouchableOpacity
-							style={styles.categoryModalContent}
-							activeOpacity={1}
-							onPress={(e) => {
-								// Чтобы клик внутри не закрывал модалку
-								(e as any)?.stopPropagation?.();
-							}}
-						>
-							<View style={styles.categoryModalHeader}>
-								<Text style={styles.categoryModalTitle}>Выберите категории</Text>
-								<TouchableOpacity onPress={() => setShowCategoryModal(false)}>
-									<Feather name="x" size={24} color="#374151" />
-								</TouchableOpacity>
-							</View>
 
-							<ScrollView
-								style={styles.categoryModalScroll}
-								showsVerticalScrollIndicator={false}
-							>
-								<TouchableOpacity
-									style={[
-										styles.categoryModalRow,
-										draftCategoryIds.length === 0 &&
-											draftSubCategoryIds.length === 0 &&
-											styles.categoryModalRowSelected,
-									]}
-									onPress={() => {
-										setDraftCategoryIds([]);
-										setDraftSubCategoryIds([]);
-										setExpandedCategoryIdInModal(null);
-									}}
-								>
-									<Text style={styles.categoryModalRowIcon}>📋</Text>
-									<Text style={styles.categoryModalRowText}>Все категории</Text>
-								</TouchableOpacity>
-
-								{activityCategories.map((cat) => {
-									const subIds = cat.subcategories.map((s) => s.id);
-									const selectedCountFromSubs = subIds.filter((id) =>
-										draftSubCategoryIds.includes(id),
-									).length;
-
-									const allSubSelected =
-										subIds.length > 0 &&
-										selectedCountFromSubs === subIds.length;
-
-									const isAllRowSelected =
-										draftCategoryIds.includes(cat.id) || allSubSelected;
-
-									const displayCount = isAllRowSelected
-										? subIds.length
-										: selectedCountFromSubs;
-
-									const isExpanded = expandedCategoryIdInModal === cat.id;
-
-									return (
-										<View key={cat.id}>
-											<TouchableOpacity
-												style={[
-													styles.categoryModalRow,
-													displayCount > 0 && styles.categoryModalRowSelected,
-												]}
-												onPress={() =>
-													setExpandedCategoryIdInModal((prev) =>
-														prev === cat.id ? null : cat.id,
-													)
-												}
-											>
-												<Text style={styles.categoryModalRowIcon}>{cat.icon}</Text>
-												<Text style={styles.categoryModalRowText}>{cat.name}</Text>
-												{displayCount > 0 ? (
-													<Text style={styles.categoryCountText}>{displayCount}</Text>
-												) : null}
-												<Feather
-													name={isExpanded ? "chevron-up" : "chevron-down"}
-													size={18}
-													color="#6b7280"
-												/>
-											</TouchableOpacity>
-
-											{isExpanded && (
-												<View style={styles.accordionBody}>
-													{/* Все в категории */}
-													<TouchableOpacity
-														style={[
-															styles.subcategoryRow,
-															isAllRowSelected && styles.categoryModalRowSelected,
-														]}
-														onPress={() => {
-															if (isAllRowSelected) {
-																setDraftCategoryIds((prev) =>
-																	prev.filter((id) => id !== cat.id),
-																);
-																setDraftSubCategoryIds((prev) =>
-																	prev.filter((id) => !subIds.includes(id)),
-																);
-															} else {
-																setDraftCategoryIds((prev) => {
-																	if (prev.includes(cat.id)) return prev;
-																	return [...prev, cat.id];
-																});
-																// “вся категория” обнуляет индивидуальные подкатегории
-																setDraftSubCategoryIds((prev) =>
-																	prev.filter((id) => !subIds.includes(id)),
-																);
-															}
-														}}
-													>
-														<Text style={styles.subcategoryIcon}>📋</Text>
-														<Text style={styles.subcategoryText}>Все в категории</Text>
-														{isAllRowSelected && (
-															<Feather name="check" size={18} color="#3b82f6" />
-														)}
-													</TouchableOpacity>
-
-													{cat.subcategories.map((sub) => {
-														const isSelected = draftSubCategoryIds.includes(sub.id);
-														return (
-															<TouchableOpacity
-																key={sub.id}
-																style={[
-																	styles.subcategoryRow,
-																	isSelected && styles.categoryModalRowSelected,
-																]}
-																onPress={() => {
-																	setDraftCategoryIds((prev) =>
-																		prev.filter((id) => id !== cat.id),
-																	);
-																	setDraftSubCategoryIds((prev) => {
-																		if (prev.includes(sub.id)) {
-																			return prev.filter((id) => id !== sub.id);
-																		}
-																		return [...prev, sub.id];
-																	});
-																}}
-															>
-																<Text style={styles.subcategoryIcon}>
-																	{sub.icon || "•"}
-																</Text>
-																<Text style={styles.subcategoryText}>{sub.name}</Text>
-																{isSelected && (
-																	<Feather name="check" size={18} color="#3b82f6" />
-																)}
-															</TouchableOpacity>
-														);
-													})}
-												</View>
-											)}
-										</View>
-									);
-								})}
-							</ScrollView>
-						</TouchableOpacity>
-					</TouchableOpacity>
-				</Modal>
-			)}
-
-			{/* Контент */}
-			<View style={styles.content}>
-				{mapView ? (
-					<View style={styles.mapFullContainer}>
-						{displayPlaces.length > 0 ? (
-							<YandexMap
-								center={{
-									lat: displayPlaces[0].place.coords.lat,
-									lng: displayPlaces[0].place.coords.lng,
-								}}
-								markers={displayPlaces.map(({ place }) => ({
-									id: place.id,
-									lat: place.coords.lat,
-									lng: place.coords.lng,
-									title: place.title,
-								}))}
-								onMarkerPress={(markerId) => {
-									const item = displayPlaces.find(
-										(x) => x.place.id === markerId,
-									);
-									if (item) setSelectedPlace(item.place);
-								}}
-								routingEnabled={false}
-								height={Dimensions.get("window").height - 200}
-							/>
-						) : (
-							<View style={styles.mapEmpty}>
-								<Feather name="map" size={32} color="#d1d5db" />
-								<Text style={styles.mapEmptyText}>
-									Нет мест для отображения
-								</Text>
-							</View>
-						)}
-					</View>
-				) : (
-					<View style={styles.listFullContainer}>
-						<View style={styles.listHeader}>
-							<Text style={styles.listHeaderTitle}>
-								{loadError ? loadError : `Найдено мест: ${displayPlaces.length}`}
-							</Text>
-							<View style={styles.sortRow}>
-								<TouchableOpacity
-									style={[
-										styles.sortBtn,
-										sortMode === "distance" && styles.sortBtnActive,
-									]}
-									onPress={() => setSortMode("distance")}
-								>
-									<Text
-										style={[
-											styles.sortBtnText,
-											sortMode === "distance" && styles.sortBtnTextActive,
-										]}
-									>
-										Ближе
-									</Text>
-								</TouchableOpacity>
-								<TouchableOpacity
-									style={[
-										styles.sortBtn,
-										sortMode === "rating" && styles.sortBtnActive,
-									]}
-									onPress={() => setSortMode("rating")}
-								>
-									<Text
-										style={[
-											styles.sortBtnText,
-											sortMode === "rating" && styles.sortBtnTextActive,
-										]}
-									>
-										Рейтинг
-									</Text>
-								</TouchableOpacity>
-							</View>
-						</View>
-						{loading ? (
-							<View style={styles.emptyState}>
-								<ActivityIndicator size="large" color="#3b82f6" />
-								<Text style={styles.emptyStateText}>Загрузка мест...</Text>
-								<Text style={styles.emptyStateSubtext}>
-									Пожалуйста, подождите
-								</Text>
-							</View>
-						) : displayPlaces.length === 0 ? (
-							<View style={styles.emptyState}>
-								<Feather name="search" size={48} color="#d1d5db" />
-								<Text style={styles.emptyStateText}>Ничего не найдено</Text>
-								<Text style={styles.emptyStateSubtext}>
-									Попробуйте изменить параметры поиска
-								</Text>
-							</View>
-						) : (
-							<FlatList
-								data={displayPlaces}
-								keyExtractor={(item) => item.place.id}
-								renderItem={({ item }) => <PlaceCard item={item} />}
-								contentContainerStyle={styles.placesListContent}
-								onEndReached={fetchMore}
-								onEndReachedThreshold={0.4}
-								ListFooterComponent={
-									loadingMore ? (
-										<View style={styles.listFooter}>
-											<Text style={styles.listFooterText}>Загрузка...</Text>
-										</View>
-									) : !hasMore ? (
-										<View style={styles.listFooter}>
-											<Text style={styles.listFooterText}>
-												Больше нет результатов
-											</Text>
-										</View>
-									) : (
-										<View style={{ height: 24 }} />
-									)
-								}
-							/>
-						)}
-					</View>
-				)}
-			</View>
 
 			{/* Детали выбранного места — карточка как метка на карте / элемент списка */}
 			{selectedPlace && (
@@ -953,9 +1269,49 @@ export const SearchScreen = () => {
 							</Text>
 						</View>
 						<View style={styles.detailsContent}>
-							<Text style={styles.detailsName}>{selectedPlace.title}</Text>
-							<Text style={styles.detailsDescription}>
+							<Text style={styles.detailsName} numberOfLines={4}>
+								{selectedPlace.title}
+							</Text>
+							<Text style={styles.detailsDescription} numberOfLines={12}>
 								{selectedPlace.description}
+							</Text>
+							<Text style={styles.detailsSummaryLine}>
+								{getOpeningSummaryToday(selectedPlace)}
+							</Text>
+							<View style={styles.detailsHoursCard}>
+								<Text style={styles.detailsHoursLabel}>Часы работы</Text>
+								<Text style={styles.detailsHoursText}>
+									{formatOpeningHoursDetailRu(selectedPlace)}
+								</Text>
+							</View>
+							{extractPlacePhone(selectedPlace) ? (
+								<TouchableOpacity
+									style={styles.detailsLinkRow}
+									onPress={() =>
+										dialPhone(extractPlacePhone(selectedPlace) ?? "")
+									}
+								>
+									<Feather name="phone" size={18} color="#059669" />
+									<Text style={styles.detailsLinkText}>
+										{extractPlacePhone(selectedPlace)}
+									</Text>
+								</TouchableOpacity>
+							) : null}
+							{extractPlaceWebsite(selectedPlace) ? (
+								<TouchableOpacity
+									style={styles.detailsLinkRow}
+									onPress={() =>
+										openWebsite(extractPlaceWebsite(selectedPlace) ?? "")
+									}
+								>
+									<Feather name="globe" size={18} color="#2563eb" />
+									<Text style={styles.detailsLinkText} numberOfLines={2}>
+										{extractPlaceWebsite(selectedPlace)}
+									</Text>
+								</TouchableOpacity>
+							) : null}
+							<Text style={styles.detailsExtraLine}>
+								💳 {formatOsmBudgetCaption(selectedPlace)}
 							</Text>
 							<View style={styles.detailsGrid}>
 								{selectedPlace.address ? (
@@ -1067,6 +1423,80 @@ const styles = StyleSheet.create({
 	viewToggleTextActive: {
 		color: "white",
 	},
+	centerFullSearchButton: {
+		alignSelf: "stretch",
+		maxWidth: 340,
+		width: "100%",
+		alignItems: "center",
+		paddingVertical: 22,
+		paddingHorizontal: 20,
+		backgroundColor: "#eff6ff",
+		borderRadius: 18,
+		borderWidth: 1.5,
+		borderColor: "#60a5fa",
+		gap: 12,
+		...(Platform.OS === "web"
+			? { boxShadow: "0 8px 28px rgba(59, 130, 246, 0.18)" }
+			: {
+					shadowColor: "#3b82f6",
+					shadowOffset: { width: 0, height: 6 },
+					shadowOpacity: 0.2,
+					shadowRadius: 14,
+					elevation: 6,
+				}),
+	},
+	centerFullSearchButtonText: {
+		fontSize: 17,
+		fontWeight: "700",
+		color: "#1e3a8a",
+		textAlign: "center",
+		lineHeight: 22,
+		paddingHorizontal: 8,
+	},
+	centerFullSearchButtonHint: {
+		fontSize: 12,
+		color: "#3b82f6",
+		textAlign: "center",
+		lineHeight: 16,
+		paddingHorizontal: 8,
+	},
+	budgetDraftValue: {
+		fontSize: 17,
+		fontWeight: "700",
+		color: "#059669",
+		marginBottom: 8,
+	},
+	filterHintSmall: {
+		fontSize: 12,
+		color: "#9ca3af",
+		marginTop: 8,
+		lineHeight: 16,
+	},
+	goalDraftRow: {
+		flexDirection: "row",
+		flexWrap: "wrap",
+		gap: 8,
+	},
+	goalDraftChip: {
+		paddingHorizontal: 12,
+		paddingVertical: 8,
+		borderRadius: 20,
+		backgroundColor: "#f1f5f9",
+		borderWidth: 1,
+		borderColor: "#e2e8f0",
+	},
+	goalDraftChipSelected: {
+		backgroundColor: "#3b82f6",
+		borderColor: "#3b82f6",
+	},
+	goalDraftChipText: {
+		fontSize: 13,
+		fontWeight: "500",
+		color: "#475569",
+	},
+	goalDraftChipTextSelected: {
+		color: "white",
+	},
 	filtersPanel: {
 		backgroundColor: "white",
 		borderBottomWidth: 1,
@@ -1078,7 +1508,8 @@ const styles = StyleSheet.create({
 		bottom: 0,
 		borderTopLeftRadius: 18,
 		borderTopRightRadius: 18,
-		zIndex: 50,
+		zIndex: 210,
+		elevation: 26,
 	},
 	filtersSheetHandle: {
 		height: 28,
@@ -1151,6 +1582,15 @@ const styles = StyleSheet.create({
 		flex: 1,
 		height: "100%",
 	},
+	contentWhenFiltersOpen: {
+		opacity: 0.92,
+	},
+	filtersBackdrop: {
+		...StyleSheet.absoluteFillObject,
+		backgroundColor: "rgba(15, 23, 42, 0.42)",
+		zIndex: 199,
+		elevation: 20,
+	},
 	placesList: {
 		flex: 1,
 		padding: 16,
@@ -1162,6 +1602,32 @@ const styles = StyleSheet.create({
 	mapFullContainer: {
 		flex: 1,
 		height: "100%",
+		position: "relative",
+	},
+	mapSortOverlay: {
+		position: "absolute",
+		left: 12,
+		right: 12,
+		bottom: 20,
+	},
+	mapSortInner: {
+		backgroundColor: "white",
+		borderRadius: 14,
+		paddingHorizontal: 14,
+		paddingVertical: 12,
+		borderWidth: 1,
+		borderColor: "#e2e8f0",
+		shadowColor: "#000",
+		shadowOffset: { width: 0, height: 4 },
+		shadowOpacity: 0.1,
+		shadowRadius: 10,
+		elevation: 6,
+	},
+	mapSortTitle: {
+		fontSize: 12,
+		fontWeight: "600",
+		color: "#64748b",
+		marginBottom: 2,
 	},
 	listFooter: {
 		paddingVertical: 14,
@@ -1186,6 +1652,13 @@ const styles = StyleSheet.create({
 	listFullContainer: {
 		flex: 1,
 	},
+	nearbySearchOnly: {
+		flex: 1,
+		justifyContent: "center",
+		alignItems: "center",
+		paddingHorizontal: 24,
+		paddingVertical: 32,
+	},
 	listHeader: {
 		paddingHorizontal: 16,
 		paddingVertical: 12,
@@ -1197,6 +1670,8 @@ const styles = StyleSheet.create({
 		fontSize: 14,
 		fontWeight: "600",
 		color: "#374151",
+		flexShrink: 1,
+		width: "100%",
 	},
 	sortRow: {
 		flexDirection: "row",
@@ -1228,11 +1703,21 @@ const styles = StyleSheet.create({
 		color: "#6b7280",
 		marginBottom: 12,
 	},
+	placeFavoriteBtn: {
+		position: "absolute",
+		top: 10,
+		right: 10,
+		zIndex: 2,
+		padding: 8,
+		backgroundColor: "rgba(255,255,255,0.95)",
+		borderRadius: 22,
+	},
 	placeCard: {
 		backgroundColor: "white",
 		borderRadius: 16,
 		marginBottom: 16,
 		overflow: "visible",
+		position: "relative",
 		...(Platform.OS === "web"
 			? {
 					boxShadow: "0 4px 12px rgba(0, 0, 0, 0.08)",
@@ -1283,8 +1768,20 @@ const styles = StyleSheet.create({
 	placeDescription: {
 		fontSize: 13,
 		color: "#6b7280",
-		marginBottom: 10,
+		marginBottom: 6,
 		lineHeight: 18,
+	},
+	placeCaptionLine: {
+		fontSize: 12,
+		color: "#64748b",
+		lineHeight: 16,
+		marginBottom: 4,
+	},
+	placeClosingHint: {
+		fontSize: 12,
+		fontWeight: "600",
+		color: "#b45309",
+		marginBottom: 6,
 	},
 	placeMeta: {
 		flexDirection: "row",
@@ -1440,6 +1937,11 @@ const styles = StyleSheet.create({
 		fontSize: 14,
 		color: "#6b7280",
 		marginTop: 8,
+		textAlign: "center",
+		paddingHorizontal: 20,
+		lineHeight: 20,
+		maxWidth: "100%",
+		flexShrink: 1,
 	},
 	placeDetails: {
 		position: "absolute",
@@ -1490,18 +1992,71 @@ const styles = StyleSheet.create({
 	},
 	detailsContent: {
 		padding: 20,
+		width: "100%",
 	},
 	detailsName: {
-		fontSize: 24,
+		fontSize: 22,
 		fontWeight: "bold",
 		color: "#1f2937",
 		marginBottom: 8,
+		flexShrink: 1,
+		width: "100%",
 	},
 	detailsDescription: {
 		fontSize: 16,
 		color: "#6b7280",
 		lineHeight: 24,
-		marginBottom: 20,
+		marginBottom: 10,
+		flexShrink: 1,
+		width: "100%",
+	},
+	detailsSummaryLine: {
+		fontSize: 15,
+		fontWeight: "600",
+		color: "#0f766e",
+		marginBottom: 12,
+		lineHeight: 22,
+	},
+	detailsHoursCard: {
+		backgroundColor: "#f8fafc",
+		borderRadius: 14,
+		padding: 14,
+		marginBottom: 12,
+		borderWidth: 1,
+		borderColor: "#e2e8f0",
+	},
+	detailsHoursLabel: {
+		fontSize: 12,
+		fontWeight: "700",
+		color: "#64748b",
+		textTransform: "uppercase",
+		letterSpacing: 0.5,
+		marginBottom: 8,
+	},
+	detailsHoursText: {
+		fontSize: 14,
+		color: "#1e293b",
+		lineHeight: 22,
+	},
+	detailsLinkRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 10,
+		paddingVertical: 12,
+		paddingHorizontal: 4,
+		marginBottom: 4,
+	},
+	detailsLinkText: {
+		fontSize: 15,
+		color: "#1d4ed8",
+		fontWeight: "600",
+		flex: 1,
+	},
+	detailsExtraLine: {
+		fontSize: 14,
+		color: "#475569",
+		lineHeight: 20,
+		marginBottom: 8,
 	},
 	detailsGrid: {
 		marginBottom: 20,

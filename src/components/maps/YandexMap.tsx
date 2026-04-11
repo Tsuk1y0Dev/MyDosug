@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React, { useRef, useMemo } from "react";
 import {
 	View,
 	Text,
@@ -37,13 +37,30 @@ interface YandexMapProps {
 	 * Для режима поиска/результатов планирования оставляем `false`, чтобы не рисовать "дорогу".
 	 */
 	routingEnabled?: boolean;
+	/** Текущее GPS; отдельная метка «Вы здесь», если заметно отличается от origin */
+	userLocation?: { lat: number; lng: number };
+}
+
+function haversineMeters(
+	a: { lat: number; lng: number },
+	b: { lat: number; lng: number },
+): number {
+	const R = 6371000;
+	const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+	const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+	const lat1 = (a.lat * Math.PI) / 180;
+	const lat2 = (b.lat * Math.PI) / 180;
+	const x =
+		Math.sin(dLat / 2) ** 2 +
+		Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+	return R * (2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x)));
 }
 
 const YANDEX_API_KEY = process.env.EXPO_PUBLIC_YANDEX_API_KEY || "";
 
 export const YandexMap: React.FC<YandexMapProps> = ({
-	center = { lat: 52.0339, lng: 113.501 },
-	zoom = 5,
+	center = { lat: 55.75, lng: 37.62 },
+	zoom = 14,
 	markers = [],
 	origin,
 	segmentLines = [],
@@ -54,14 +71,25 @@ export const YandexMap: React.FC<YandexMapProps> = ({
 	selectedPoint,
 	onSelectPoint,
 	routingEnabled = false,
+	userLocation,
 }) => {
 	const webViewRef = useRef<WebView>(null);
+
+	const showUserGpsMarker = useMemo(() => {
+		if (!userLocation) return false;
+		if (!origin) return true;
+		return haversineMeters(userLocation, {
+			lat: origin.lat,
+			lng: origin.lng,
+		}) > 80;
+	}, [userLocation, origin]);
 
 	const generateHTML = () => {
 		const hasOrigin = origin != null;
 		const hasMarkers = markers && markers.length > 0;
+		const hasUserGps = Boolean(userLocation && showUserGpsMarker);
 		// Разрешаем selectionMode даже без origin/markers (например, выбор точки на карте).
-		if (!hasOrigin && !hasMarkers && !selectionMode) {
+		if (!hasOrigin && !hasMarkers && !selectionMode && !hasUserGps) {
 			return `
         <!DOCTYPE html>
         <html>
@@ -111,15 +139,51 @@ export const YandexMap: React.FC<YandexMapProps> = ({
 		markers.forEach((m) =>
 			allPoints.push({ id: m.id, lat: m.lat, lng: m.lng, title: m.title }),
 		);
+		if (hasUserGps && userLocation) {
+			allPoints.push({
+				id: "user_gps",
+				lat: userLocation.lat,
+				lng: userLocation.lng,
+				title: "Вы здесь (GPS)",
+			});
+		}
+
+		const routingReferencePoints: [number, number][] = [];
+		if (origin) {
+			routingReferencePoints.push([origin.lat, origin.lng]);
+		}
+		markers.forEach((m) => {
+			routingReferencePoints.push([m.lat, m.lng]);
+		});
+		const dedupedRouting: [number, number][] = [];
+		for (const p of routingReferencePoints) {
+			const last = dedupedRouting[dedupedRouting.length - 1];
+			if (
+				last &&
+				Math.abs(last[0] - p[0]) < 1e-7 &&
+				Math.abs(last[1] - p[1]) < 1e-7
+			) {
+				continue;
+			}
+			dedupedRouting.push(p);
+		}
+		const routingPointsJson = JSON.stringify(dedupedRouting);
 
 		const markersScript = allPoints
 			.map((marker, index) => {
 				const isOrigin = marker.id === "origin";
+				const isUserGps = marker.id === "user_gps";
 				const hintText = marker.title || marker.id;
 				const preset = isOrigin
 					? "islands#blueCircleDotIcon"
-					: "islands#redDotIcon";
-				const iconColor = isOrigin ? "#3b82f6" : "#ef4444";
+					: isUserGps
+						? "islands#greenCircleDotIcon"
+						: "islands#redDotIcon";
+				const iconColor = isOrigin
+					? "#3b82f6"
+					: isUserGps
+						? "#22c55e"
+						: "#ef4444";
 
 				return `
       var placemark${index} = new ymaps.Placemark([${marker.lat}, ${marker.lng}], {
@@ -133,6 +197,7 @@ export const YandexMap: React.FC<YandexMapProps> = ({
       myMap.geoObjects.add(placemark${index});
       
       placemark${index}.events.add('click', function () {
+        if ('${marker.id}' === 'user_gps') return;
         if (window.ReactNativeWebView) {
           window.ReactNativeWebView.postMessage(JSON.stringify({
             type: 'markerClick',
@@ -222,7 +287,11 @@ export const YandexMap: React.FC<YandexMapProps> = ({
                     var pl = new ymaps.Polyline(
                       coords,
                       {},
-                      { strokeColor: '#3b82f6', strokeWidth: 4, strokeOpacity: 0.6 }
+                      {
+                        strokeColor: '#6366f1',
+                        strokeWidth: 7,
+                        strokeOpacity: 0.92
+                      }
                     );
                     myMap.geoObjects.add(pl);
                   });
@@ -248,21 +317,13 @@ export const YandexMap: React.FC<YandexMapProps> = ({
                 } catch (e) {}
               }
 
-              // Строим маршрут по дорогам через MultiRoute (только если разрешено)
+              // Строим маршрут по дорогам через MultiRoute (только если разрешено).
+              // Точки маршрута — старт + остановки; метка GPS не участвует в цепочке.
               if (${routingEnabled}) {
                 try {
-                var allCoords = [];
-                myMap.geoObjects.each(function (obj) {
-                  if (obj.geometry && typeof obj.geometry.getCoordinates === 'function') {
-                    var c = obj.geometry.getCoordinates();
-                    if (Array.isArray(c) && c.length === 2) {
-                      allCoords.push(c);
-                    }
-                  }
-                });
+                var routeWaypoints = ${routingPointsJson};
 
-                // Если точек меньше двух, просто подстроим карту под маркеры
-                if (allCoords.length < 2) {
+                if (!routeWaypoints || routeWaypoints.length < 2) {
                   if (myMap.geoObjects.getLength() > 0) {
                     try {
                       var onlyMarkersBounds = myMap.geoObjects.getBounds();
@@ -274,7 +335,6 @@ export const YandexMap: React.FC<YandexMapProps> = ({
                   return;
                 }
 
-                // Оцениваем расстояния между соседними точками, чтобы выбрать режим маршрутизации
                 function toRad(x) {
                   return x * Math.PI / 180;
                 }
@@ -293,23 +353,26 @@ export const YandexMap: React.FC<YandexMapProps> = ({
                 }
 
                 var maxSegmentDistance = 0;
-                for (var i = 1; i < allCoords.length; i++) {
-                  var d = distanceMeters(allCoords[i - 1], allCoords[i]);
+                for (var i = 1; i < routeWaypoints.length; i++) {
+                  var d = distanceMeters(routeWaypoints[i - 1], routeWaypoints[i]);
                   if (d > maxSegmentDistance) {
                     maxSegmentDistance = d;
                   }
                 }
 
-                // Если все точки близко (например, менее 1.5 км), строим пешеходный маршрут
                 var routingMode = maxSegmentDistance < 1500 ? 'pedestrian' : 'auto';
 
                 var multiRoute = new ymaps.multiRouter.MultiRoute({
-                  referencePoints: allCoords,
+                  referencePoints: routeWaypoints,
                   params: {
                     routingMode: routingMode
                   }
                 }, {
-                  boundsAutoApply: false
+                  boundsAutoApply: false,
+                  routeActiveStrokeWidth: 14,
+                  routeStrokeWidth: 5,
+                  routeStrokeColor: '#94a3b8',
+                  routeActiveStrokeColor: '#3b82f6'
                 });
 
                 myMap.geoObjects.add(multiRoute);
@@ -420,17 +483,29 @@ export const YandexMap: React.FC<YandexMapProps> = ({
 
 	// Для веба используем упрощенную визуализацию
 	if (Platform.OS === "web") {
-		const webMarkers = origin
-			? [
-					{
-						id: "origin",
-						lat: origin.lat,
-						lng: origin.lng,
-						title: origin.label,
-					},
-					...markers,
-				]
-			: markers;
+		const webMarkers = [
+			...(origin
+				? [
+						{
+							id: "origin",
+							lat: origin.lat,
+							lng: origin.lng,
+							title: origin.label,
+						},
+					]
+				: []),
+			...markers,
+			...(showUserGpsMarker && userLocation
+				? [
+						{
+							id: "user_gps",
+							lat: userLocation.lat,
+							lng: userLocation.lng,
+							title: "GPS",
+						},
+					]
+				: []),
+		];
 		const mapCenter =
 			webMarkers.length > 0
 				? {
@@ -447,6 +522,7 @@ export const YandexMap: React.FC<YandexMapProps> = ({
 							const lngDiff = marker.lng - mapCenter.lng;
 							const scale = 10000;
 							const isOrigin = marker.id === "origin";
+							const isUserGps = marker.id === "user_gps";
 							return (
 								<TouchableOpacity
 									key={marker.id}
@@ -457,28 +533,38 @@ export const YandexMap: React.FC<YandexMapProps> = ({
 											top: `${50 - latDiff * scale}%`,
 										},
 									]}
-									onPress={() => onMarkerPress?.(marker.id)}
+									onPress={() =>
+										isUserGps ? undefined : onMarkerPress?.(marker.id)
+									}
 								>
 									<View
 										style={[
 											styles.markerPin,
 											isOrigin && { backgroundColor: "#3b82f6" },
+											isUserGps && { backgroundColor: "#22c55e" },
 										]}
 									>
 										<Feather
 											name="map-pin"
 											size={20}
-											color={isOrigin ? "#1d4ed8" : "#ef4444"}
+											color={
+												isOrigin
+													? "#1d4ed8"
+													: isUserGps
+														? "#15803d"
+														: "#ef4444"
+											}
 										/>
 									</View>
 									<View
 										style={[
 											styles.markerLabel,
 											isOrigin && { backgroundColor: "#3b82f6" },
+											isUserGps && { backgroundColor: "#22c55e" },
 										]}
 									>
 										<Text style={styles.markerLabelText}>
-											{isOrigin ? "Старт" : index}
+											{isOrigin ? "Старт" : isUserGps ? "GPS" : index}
 										</Text>
 									</View>
 								</TouchableOpacity>

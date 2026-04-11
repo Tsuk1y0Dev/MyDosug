@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import {
 	View,
 	Text,
@@ -6,9 +6,11 @@ import {
 	ScrollView,
 	TouchableOpacity,
 	Platform,
+	Modal,
+	FlatList,
+	Alert,
 } from "react-native";
 import { usePlanner } from "../../services/planner/PlannerContext";
-import { useUser } from "../../context/UserContext";
 import { Feather } from "@expo/vector-icons";
 import { activityCategories } from "../../data/categories";
 import {
@@ -16,8 +18,19 @@ import {
 	SearchCriteriaFilters,
 	GoalType,
 } from "../../types/searchCriteria";
+import { useFavorites } from "../../services/favorites/FavoritesContext";
+import { useRoute as useDayRoute } from "../../services/planner/RouteContext";
+import type { Place } from "../../types/planner";
+import type { RouteEvent, RouteOrigin } from "../../types/route";
+import { AddToRouteTimeModal } from "./AddToRouteTimeModal";
+import { useDeviceCoords } from "../../hooks/useDeviceCoords";
+import { getRouteInsertTiming } from "../../utils/routeInsertTiming";
+import {
+	isSameLocalCalendarDay,
+	minutesSinceLocalMidnight,
+} from "../../utils/timingUtils";
 
-const CHITA_CENTER = { lat: 52.03, lng: 113.5 };
+const MAP_FALLBACK_CENTER = { lat: 55.75, lng: 37.62 };
 
 const GOAL_OPTIONS: { value: GoalType; label: string; icon: string }[] = [
 	{ value: "work", label: "Работа", icon: "briefcase" },
@@ -42,12 +55,25 @@ const FILTER_CHIPS: { key: keyof SearchCriteriaFilters; label: string }[] = [
 ];
 
 export const ParametersStep = () => {
-	const { setCurrentStep, setSearchCriteria, updatePlanningRequest } =
-		usePlanner();
-	const { profile } = useUser();
+	const {
+		setCurrentStep,
+		setSearchCriteria,
+		updatePlanningRequest,
+		planningRequest,
+		planningDate,
+	} = usePlanner();
+	const { favoritePlaces, userCreatedPlaces } = useFavorites();
+	const {
+		insertEventWithOrigin,
+		events,
+		pendingInsertIndex,
+		origin,
+		segments,
+	} = useDayRoute();
+	const deviceCoords = useDeviceCoords();
+	const [favModalPlace, setFavModalPlace] = useState<Place | null>(null);
+	const [savedPickerOpen, setSavedPickerOpen] = useState(false);
 
-	const savedLocations = profile?.savedLocations ?? [];
-	const [selectedStartId, setSelectedStartId] = useState<string | null>(null);
 	const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
 	const [selectedSubCategoryIds, setSelectedSubCategoryIds] = useState<string[]>([]);
 	const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(
@@ -57,11 +83,37 @@ export const ParametersStep = () => {
 	const [goal, setGoal] = useState<GoalType | null>(null);
 	const [filters, setFilters] = useState<SearchCriteriaFilters>({});
 
-	const startCoords =
-		selectedStartId && savedLocations.length
-			? (savedLocations.find((l) => l.id === selectedStartId)?.coords ??
-				CHITA_CENTER)
-			: CHITA_CENTER;
+	const startCoords = deviceCoords ?? MAP_FALLBACK_CENTER;
+
+	const planningDayFloorMinutes = useMemo(() => {
+		return isSameLocalCalendarDay(planningDate, new Date())
+			? minutesSinceLocalMidnight()
+			: 0;
+	}, [planningDate.getTime()]);
+
+	const favModalTiming = useMemo(() => {
+		if (!favModalPlace) return null;
+		return getRouteInsertTiming({
+			events,
+			segments,
+			origin,
+			insertIndex: pendingInsertIndex ?? events.length,
+			newCoords: favModalPlace.coordinates,
+			floorMinutes: planningDayFloorMinutes,
+		});
+	}, [
+		favModalPlace,
+		events,
+		segments,
+		origin,
+		pendingInsertIndex,
+		planningDayFloorMinutes,
+	]);
+
+	const savedCatalog = useMemo(
+		() => [...favoritePlaces, ...userCreatedPlaces],
+		[favoritePlaces, userCreatedPlaces],
+	);
 
 	const toggleFilter = useCallback((key: keyof SearchCriteriaFilters) => {
 		setFilters((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -88,6 +140,91 @@ export const ParametersStep = () => {
 		setCurrentStep(2);
 	};
 
+	const finishInsert = useCallback(
+		(
+			ev: RouteEvent,
+			originUpdate: "unchanged" | RouteOrigin | null,
+		) => {
+			insertEventWithOrigin(pendingInsertIndex ?? events.length, ev, originUpdate);
+			setFavModalPlace(null);
+		},
+		[insertEventWithOrigin, events.length, pendingInsertIndex],
+	);
+
+	const confirmFavToRoute = useCallback(
+		(arrivalTime: string, durationMinutes: number) => {
+			const place = favModalPlace;
+			if (!place) return;
+			const ev: RouteEvent = {
+				id: `ev-${Date.now()}-${place.id}`,
+				placeId: place.id,
+				customTitle: place.name,
+				coords: place.coordinates,
+				arrivalTime,
+				duration: durationMinutes,
+				travelModeToNext: "driving",
+				lockTimes: true,
+				description: place.description,
+				address: place.address,
+				openingHours:
+					place.workingHours?.trim() || "Не нашли время работы",
+				budgetNote: place.averageBill
+					? `~${place.averageBill} ₽`
+					: "Не нашли информацию о бюджете",
+			};
+			const wasEmpty = events.length === 0;
+			if (!wasEmpty) {
+				finishInsert(ev, "unchanged");
+				return;
+			}
+			Alert.alert(
+				"Первое место",
+				"Построить маршрут от вашей геолокации до этой точки?",
+				[
+					{
+						text: "Нет, только точки плана",
+						style: "cancel",
+						onPress: () =>
+							finishInsert(ev, {
+								id: "from_first_stop",
+								label: place.name,
+								coords: place.coordinates,
+							}),
+					},
+					{
+						text: "Да, от меня",
+						onPress: () => {
+							if (deviceCoords) {
+								finishInsert(ev, {
+									id: "default",
+									label: "Вы здесь",
+									coords: deviceCoords,
+								});
+							} else {
+								Alert.alert(
+									"Геолокация",
+									"Не удалось получить координаты. Маршрут начнётся с первой точки.",
+									[
+										{
+											text: "Понятно",
+											onPress: () =>
+												finishInsert(ev, {
+													id: "from_first_stop",
+													label: place.name,
+													coords: place.coordinates,
+												}),
+										},
+									],
+								);
+							}
+						},
+					},
+				],
+			);
+		},
+		[favModalPlace, events.length, deviceCoords, finishInsert],
+	);
+
 	return (
 		<View style={styles.container}>
 			<ScrollView
@@ -95,72 +232,34 @@ export const ParametersStep = () => {
 				contentContainerStyle={styles.scrollContent}
 				showsVerticalScrollIndicator={false}
 			>
-				{/* Точка старта — сохранённые места */}
-				<View style={styles.section}>
-					<Text style={styles.sectionTitle}>Точка старта</Text>
-					<ScrollView
-						horizontal
-						showsHorizontalScrollIndicator={false}
-						contentContainerStyle={styles.startScroll}
-					>
-						{!savedLocations.length ? (
-							<TouchableOpacity
-								style={[styles.startChip, styles.startChipSelected]}
-								onPress={() => setSelectedStartId(null)}
-							>
-								<Text style={styles.startChipIcon}>📍</Text>
-								<Text
-									style={[styles.startChipText, styles.startChipTextSelected]}
-								>
-									Текущая геолокация
-								</Text>
-							</TouchableOpacity>
-						) : (
-							<>
+				{favoritePlaces.length > 0 && (
+					<View style={styles.section}>
+						<Text style={styles.sectionTitle}>Быстро из избранного</Text>
+						<Text style={styles.favHint}>
+							Добавьте сохранённое место в дневной маршрут (время можно
+							изменить)
+						</Text>
+						<ScrollView
+							horizontal
+							showsHorizontalScrollIndicator={false}
+							contentContainerStyle={styles.favScroll}
+						>
+							{favoritePlaces.map((p) => (
 								<TouchableOpacity
-									style={[
-										styles.startChip,
-										selectedStartId === null && styles.startChipSelected,
-									]}
-									onPress={() => setSelectedStartId(null)}
+									key={p.id}
+									style={styles.favChip}
+									onPress={() => setFavModalPlace(p)}
+									activeOpacity={0.85}
 								>
-									<Text style={styles.startChipIcon}>📍</Text>
-									<Text
-										style={[
-											styles.startChipText,
-											selectedStartId === null && styles.startChipTextSelected,
-										]}
-									>
-										Текущая
+									<Feather name="heart" size={16} color="#ef4444" />
+									<Text style={styles.favChipText} numberOfLines={1}>
+										{p.name}
 									</Text>
 								</TouchableOpacity>
-								{savedLocations.map((loc) => (
-									<TouchableOpacity
-										key={loc.id}
-										style={[
-											styles.startChip,
-											selectedStartId === loc.id && styles.startChipSelected,
-										]}
-										onPress={() => setSelectedStartId(loc.id)}
-									>
-										<Text style={styles.startChipIcon}>{loc.icon}</Text>
-										<Text
-											style={[
-												styles.startChipText,
-												selectedStartId === loc.id &&
-													styles.startChipTextSelected,
-											]}
-											numberOfLines={1}
-											ellipsizeMode="tail"
-										>
-											{loc.name}
-										</Text>
-									</TouchableOpacity>
-								))}
-							</>
-						)}
-					</ScrollView>
-				</View>
+							))}
+						</ScrollView>
+					</View>
+				)}
 
 				{/* Категории — список с выпадающими подкатегориями */}
 				<View style={styles.section}>
@@ -387,6 +486,18 @@ export const ParametersStep = () => {
 					</Text>
 				</TouchableOpacity>
 
+				<TouchableOpacity
+					style={styles.addSavedButton}
+					onPress={() => setSavedPickerOpen(true)}
+					activeOpacity={0.85}
+				>
+					<Feather name="bookmark" size={20} color="#dc2626" />
+					<Text style={styles.addSavedButtonText}>Добавить из сохранённых</Text>
+					<Text style={styles.addSavedButtonSub}>
+						Избранное и созданные вами места
+					</Text>
+				</TouchableOpacity>
+
 				{/* Показать результаты */}
 				<TouchableOpacity
 					style={styles.primaryButton}
@@ -398,6 +509,74 @@ export const ParametersStep = () => {
 
 				<View style={{ height: 40 }} />
 			</ScrollView>
+
+			<AddToRouteTimeModal
+				visible={!!favModalPlace}
+				onClose={() => setFavModalPlace(null)}
+				onConfirm={confirmFavToRoute}
+				placeTitle={favModalPlace?.name ?? ""}
+				defaultArrival={
+					favModalTiming?.suggestedArrival ?? planningRequest.startTime
+				}
+				defaultDurationMinutes={60}
+				minArrivalMinutes={favModalTiming?.minArrivalMinutes ?? 0}
+				blockingEventTitle={favModalTiming?.blockingLabel ?? "начала дня"}
+				openingHoursRaw={favModalPlace?.workingHours}
+				planningDate={planningDate}
+			/>
+
+			<Modal
+				visible={savedPickerOpen}
+				animationType="slide"
+				transparent
+				onRequestClose={() => setSavedPickerOpen(false)}
+			>
+				<TouchableOpacity
+					style={styles.savedPickerOverlay}
+					activeOpacity={1}
+					onPress={() => setSavedPickerOpen(false)}
+				>
+					<TouchableOpacity
+						style={styles.savedPickerCard}
+						activeOpacity={1}
+						onPress={() => {}}
+					>
+						<View style={styles.savedPickerHeader}>
+							<Text style={styles.savedPickerTitle}>Сохранённые места</Text>
+							<TouchableOpacity onPress={() => setSavedPickerOpen(false)}>
+								<Feather name="x" size={22} color="#374151" />
+							</TouchableOpacity>
+						</View>
+						{savedCatalog.length === 0 ? (
+							<Text style={styles.savedPickerEmpty}>
+								Пока нет избранного и своих мест — добавьте их из поиска или
+								создайте активность.
+							</Text>
+						) : (
+							<FlatList
+								data={savedCatalog}
+								keyExtractor={(p) => p.id}
+								style={styles.savedPickerList}
+								renderItem={({ item }) => (
+									<TouchableOpacity
+										style={styles.savedPickerRow}
+										onPress={() => {
+											setSavedPickerOpen(false);
+											setFavModalPlace(item);
+										}}
+									>
+										<Feather name="map-pin" size={18} color="#3b82f6" />
+										<Text style={styles.savedPickerRowText} numberOfLines={2}>
+											{item.name}
+										</Text>
+										<Feather name="chevron-right" size={18} color="#9ca3af" />
+									</TouchableOpacity>
+								)}
+							/>
+						)}
+					</TouchableOpacity>
+				</TouchableOpacity>
+			</Modal>
 		</View>
 	);
 };
@@ -427,6 +606,35 @@ const styles = StyleSheet.create({
 		fontSize: 15,
 		color: "#6b7280",
 		lineHeight: 22,
+	},
+	favHint: {
+		fontSize: 13,
+		color: "#6b7280",
+		marginBottom: 10,
+		lineHeight: 18,
+	},
+	favScroll: {
+		gap: 8,
+		paddingVertical: 4,
+	},
+	favChip: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 8,
+		maxWidth: 220,
+		paddingHorizontal: 14,
+		paddingVertical: 10,
+		backgroundColor: "#fef2f2",
+		borderRadius: 12,
+		borderWidth: 1,
+		borderColor: "#fecaca",
+		marginRight: 8,
+	},
+	favChipText: {
+		flex: 1,
+		fontSize: 14,
+		fontWeight: "600",
+		color: "#991b1b",
 	},
 	section: {
 		marginBottom: 20,
@@ -672,6 +880,77 @@ const styles = StyleSheet.create({
 		color: "#92400e",
 		width: "100%",
 		marginLeft: 30,
+	},
+	addSavedButton: {
+		flexDirection: "row",
+		alignItems: "center",
+		flexWrap: "wrap",
+		gap: 10,
+		padding: 16,
+		borderRadius: 16,
+		backgroundColor: "white",
+		borderWidth: 2,
+		borderColor: "#ef4444",
+		marginBottom: 20,
+	},
+	addSavedButtonText: {
+		fontSize: 16,
+		fontWeight: "600",
+		color: "#b91c1c",
+	},
+	addSavedButtonSub: {
+		fontSize: 12,
+		color: "#991b1b",
+		width: "100%",
+		marginLeft: 30,
+	},
+	savedPickerOverlay: {
+		flex: 1,
+		backgroundColor: "rgba(0,0,0,0.45)",
+		justifyContent: "flex-end",
+	},
+	savedPickerCard: {
+		backgroundColor: "white",
+		borderTopLeftRadius: 20,
+		borderTopRightRadius: 20,
+		paddingHorizontal: 20,
+		paddingTop: 16,
+		paddingBottom: 28,
+		maxHeight: "72%",
+	},
+	savedPickerHeader: {
+		flexDirection: "row",
+		alignItems: "center",
+		justifyContent: "space-between",
+		marginBottom: 12,
+	},
+	savedPickerTitle: {
+		fontSize: 18,
+		fontWeight: "700",
+		color: "#111827",
+	},
+	savedPickerEmpty: {
+		fontSize: 14,
+		color: "#6b7280",
+		lineHeight: 20,
+		paddingVertical: 12,
+	},
+	savedPickerList: {
+		flexGrow: 0,
+	},
+	savedPickerRow: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 10,
+		paddingVertical: 14,
+		borderBottomWidth: 1,
+		borderBottomColor: "#f1f5f9",
+	},
+	savedPickerRowText: {
+		flex: 1,
+		fontSize: 15,
+		color: "#1f2937",
+		fontWeight: "500",
 	},
 	primaryButton: {
 		flexDirection: "row",

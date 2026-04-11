@@ -3,7 +3,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { HomeScreen } from '../screens/main/HomeScreen';
 import { SearchScreen } from '../screens/main/SearchScreen';
 import { RoutesScreen } from '../screens/main/RoutesScreen';
-import { ProfileScreen } from '../screens/main/ProfileScreen';
+import { ProfileGateScreen } from '../screens/main/ProfileGateScreen';
 import { MainTabParamList } from './types';
 import { Feather } from '@expo/vector-icons';
 
@@ -68,7 +68,7 @@ export const MainNavigator = () => {
       />
       <Tab.Screen 
         name="Profile" 
-        component={ProfileScreen}
+        component={ProfileGateScreen}
         options={{
           title: 'Профиль',
         }}

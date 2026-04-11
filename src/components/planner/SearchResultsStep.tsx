@@ -1,4 +1,10 @@
-import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import React, {
+	useState,
+	useMemo,
+	useCallback,
+	useEffect,
+	useRef,
+} from "react";
 import {
 	View,
 	Text,
@@ -8,14 +14,43 @@ import {
 	TouchableOpacity,
 	Dimensions,
 	Platform,
+	Alert,
+	Modal,
+	ScrollView,
+	Linking,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { usePlanner } from "../../services/planner/PlannerContext";
 import { useRoute } from "../../services/planner/RouteContext";
-import type { SearchCriteria, SearchCriteriaFilters } from "../../types/searchCriteria";
-import type { RouteEvent } from "../../types/route";
+import type {
+	SearchCriteria,
+	SearchCriteriaFilters,
+} from "../../types/searchCriteria";
+import type { RouteEvent, RouteOrigin } from "../../types/route";
 import { YandexMap } from "../maps/YandexMap";
 import { OSMService, OSMPlace } from "../../services/osm/OSMService";
+import {
+	filterOsmPlaces,
+	matchesExtendedSearchCriteria,
+} from "../../utils/osmPlaceFilters";
+import { useDeviceCoords } from "../../hooks/useDeviceCoords";
+import { AddToRouteTimeModal } from "./AddToRouteTimeModal";
+import { getRouteInsertTiming } from "../../utils/routeInsertTiming";
+import {
+	isSameLocalCalendarDay,
+	minutesSinceLocalMidnight,
+} from "../../utils/timingUtils";
+import {
+	formatOsmBudgetCaption,
+	formatOsmOpeningCaption,
+} from "../../utils/osmPlaceCaption";
+import {
+	getOpeningSummaryToday,
+	formatOpeningHoursDetailRu,
+	getMinutesUntilClosingToday,
+	extractPlacePhone,
+	extractPlaceWebsite,
+} from "../../utils/openingHoursRu";
 
 const { height: winHeight } = Dimensions.get("window");
 
@@ -23,7 +58,7 @@ function haversineKm(
 	lat1: number,
 	lng1: number,
 	lat2: number,
-	lng2: number
+	lng2: number,
 ): number {
 	const R = 6371;
 	const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -37,15 +72,20 @@ function haversineKm(
 	return R * c;
 }
 
-function matchesFilters(place: OSMPlace, filters: SearchCriteriaFilters): boolean {
+function matchesFilters(
+	place: OSMPlace,
+	filters: SearchCriteriaFilters,
+): boolean {
 	if (!filters || Object.keys(filters).length === 0) return true;
 	const acc = place.accessibility;
-	if (filters.wheelchairAccessible === true && !acc.wheelchairAccessible) return false;
+	if (filters.wheelchairAccessible === true && !acc.wheelchairAccessible)
+		return false;
 	if (filters.elevatorOrRamp === true && !acc.elevatorOrRamp) return false;
 	if (filters.stepFreeEntrance === true && !acc.stepFreeEntrance) return false;
 	if (filters.accessibleToilet === true && !acc.accessibleToilet) return false;
 	if (filters.parkingNearby === true && !acc.parkingNearby) return false;
-	if (filters.publicTransportNearby === true && !acc.publicTransportNearby) return false;
+	if (filters.publicTransportNearby === true && !acc.publicTransportNearby)
+		return false;
 	return true;
 }
 
@@ -56,15 +96,31 @@ export interface SearchResultsStepProps {
 export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 	onPlanSaved,
 }) => {
-	const { searchCriteria, setCurrentStep } = usePlanner();
-	const { insertEvent, events, pendingInsertIndex } = useRoute();
+	const {
+		searchCriteria,
+		setCurrentStep,
+		planningRequest,
+		planningDate,
+	} = usePlanner();
+	const {
+		insertEventWithOrigin,
+		events,
+		pendingInsertIndex,
+		origin,
+		segments,
+	} = useRoute();
+	const deviceCoords = useDeviceCoords();
 
 	const [viewMode, setViewMode] = useState<"list" | "map">("list");
 	const [selectedPlace, setSelectedPlace] = useState<OSMPlace | null>(null);
+	const [timeModalPlace, setTimeModalPlace] = useState<OSMPlace | null>(null);
+	const [detailModalPlace, setDetailModalPlace] = useState<OSMPlace | null>(
+		null,
+	);
 
-	const INITIAL_RADIUS = 2000;
+	const INITIAL_RADIUS = 4000;
 	const MAX_RADIUS = 20000;
-	const RADIUS_MULTIPLIER = 1.5;
+	const RADIUS_MULTIPLIER = 1.2;
 
 	const [places, setPlaces] = useState<OSMPlace[]>([]);
 	const placesSeenIdsRef = useRef<Set<string>>(new Set());
@@ -75,6 +131,31 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 	const [loading, setLoading] = useState(false);
 	const [loadError, setLoadError] = useState<string | null>(null);
 	const [sortMode, setSortMode] = useState<"distance" | "rating">("distance");
+
+	const planningDayFloorMinutes = useMemo(() => {
+		return isSameLocalCalendarDay(planningDate, new Date())
+			? minutesSinceLocalMidnight()
+			: 0;
+	}, [planningDate.getTime()]);
+
+	const timeModalTiming = useMemo(() => {
+		if (!timeModalPlace) return null;
+		return getRouteInsertTiming({
+			events,
+			segments,
+			origin,
+			insertIndex: pendingInsertIndex ?? events.length,
+			newCoords: timeModalPlace.coords,
+			floorMinutes: planningDayFloorMinutes,
+		});
+	}, [
+		timeModalPlace,
+		events,
+		segments,
+		origin,
+		pendingInsertIndex,
+		planningDayFloorMinutes,
+	]);
 
 	useEffect(() => {
 		const load = async () => {
@@ -93,9 +174,11 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 				const data = await OSMService.searchAround(
 					searchCriteria.startCoords,
 					INITIAL_RADIUS,
-					searchCriteria
+					searchCriteria,
 				);
-				const filtered = data.filter((p) => matchesFilters(p, searchCriteria.filters ?? {}));
+				const filtered = data.filter((p) =>
+					matchesFilters(p, searchCriteria.filters ?? {}),
+				);
 				filtered.forEach((p) => placesSeenIdsRef.current.add(p.id));
 				setPlaces(filtered);
 			} catch (e: any) {
@@ -115,19 +198,17 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 	const filteredWithDistance = useMemo(() => {
 		if (!searchCriteria) return [];
 		const start = searchCriteria.startCoords;
-		const items = places
+		const items = filterOsmPlaces(places)
+			.filter((place) => matchesExtendedSearchCriteria(place, searchCriteria))
 			.map((place) => {
 				const distanceKm = haversineKm(
 					start.lat,
 					start.lng,
 					place.coords.lat,
-					place.coords.lng
+					place.coords.lng,
 				);
 				const distanceMeters = Math.round(distanceKm * 1000);
-				const durationMinutes = Math.max(
-					1,
-					Math.round((distanceKm / 40) * 60)
-				);
+				const durationMinutes = Math.max(1, Math.round((distanceKm / 40) * 60));
 				return {
 					...place,
 					distanceMeters,
@@ -137,7 +218,9 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 			.sort((a: any, b: any) => {
 				if (sortMode === "rating") {
 					const byRating = b.rating - a.rating;
-					return byRating !== 0 ? byRating : a.distanceMeters - b.distanceMeters;
+					return byRating !== 0
+						? byRating
+						: a.distanceMeters - b.distanceMeters;
 				}
 				return a.distanceMeters - b.distanceMeters;
 			});
@@ -160,10 +243,10 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 			const data = await OSMService.searchAround(
 				searchCriteria.startCoords,
 				nextRadius,
-				searchCriteria
+				searchCriteria,
 			);
 			const filtered = data.filter((p) =>
-				matchesFilters(p, searchCriteria.filters ?? {})
+				matchesFilters(p, searchCriteria.filters ?? {}),
 			);
 
 			const toAdd = filtered.filter((p) => !placesSeenIdsRef.current.has(p.id));
@@ -177,9 +260,7 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 			if (status === 429 || status === 504) {
 				setLoadError(null);
 			} else {
-				setLoadError(
-					e?.message || "Ошибка загрузки дополнительных мест",
-				);
+				setLoadError(e?.message || "Ошибка загрузки дополнительных мест");
 			}
 		} finally {
 			setLoadingMore(false);
@@ -194,23 +275,94 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 		RADIUS_MULTIPLIER,
 	]);
 
-	const handleAddToRoute = useCallback(
-		(place: OSMPlace) => {
+	const finishAdd = useCallback(
+		(
+			event: RouteEvent,
+			originUpdate: "unchanged" | RouteOrigin | null,
+		) => {
+			const index = pendingInsertIndex ?? events.length;
+			insertEventWithOrigin(index, event, originUpdate);
+			setSelectedPlace(null);
+			setTimeModalPlace(null);
+			onPlanSaved?.();
+		},
+		[
+			insertEventWithOrigin,
+			events.length,
+			pendingInsertIndex,
+			onPlanSaved,
+		],
+	);
+
+	const confirmAddToRoute = useCallback(
+		(arrivalTime: string, durationMinutes: number) => {
+			const place = timeModalPlace;
+			if (!place) return;
 			const event: RouteEvent = {
 				id: `ev-${Date.now()}-${place.id}`,
 				placeId: place.id,
 				customTitle: place.title,
 				coords: place.coords,
-				arrivalTime: "12:00",
-				duration: 60,
+				arrivalTime,
+				duration: durationMinutes,
 				travelModeToNext: "driving",
+				lockTimes: true,
+				description: place.description,
+				address: place.address,
+				openingHours: formatOsmOpeningCaption(place),
+				budgetNote: formatOsmBudgetCaption(place),
 			};
-			const index = pendingInsertIndex ?? events.length;
-			insertEvent(index, event);
-			setSelectedPlace(null);
-			onPlanSaved?.();
+			const wasEmpty = events.length === 0;
+			if (!wasEmpty) {
+				finishAdd(event, "unchanged");
+				return;
+			}
+			Alert.alert(
+				"Первое место",
+				"Построить маршрут от вашей геолокации до этой точки?",
+				[
+					{
+						text: "Нет, только точки плана",
+						style: "cancel",
+						onPress: () =>
+							finishAdd(event, {
+								id: "from_first_stop",
+								label: place.title,
+								coords: place.coords,
+							}),
+					},
+					{
+						text: "Да, от меня",
+						onPress: () => {
+							if (deviceCoords) {
+								finishAdd(event, {
+									id: "default",
+									label: "Вы здесь",
+									coords: deviceCoords,
+								});
+							} else {
+								Alert.alert(
+									"Геолокация",
+									"Не удалось получить координаты. Маршрут начнётся с первой точки.",
+									[
+										{
+											text: "Понятно",
+											onPress: () =>
+												finishAdd(event, {
+													id: "from_first_stop",
+													label: place.title,
+													coords: place.coords,
+												}),
+										},
+									],
+								);
+							}
+						},
+					},
+				],
+			);
 		},
-		[insertEvent, events.length, pendingInsertIndex, onPlanSaved]
+		[timeModalPlace, events.length, deviceCoords, finishAdd],
 	);
 
 	if (!searchCriteria) {
@@ -250,12 +402,15 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 					{loading
 						? "Загрузка..."
 						: loadError
-						? loadError
-						: `Найдено: ${filteredWithDistance.length}`}
+							? loadError
+							: `Найдено: ${filteredWithDistance.length}`}
 				</Text>
 				<View style={styles.toggleRow}>
 					<TouchableOpacity
-						style={[styles.toggleBtn, viewMode === "list" && styles.toggleBtnActive]}
+						style={[
+							styles.toggleBtn,
+							viewMode === "list" && styles.toggleBtnActive,
+						]}
 						onPress={() => setViewMode("list")}
 					>
 						<Feather
@@ -273,7 +428,10 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 						</Text>
 					</TouchableOpacity>
 					<TouchableOpacity
-						style={[styles.toggleBtn, viewMode === "map" && styles.toggleBtnActive]}
+						style={[
+							styles.toggleBtn,
+							viewMode === "map" && styles.toggleBtnActive,
+						]}
 						onPress={() => setViewMode("map")}
 					>
 						<Feather
@@ -299,9 +457,7 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 						<View style={styles.emptyState}>
 							<ActivityIndicator size="large" color="#3b82f6" />
 							<Text style={styles.emptyStateText}>Загрузка...</Text>
-							<Text style={styles.emptyStateSubtext}>
-								Подбираем места
-							</Text>
+							<Text style={styles.emptyStateSubtext}>Подбираем места</Text>
 						</View>
 					) : filteredWithDistance.length === 0 ? (
 						<View style={styles.emptyState}>
@@ -315,81 +471,61 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 						<FlatList
 							data={filteredWithDistance}
 							keyExtractor={(item) => item.id}
-							renderItem={({ item }) => (
-								<View style={styles.card}>
-									<Text style={styles.cardTitle}>{item.title}</Text>
-									{item.address ? (
-										<Text
-											style={styles.cardAddress}
-											numberOfLines={1}
-											ellipsizeMode="tail"
+							renderItem={({ item }) => {
+								const untilClose = getMinutesUntilClosingToday(item);
+								return (
+									<View style={styles.card}>
+										<TouchableOpacity
+											activeOpacity={0.85}
+											onPress={() => setDetailModalPlace(item)}
 										>
-											{item.address}
-										</Text>
-									) : null}
-									<Text style={styles.cardDescription} numberOfLines={2}>
-										{item.description}
-									</Text>
+											<Text style={styles.cardTitle}>{item.title}</Text>
+											{item.address ? (
+												<Text
+													style={styles.cardAddress}
+													numberOfLines={1}
+													ellipsizeMode="tail"
+												>
+													{item.address}
+												</Text>
+											) : null}
+											<Text style={styles.cardCaptionLine} numberOfLines={2}>
+												🕐 {getOpeningSummaryToday(item)}
+											</Text>
+											{untilClose != null && untilClose > 0 ? (
+												<Text style={styles.cardClosingHint}>
+													До закрытия ~{untilClose} мин
+												</Text>
+											) : null}
+											<View style={styles.cardMeta}>
+												<View style={styles.metaItem}>
+													<Feather name="star" size={14} color="#f59e0b" />
+													<Text style={styles.metaText}>
+														{item.rating.toFixed(2)}
+													</Text>
+												</View>
+												<View style={styles.metaItem}>
+													<Feather name="navigation" size={14} color="#6b7280" />
+													<Text style={styles.metaText}>
+														{item.distanceMeters < 1000
+															? `${item.distanceMeters} м`
+															: `${(item.distanceMeters / 1000).toFixed(1)} км`}
+													</Text>
+												</View>
+											</View>
+											<Text style={styles.cardTapHint}>Нажмите для подробностей →</Text>
+										</TouchableOpacity>
 
-									<View style={styles.cardMeta}>
-										<View style={styles.metaItem}>
-											<Feather name="star" size={14} color="#f59e0b" />
-											<Text style={styles.metaText}>
-												{item.rating.toFixed(2)}
-											</Text>
-										</View>
-										<View style={styles.metaItem}>
-											<Feather
-												name="navigation"
-												size={14}
-												color="#6b7280"
-											/>
-											<Text style={styles.metaText}>
-												{item.distanceMeters < 1000
-													? `${item.distanceMeters} м`
-													: `${(item.distanceMeters / 1000).toFixed(1)} км`}
-											</Text>
-										</View>
-										<View style={styles.metaItem}>
-											<Feather name="clock" size={14} color="#6b7280" />
-											<Text style={styles.metaText}>
-												~{item.durationMinutes} мин
-											</Text>
-										</View>
+										<TouchableOpacity
+											style={styles.addBtn}
+											onPress={() => setTimeModalPlace(item)}
+										>
+											<Feather name="plus" size={18} color="#fff" />
+											<Text style={styles.addBtnText}>Добавить в маршрут</Text>
+										</TouchableOpacity>
 									</View>
-
-									<View style={styles.cardTags}>
-										{item.accessibility.wheelchairAccessible && (
-											<View style={styles.tag}>
-												<Text style={styles.tagText}>♿</Text>
-											</View>
-										)}
-										{item.accessibility.elevatorOrRamp && (
-											<View style={styles.tag}>
-												<Text style={styles.tagText}>⬆</Text>
-											</View>
-										)}
-										{item.accessibility.parkingNearby && (
-											<View style={styles.tag}>
-												<Text style={styles.tagText}>🅿</Text>
-											</View>
-										)}
-										{item.accessibility.publicTransportNearby && (
-											<View style={styles.tag}>
-												<Text style={styles.tagText}>🚌</Text>
-											</View>
-										)}
-									</View>
-
-									<TouchableOpacity
-										style={styles.addBtn}
-										onPress={() => handleAddToRoute(item)}
-									>
-										<Feather name="plus" size={18} color="#fff" />
-										<Text style={styles.addBtnText}>Добавить в маршрут</Text>
-									</TouchableOpacity>
-								</View>
-							)}
+								);
+							}}
 							contentContainerStyle={styles.listContent}
 							showsVerticalScrollIndicator
 							onEndReached={fetchMore}
@@ -479,13 +615,17 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 									const p = filteredWithDistance.find((x) => x.id === markerId);
 									if (p) setSelectedPlace(p);
 								}}
-								height={Platform.OS === "web" ? 400 : Math.max(300, winHeight - 220)}
+								height={
+									Platform.OS === "web" ? 400 : Math.max(300, winHeight - 220)
+								}
 								fitAllMarkers
 								routingEnabled={false}
 							/>
 							{selectedPlace && (
 								<View style={styles.mapBottomCard}>
-									<Text style={styles.bottomCardTitle}>{selectedPlace.title}</Text>
+									<Text style={styles.bottomCardTitle}>
+										{selectedPlace.title}
+									</Text>
 									<Text
 										style={styles.bottomCardAddress}
 										numberOfLines={1}
@@ -499,9 +639,20 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 									<Text style={styles.bottomCardDescription} numberOfLines={2}>
 										{selectedPlace.description}
 									</Text>
+									<Text style={styles.bottomCardCaption} numberOfLines={2}>
+										🕐 {getOpeningSummaryToday(selectedPlace)}
+									</Text>
+									<Text style={styles.bottomCardHoursDetail}>
+										{formatOpeningHoursDetailRu(selectedPlace)}
+									</Text>
+									<Text style={styles.bottomCardCaption} numberOfLines={2}>
+										💳 {formatOsmBudgetCaption(selectedPlace)}
+									</Text>
 									<TouchableOpacity
 										style={styles.addBtn}
-										onPress={() => handleAddToRoute(selectedPlace)}
+										onPress={() =>
+											selectedPlace && setTimeModalPlace(selectedPlace)
+										}
 									>
 										<Feather name="plus" size={18} color="#fff" />
 										<Text style={styles.addBtnText}>Добавить в маршрут</Text>
@@ -517,6 +668,120 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 					)}
 				</View>
 			)}
+
+			<Modal
+				visible={detailModalPlace != null}
+				transparent
+				animationType="fade"
+				onRequestClose={() => setDetailModalPlace(null)}
+			>
+				<View style={styles.detailModalOverlay}>
+					<TouchableOpacity
+						style={StyleSheet.absoluteFillObject}
+						activeOpacity={1}
+						onPress={() => setDetailModalPlace(null)}
+					/>
+					<View style={styles.detailModalCard}>
+						<ScrollView
+							showsVerticalScrollIndicator={false}
+							style={{ maxHeight: winHeight * 0.75 }}
+						>
+							{detailModalPlace ? (
+								<>
+									<Text style={styles.detailModalTitle}>
+										{detailModalPlace.title}
+									</Text>
+									{detailModalPlace.address ? (
+										<Text style={styles.detailModalAddr}>
+											{detailModalPlace.address}
+										</Text>
+									) : null}
+									<Text style={styles.detailModalLine}>
+										{getOpeningSummaryToday(detailModalPlace)}
+									</Text>
+									<Text style={styles.detailModalHoursLabel}>Часы работы</Text>
+									<Text style={styles.detailModalHours}>
+										{formatOpeningHoursDetailRu(detailModalPlace)}
+									</Text>
+									{extractPlacePhone(detailModalPlace) ? (
+										<TouchableOpacity
+											style={styles.detailModalLink}
+											onPress={() =>
+												Linking.openURL(
+													`tel:${extractPlacePhone(detailModalPlace)!.replace(/[^\d+]/g, "")}`,
+												)
+											}
+										>
+											<Feather name="phone" size={18} color="#059669" />
+											<Text style={styles.detailModalLinkText}>
+												{extractPlacePhone(detailModalPlace)}
+											</Text>
+										</TouchableOpacity>
+									) : null}
+									{extractPlaceWebsite(detailModalPlace) ? (
+										<TouchableOpacity
+											style={styles.detailModalLink}
+											onPress={() => {
+												const w = extractPlaceWebsite(detailModalPlace)!;
+												void Linking.openURL(
+													/^https?:\/\//i.test(w) ? w : `https://${w}`,
+												);
+											}}
+										>
+											<Feather name="globe" size={18} color="#2563eb" />
+											<Text style={styles.detailModalLinkText} numberOfLines={2}>
+												{extractPlaceWebsite(detailModalPlace)}
+											</Text>
+										</TouchableOpacity>
+									) : null}
+									<Text style={styles.detailModalDesc}>
+										{detailModalPlace.description}
+									</Text>
+									<Text style={styles.detailModalBudget}>
+										💳 {formatOsmBudgetCaption(detailModalPlace)}
+									</Text>
+								</>
+							) : null}
+						</ScrollView>
+						<View style={styles.detailModalActions}>
+							<TouchableOpacity
+								style={styles.detailModalSecondary}
+								onPress={() => setDetailModalPlace(null)}
+							>
+								<Text style={styles.detailModalSecondaryText}>Закрыть</Text>
+							</TouchableOpacity>
+							<TouchableOpacity
+								style={styles.detailModalPrimary}
+								onPress={() => {
+									if (detailModalPlace) {
+										setTimeModalPlace(detailModalPlace);
+										setDetailModalPlace(null);
+									}
+								}}
+							>
+								<Text style={styles.detailModalPrimaryText}>В маршрут</Text>
+							</TouchableOpacity>
+						</View>
+					</View>
+				</View>
+			</Modal>
+
+			<AddToRouteTimeModal
+				visible={!!timeModalPlace}
+				onClose={() => setTimeModalPlace(null)}
+				onConfirm={confirmAddToRoute}
+				placeTitle={timeModalPlace?.title ?? ""}
+				defaultArrival={
+					timeModalTiming?.suggestedArrival ?? planningRequest.startTime
+				}
+				defaultDurationMinutes={60}
+				minArrivalMinutes={timeModalTiming?.minArrivalMinutes ?? 0}
+				blockingEventTitle={
+					timeModalTiming?.blockingLabel ?? "начала дня"
+				}
+				openingHoursRaw={timeModalPlace?.openingHoursRaw}
+				planningDate={planningDate}
+			/>
 		</View>
 	);
 };
@@ -627,8 +892,126 @@ const styles = StyleSheet.create({
 	cardDescription: {
 		fontSize: 13,
 		color: "#6b7280",
-		marginBottom: 10,
+		marginBottom: 6,
 		lineHeight: 18,
+	},
+	cardCaptionLine: {
+		fontSize: 12,
+		color: "#64748b",
+		lineHeight: 16,
+		marginBottom: 4,
+	},
+	cardClosingHint: {
+		fontSize: 12,
+		fontWeight: "600",
+		color: "#b45309",
+		marginBottom: 6,
+	},
+	cardTapHint: {
+		fontSize: 11,
+		color: "#94a3b8",
+		marginTop: 4,
+		marginBottom: 8,
+	},
+	detailModalOverlay: {
+		flex: 1,
+		backgroundColor: "rgba(0,0,0,0.45)",
+		justifyContent: "center",
+		padding: 20,
+	},
+	detailModalCard: {
+		backgroundColor: "white",
+		borderRadius: 16,
+		padding: 18,
+		maxWidth: 420,
+		width: "100%",
+		alignSelf: "center",
+	},
+	detailModalTitle: {
+		fontSize: 18,
+		fontWeight: "700",
+		color: "#0f172a",
+		marginBottom: 8,
+	},
+	detailModalAddr: {
+		fontSize: 14,
+		color: "#64748b",
+		marginBottom: 10,
+	},
+	detailModalLine: {
+		fontSize: 14,
+		fontWeight: "600",
+		color: "#0f766e",
+		marginBottom: 10,
+	},
+	detailModalHoursLabel: {
+		fontSize: 12,
+		fontWeight: "700",
+		color: "#64748b",
+		marginBottom: 6,
+		textTransform: "uppercase",
+	},
+	detailModalHours: {
+		fontSize: 13,
+		color: "#334155",
+		lineHeight: 20,
+		marginBottom: 12,
+	},
+	detailModalLink: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 8,
+		marginBottom: 10,
+	},
+	detailModalLinkText: {
+		fontSize: 14,
+		color: "#1d4ed8",
+		fontWeight: "600",
+		flex: 1,
+	},
+	detailModalDesc: {
+		fontSize: 14,
+		color: "#475569",
+		lineHeight: 20,
+		marginTop: 8,
+	},
+	detailModalBudget: {
+		fontSize: 13,
+		color: "#475569",
+		marginTop: 10,
+	},
+	detailModalActions: {
+		flexDirection: "row",
+		gap: 10,
+		marginTop: 16,
+		paddingTop: 12,
+		borderTopWidth: 1,
+		borderTopColor: "#e2e8f0",
+	},
+	detailModalSecondary: {
+		flex: 1,
+		paddingVertical: 12,
+		alignItems: "center",
+		borderRadius: 12,
+		borderWidth: 1,
+		borderColor: "#e2e8f0",
+	},
+	detailModalSecondaryText: {
+		fontSize: 15,
+		fontWeight: "600",
+		color: "#475569",
+	},
+	detailModalPrimary: {
+		flex: 1,
+		paddingVertical: 12,
+		alignItems: "center",
+		borderRadius: 12,
+		backgroundColor: "#3b82f6",
+	},
+	detailModalPrimaryText: {
+		fontSize: 15,
+		fontWeight: "600",
+		color: "white",
 	},
 	cardMeta: {
 		flexDirection: "row",
@@ -754,7 +1137,24 @@ const styles = StyleSheet.create({
 	bottomCardDescription: {
 		fontSize: 13,
 		color: "#6b7280",
-		marginBottom: 12,
+		marginBottom: 6,
 		lineHeight: 18,
+	},
+	bottomCardHoursDetail: {
+		fontSize: 12,
+		color: "#334155",
+		lineHeight: 17,
+		marginBottom: 8,
+		backgroundColor: "#f8fafc",
+		padding: 10,
+		borderRadius: 10,
+		borderWidth: 1,
+		borderColor: "#e2e8f0",
+	},
+	bottomCardCaption: {
+		fontSize: 12,
+		color: "#64748b",
+		lineHeight: 16,
+		marginBottom: 4,
 	},
 });

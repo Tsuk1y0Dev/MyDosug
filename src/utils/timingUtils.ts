@@ -57,3 +57,23 @@ export const timeIntervalsOverlap = (
   return (start1Min < end2Min && end1Min > start2Min);
 };
 
+export function isSameLocalCalendarDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+/** Минуты от полуночи локального времени. */
+export function minutesSinceLocalMidnight(d = new Date()): number {
+  return d.getHours() * 60 + d.getMinutes();
+}
+
+/** Ключ дня для кэша маршрута (локальный календарь). */
+export function localRouteDayKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = d.getMonth() + 1;
+  const day = d.getDate();
+  return `${y}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}

@@ -1,22 +1,24 @@
-import { UserLocationData } from "../../types/user";
-import { useState, useEffect } from "react";
-import * as Device from 'expo-device';
-import * as Location from 'expo-location';
+import * as Location from "expo-location";
 
+export type Coordinates = { lat: number; lng: number };
 
-export const getUserLocation = () =>{
-  const [data, setData] = useState<UserLocationData | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  useEffect(() => {
-    async function gatherData(){
-      try {
-        }
-      }
-    }
-  })
+/**
+ * Текущие координаты устройства или null (нет прав / ошибка).
+ */
+export async function getCurrentCoordinates(): Promise<Coordinates | null> {
+	try {
+		const { status } = await Location.requestForegroundPermissionsAsync();
+		if (status !== "granted") {
+			return null;
+		}
+		const pos = await Location.getCurrentPositionAsync({
+			accuracy: Location.Accuracy.Balanced,
+		});
+		return {
+			lat: pos.coords.latitude,
+			lng: pos.coords.longitude,
+		};
+	} catch {
+		return null;
+	}
 }
-
-
-
-

@@ -7,18 +7,29 @@ import {
   TouchableOpacity,
   SafeAreaView,
   Image,
-  Alert
+  Alert,
+  Modal,
 } from 'react-native';
 import { useFavorites } from '../../services/favorites/FavoritesContext';
 import { useSchedule } from '../../services/schedule/ScheduleContext';
 import { Feather } from '@expo/vector-icons';
 import { RoutePlan, Place } from '../../types/planner';
 import { formatDuration } from '../../utils/timingUtils';
+import { PlannerProvider } from '../../services/planner/PlannerContext';
+import { CustomActivityStep } from '../../components/planner/CustomActivityStep';
 
 export const RoutesScreen = () => {
-  const { favoritePlaces, savedRoutes, removeFavoritePlace, removeSavedRoute } = useFavorites();
+  const {
+    favoritePlaces,
+    userCreatedPlaces,
+    savedRoutes,
+    removeFavoritePlace,
+    removeUserCreatedPlace,
+    removeSavedRoute,
+  } = useFavorites();
   const { schedule } = useSchedule();
   const [activeTab, setActiveTab] = useState<'routes' | 'favorites'>('routes');
+  const [createPlaceOpen, setCreatePlaceOpen] = useState(false);
 
   // Преобразуем schedule в формат RoutePlan для отображения
   const currentRoutes = useMemo(() => {
@@ -125,19 +136,25 @@ export const RoutesScreen = () => {
     </View>
   );
 
-  const FavoriteCard = ({ place }: { place: Place }) => {
+  const FavoriteCard = ({
+    place,
+    onRemove,
+    removeTitle,
+  }: {
+    place: Place;
+    onRemove: (id: string) => void;
+    removeTitle: string;
+  }) => {
     const handleRemove = () => {
       Alert.alert(
-        'Удалить из избранного',
-        `Вы уверены, что хотите удалить "${place.name}" из избранного?`,
+        removeTitle,
+        `Удалить «${place.name}»?`,
         [
           { text: 'Отмена', style: 'cancel' },
           { 
             text: 'Удалить', 
             style: 'destructive',
-            onPress: () => {
-              removeFavoritePlace(place.id);
-            }
+            onPress: () => onRemove(place.id),
           }
         ]
       );
@@ -203,7 +220,7 @@ export const RoutesScreen = () => {
           >
             <Feather name="heart" size={18} color={activeTab === 'favorites' ? '#3b82f6' : '#6b7280'} />
             <Text style={[styles.tabText, activeTab === 'favorites' && styles.tabTextActive]}>
-              Избранное ({favoritePlaces.length})
+              Избранное ({favoritePlaces.length + userCreatedPlaces.length})
             </Text>
           </TouchableOpacity>
         </View>
@@ -228,23 +245,88 @@ export const RoutesScreen = () => {
             </>
           )
         ) : (
-          favoritePlaces.length === 0 ? (
+          favoritePlaces.length === 0 && userCreatedPlaces.length === 0 ? (
             <View style={styles.emptyState}>
               <Feather name="heart" size={48} color="#d1d5db" />
-              <Text style={styles.emptyStateTitle}>Нет избранных мест</Text>
+              <Text style={styles.emptyStateTitle}>Пока пусто</Text>
               <Text style={styles.emptyStateText}>
-                Добавьте места в избранное при просмотре результатов поиска
+                Добавляйте места в избранное на экране поиска; созданные вами активности появятся во втором разделе
               </Text>
+              <TouchableOpacity
+                style={styles.createPlaceButton}
+                onPress={() => setCreatePlaceOpen(true)}
+                activeOpacity={0.88}
+              >
+                <Feather name="plus-circle" size={20} color="white" />
+                <Text style={styles.createPlaceButtonText}>Создать место</Text>
+              </TouchableOpacity>
             </View>
           ) : (
-            <View style={styles.favoritesGrid}>
-              {favoritePlaces.map(place => (
-                <FavoriteCard key={place.id} place={place} />
-              ))}
+            <View style={styles.favoritesSections}>
+              <TouchableOpacity
+                style={styles.createPlaceButtonInline}
+                onPress={() => setCreatePlaceOpen(true)}
+                activeOpacity={0.88}
+              >
+                <Feather name="plus-circle" size={18} color="#3b82f6" />
+                <Text style={styles.createPlaceButtonInlineText}>Создать место</Text>
+              </TouchableOpacity>
+              {favoritePlaces.length > 0 && (
+                <View style={styles.favoritesSection}>
+                  <Text style={styles.favoritesSectionTitle}>Избранные места</Text>
+                  <View style={styles.favoritesGrid}>
+                    {favoritePlaces.map(place => (
+                      <FavoriteCard
+                        key={place.id}
+                        place={place}
+                        onRemove={removeFavoritePlace}
+                        removeTitle="Удалить из избранного"
+                      />
+                    ))}
+                  </View>
+                </View>
+              )}
+              {userCreatedPlaces.length > 0 && (
+                <View style={styles.favoritesSection}>
+                  <Text style={styles.favoritesSectionTitle}>Созданные вами</Text>
+                  <View style={styles.favoritesGrid}>
+                    {userCreatedPlaces.map(place => (
+                      <FavoriteCard
+                        key={place.id}
+                        place={place}
+                        onRemove={removeUserCreatedPlace}
+                        removeTitle="Удалить место"
+                      />
+                    ))}
+                  </View>
+                </View>
+              )}
             </View>
           )
         )}
       </ScrollView>
+
+      <Modal
+        visible={createPlaceOpen}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setCreatePlaceOpen(false)}
+      >
+        <PlannerProvider
+          catalogStandalone
+          onDismissCatalogStandalone={() => setCreatePlaceOpen(false)}
+        >
+          <View style={styles.catalogModalWrap}>
+            <TouchableOpacity
+              style={styles.catalogModalClose}
+              onPress={() => setCreatePlaceOpen(false)}
+            >
+              <Feather name="x" size={24} color="#374151" />
+            </TouchableOpacity>
+            <CustomActivityStep onPlanSaved={() => setCreatePlaceOpen(false)} />
+          </View>
+        </PlannerProvider>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -368,6 +450,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6b7280',
   },
+  favoritesSections: {
+    gap: 24,
+    paddingBottom: 24,
+  },
+  favoritesSection: {
+    gap: 12,
+  },
+  favoritesSectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1f2937',
+    marginBottom: 4,
+  },
   favoritesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -454,5 +549,56 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
     paddingHorizontal: 40,
+  },
+  createPlaceButton: {
+    marginTop: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 22,
+    paddingVertical: 14,
+    borderRadius: 14,
+  },
+  createPlaceButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: 'white',
+  },
+  createPlaceButtonInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    backgroundColor: '#eff6ff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    marginBottom: 8,
+  },
+  createPlaceButtonInlineText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1d4ed8',
+  },
+  catalogModalWrap: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+  },
+  catalogModalClose: {
+    position: 'absolute',
+    top: 52,
+    right: 16,
+    zIndex: 100,
+    padding: 8,
+    backgroundColor: 'white',
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 4,
   },
 });

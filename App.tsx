@@ -23,17 +23,17 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <AuthProvider>
-        <UserProvider>
+        <FavoritesProvider>
           <RouteProvider>
             <ScheduleProvider>
-              <FavoritesProvider>
+              <UserProvider>
                 <NavigationContainer>
                   <AppContent />
                 </NavigationContainer>
-              </FavoritesProvider>
+              </UserProvider>
             </ScheduleProvider>
           </RouteProvider>
-        </UserProvider>
+        </FavoritesProvider>
       </AuthProvider>
     </GestureHandlerRootView>
   );

@@ -1,5 +1,4 @@
 export type RootStackParamList = {
-  Auth: undefined;
   Main: undefined;
 };
 
@@ -10,7 +9,7 @@ export type AuthStackParamList = {
 
 export type MainTabParamList = {
   Home: undefined;
-  Search: undefined;
+  Search: { allowFullSearch?: boolean } | undefined;
   Planner: undefined;
   Routes: undefined;
   Profile: undefined;

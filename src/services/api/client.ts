@@ -1,115 +1,116 @@
-/**
- * API Client для работы с бэкендом
- * Пока использует моковые данные, но структура готова для интеграции с реальным API
- */
-
-// В этом проекте реальный бэкенд используется через chess.electroscope.ru.
-// Для токена и auth/endpoints храним и ходим относительно /api.
 const API_BASE_URL =
 	process.env.EXPO_PUBLIC_API_URL || "https://chess.electroscope.ru/api";
 
 export interface ApiResponse<T> {
-  data: T;
-  message?: string;
-  error?: string;
+	data: T;
+	message?: string;
+	error?: string;
 }
 
 export interface ApiError {
-  message: string;
-  code?: string;
-  status?: number;
+	message: string;
+	code?: string;
+	status?: number;
+}
+
+/** Мок для офлайн-методов в favoritesApi, placesApi и т.д. */
+export async function mockRequest<T>(data: T): Promise<ApiResponse<T>> {
+	return { data };
 }
 
 class ApiClient {
-  private baseURL: string;
-  private token: string | null = null;
+	private baseURL: string;
+	private token: string | null = null;
 
-  constructor(baseURL: string = API_BASE_URL) {
-    this.baseURL = baseURL;
-  }
+	constructor(baseURL: string = API_BASE_URL) {
+		this.baseURL = baseURL;
+	}
 
-  setToken(token: string | null) {
-    this.token = token;
-  }
+	setToken(token: string | null) {
+		this.token = token;
+	}
 
-  private async request<T>(
-    endpoint: string,
-    options: RequestInit = {}
-  ): Promise<ApiResponse<T>> {
-    const url = `${this.baseURL}${endpoint}`;
-    
-    const headers: HeadersInit = {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    };
+	private async request<T>(
+		endpoint: string,
+		options: RequestInit = {},
+	): Promise<ApiResponse<T>> {
+		const url = `${this.baseURL}${endpoint}`;
 
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`;
-    }
+		const headers = new Headers({
+			"Content-Type": "application/json",
+		});
+		const optHeaders = options.headers;
+		if (optHeaders instanceof Headers) {
+			optHeaders.forEach((value, key) => headers.set(key, value));
+		} else if (optHeaders && typeof optHeaders === "object") {
+			Object.entries(optHeaders as Record<string, string>).forEach(
+				([k, v]) => {
+					if (v != null) headers.set(k, String(v));
+				},
+			);
+		}
+		if (this.token) {
+			headers.set("Authorization", `Bearer ${this.token}`);
+		}
 
-    try {
-      const response = await fetch(url, {
-        ...options,
-        headers,
-      });
+		try {
+			const response = await fetch(url, {
+				...options,
+				headers,
+			});
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
-        throw {
-          message: errorData.message || 'Request failed',
-          code: errorData.code,
-          status: response.status,
-        } as ApiError;
-      }
+			if (!response.ok) {
+				const errorData = await response
+					.json()
+					.catch(() => ({ message: "Unknown error" }));
+				throw {
+					message: errorData.message || "Request failed",
+					code: errorData.code,
+					status: response.status,
+				} as ApiError;
+			}
 
-      const data = await response.json();
-      return { data };
-    } catch (error) {
-      if (error && typeof error === 'object' && 'status' in error) {
-        throw error;
-      }
-      throw {
-        message: error instanceof Error ? error.message : 'Network error',
-        code: 'NETWORK_ERROR',
-      } as ApiError;
-    }
-  }
+			const data = await response.json();
+			return { data };
+		} catch (error) {
+			if (error && typeof error === "object" && "status" in error) {
+				throw error;
+			}
+			throw {
+				message: error instanceof Error ? error.message : "Network error",
+				code: "NETWORK_ERROR",
+			} as ApiError;
+		}
+	}
 
-  async get<T>(endpoint: string, params?: Record<string, any>): Promise<ApiResponse<T>> {
-    const queryString = params
-      ? '?' + new URLSearchParams(params).toString()
-      : '';
-    return this.request<T>(endpoint + queryString, { method: 'GET' });
-  }
+	async get<T>(
+		endpoint: string,
+		params?: Record<string, any>,
+	): Promise<ApiResponse<T>> {
+		const queryString = params
+			? "?" + new URLSearchParams(params).toString()
+			: "";
+		return this.request<T>(endpoint + queryString, { method: "GET" });
+	}
 
-  async post<T>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
-    return this.request<T>(endpoint, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  }
+	async post<T>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
+		return this.request<T>(endpoint, {
+			method: "POST",
+			body: JSON.stringify(data),
+		});
+	}
 
-  async put<T>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
-    return this.request<T>(endpoint, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
-  }
+	async put<T>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
+		return this.request<T>(endpoint, {
+			method: "PUT",
+			body: JSON.stringify(data),
+		});
+	}
 
-  async delete<T>(endpoint: string): Promise<ApiResponse<T>> {
-    return this.request<T>(endpoint, { method: 'DELETE' });
-  }
+	async delete<T>(endpoint: string): Promise<ApiResponse<T>> {
+		return this.request<T>(endpoint, { method: "DELETE" });
+	}
 }
 
 // Экспортируем singleton instance
 export const apiClient = new ApiClient();
-
-// Функция для моковых запросов (пока бэкенд не готов)
-export const mockRequest = <T>(data: T, delay: number = 500): Promise<ApiResponse<T>> => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve({ data });
-    }, delay);
-  });
-};
-

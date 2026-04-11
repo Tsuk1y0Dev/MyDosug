@@ -159,6 +159,15 @@ export const RegisterScreen = () => {
                   </>
                 )}
               </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.loginLink}
+                onPress={() => navigation.navigate('Login')}
+              >
+                <Text style={styles.loginLinkText}>
+                  Уже есть аккаунт? <Text style={styles.loginLinkBold}>Войти</Text>
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
         </ScrollView>

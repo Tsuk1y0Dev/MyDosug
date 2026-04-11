@@ -4,6 +4,7 @@ import React, {
 	useContext,
 	ReactNode,
 	useEffect,
+	useCallback,
 } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -19,6 +20,7 @@ type User = {
 type AuthContextType = {
 	user: User | null;
 	isLoading: boolean;
+	updateLocalUser: (updates: Partial<Pick<User, "name" | "email">>) => void;
 	login: (
 		email: string,
 		password: string,
@@ -83,6 +85,18 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 		apiClient.setToken(token);
 		setUser(userData);
 	};
+
+	const updateLocalUser = useCallback(
+		(updates: Partial<Pick<User, "name" | "email">>) => {
+			setUser((prev) => {
+				if (!prev) return prev;
+				const next = { ...prev, ...updates };
+				void AsyncStorage.setItem(STORAGE_USER_KEY, JSON.stringify(next));
+				return next;
+			});
+		},
+		[],
+	);
 
 	const login = async (
 		email: string,
@@ -160,10 +174,12 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
 	const logout = async (): Promise<void> => {
 		try {
+			console.log("Logging out...");
 			await AsyncStorage.removeItem(STORAGE_TOKEN_KEY);
 			await AsyncStorage.removeItem(STORAGE_USER_KEY);
 			apiClient.setToken(null);
 			setUser(null);
+			console.log("Logout done, user is now null");
 		} catch (error) {
 			console.error("Error logging out:", error);
 		} finally {
@@ -172,7 +188,16 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 	};
 
 	return (
-		<AuthContext.Provider value={{ user, isLoading, login, register, logout }}>
+		<AuthContext.Provider
+			value={{
+				user,
+				isLoading,
+				updateLocalUser,
+				login,
+				register,
+				logout,
+			}}
+		>
 			{children}
 		</AuthContext.Provider>
 	);

@@ -1,4 +1,8 @@
 import { SearchCriteria } from "../../types/searchCriteria";
+import {
+	isPlaceholderOsmTitle,
+	filterOsmPlaces,
+} from "../../utils/osmPlaceFilters";
 
 export interface OSMPlace {
 	id: string;
@@ -21,6 +25,8 @@ export interface OSMPlace {
 		publicTransportNearby: boolean;
 	};
 	tags: Record<string, string>;
+	/** Сырое значение opening_hours из OSM */
+	openingHoursRaw?: string;
 }
 
 const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
@@ -28,13 +34,12 @@ const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
 // Throttle + retry, чтобы уменьшить шанс 429 и не показывать ошибки пользователю.
 let lastOverpassRequestAt = 0;
 const MIN_OVERPASS_INTERVAL_MS = 700;
-const MAX_RETRIES = 4;
+const MAX_RETRIES = 10;
 const RETRY_BASE_DELAY_MS = 800;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const isRetryableStatus = (status: number) =>
-	status === 429 || status === 504;
+const isRetryableStatus = (status: number) => status === 429 || status === 504;
 
 type OverpassElement = {
 	id: number;
@@ -249,10 +254,64 @@ const buildOverpassQuery = (
   `;
 };
 
+const AMENITY_LABELS: Record<string, string> = {
+	restaurant: "Ресторан",
+	cafe: "Кафе",
+	fast_food: "Фастфуд",
+	bar: "Бар",
+	pub: "Паб",
+	cinema: "Кинотеатр",
+	theatre: "Театр",
+	museum: "Музей",
+	library: "Библиотека",
+	park: "Парк",
+	gym: "Спортзал",
+	pharmacy: "Аптека",
+	hospital: "Больница",
+	place_of_worship: "Храм / культовое место",
+};
+
+function buildOsmDescription(tags: Record<string, string>): string {
+	const bits: string[] = [];
+	const amenity = tags.amenity;
+	const shop = tags.shop;
+	const leisure = tags.leisure;
+	const tourism = tags.tourism;
+
+	if (amenity) {
+		bits.push(
+			AMENITY_LABELS[amenity] ? `${AMENITY_LABELS[amenity]} (${amenity})` : `Тип: ${amenity}`,
+		);
+	}
+	if (shop) bits.push(`Магазин: ${shop}`);
+	if (leisure) bits.push(`Досуг: ${leisure}`);
+	if (tourism) bits.push(tourism);
+	if (tags.cuisine) bits.push(`Кухня: ${tags.cuisine}`);
+	/* Часы, телефон, сайт и произвольное description — в карточке места отдельно, не дублируем в строке описания */
+
+	if (bits.length) return bits.join(" · ");
+	return "Данные из сообщества OpenStreetMap (без описания в базе).";
+}
+
 const mapElementToPlace = (el: OverpassElement): OSMPlace | null => {
 	const tags = el.tags ?? {};
-	const title =
-		tags.name || tags["name:ru"] || tags["operator"] || tags.brand || "Место";
+	const fromAmenity =
+		tags.amenity && AMENITY_LABELS[tags.amenity]
+			? AMENITY_LABELS[tags.amenity]
+			: tags.amenity
+				? `${tags.amenity}`
+				: undefined;
+	const titleRaw =
+		tags.name ||
+		tags["name:ru"] ||
+		tags.operator ||
+		tags.brand ||
+		(tags.shop ? `Магазин (${tags.shop})` : undefined) ||
+		fromAmenity ||
+		"Место";
+
+	const title = titleRaw.trim();
+	if (isPlaceholderOsmTitle(title)) return null;
 
 	const address =
 		tags["addr:full"] ||
@@ -294,10 +353,12 @@ const mapElementToPlace = (el: OverpassElement): OSMPlace | null => {
 			? Math.max(3.5, Math.min(5, parsedRating))
 			: 3.8 + Math.random() * 0.7;
 
+	const openingRaw = tags.opening_hours?.trim();
+
 	return {
 		id: `${el.type ?? "node"}-${el.id}`,
 		title,
-		description: tags.description || "Место из OpenStreetMap",
+		description: buildOsmDescription(tags),
 		address,
 		categoryId,
 		subCategoryId,
@@ -306,6 +367,7 @@ const mapElementToPlace = (el: OverpassElement): OSMPlace | null => {
 			lng: lon,
 		},
 		rating,
+		openingHoursRaw: openingRaw || undefined,
 		accessibility: {
 			wheelchairAccessible,
 			elevatorOrRamp,
@@ -351,13 +413,17 @@ export const OSMService = {
 						? json.elements
 						: [];
 
-					return elements.map(mapElementToPlace).filter(Boolean) as OSMPlace[];
+					const raw = elements
+						.map(mapElementToPlace)
+						.filter(Boolean) as OSMPlace[];
+					return filterOsmPlaces(raw);
 				}
 
 				// Для 429/504 — тихая повторная попытка с экспоненциальной задержкой.
 				if (isRetryableStatus(response.status) && attempt < MAX_RETRIES) {
 					const delay =
-						RETRY_BASE_DELAY_MS * Math.pow(2, attempt) + Math.round(Math.random() * 250);
+						RETRY_BASE_DELAY_MS * Math.pow(3, attempt) +
+						Math.round(Math.random() * 250);
 					await sleep(delay);
 					continue;
 				}
@@ -370,7 +436,7 @@ export const OSMService = {
 
 				// Если fetch упал, но это похоже на сеть — пробуем ещё раз.
 				if (attempt < MAX_RETRIES) {
-					const delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
+					const delay = RETRY_BASE_DELAY_MS * Math.pow(3, attempt);
 					await sleep(delay);
 					continue;
 				}

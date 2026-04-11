@@ -6,6 +6,7 @@ import React, {
   useState,
   ReactNode,
   useEffect,
+  useRef,
 } from 'react';
 import {
   DayRouteState,
@@ -15,16 +16,26 @@ import {
   TravelMode,
 } from '../../types/route';
 import { YandexRoutingService } from '../yandex/YandexRoutingService';
+import { localRouteDayKey } from '../../utils/timingUtils';
 
 interface RouteContextType extends DayRouteState {
-  setOrigin: (origin: RouteOrigin) => void;
+  setOrigin: (origin: RouteOrigin | null) => void;
   setEvents: (events: RouteEvent[]) => void;
   insertEvent: (index: number, event: RouteEvent) => void;
+  /** Атомарно вставить точку и при необходимости задать старт маршрута (первое место). */
+  insertEventWithOrigin: (
+    index: number,
+    event: RouteEvent,
+    originUpdate: 'unchanged' | RouteOrigin | null
+  ) => void;
+  updateEvent: (eventId: string, updates: Partial<RouteEvent>) => void;
   removeEvent: (eventId: string) => void;
   updateTravelMode: (index: number, mode: TravelMode) => void;
   clearRoute: () => void;
   pendingInsertIndex: number | null;
   setPendingInsertIndex: (index: number | null) => void;
+  /** Смена дня плана на главной: отдельный маршрут на каждый календарный день (сессия). */
+  syncPlanCalendarDay: (date: Date) => void;
 }
 
 const RouteContext = createContext<RouteContextType | undefined>(undefined);
@@ -60,7 +71,7 @@ const mockRouteSegment = (
   };
 };
 
-const START_MINUTES = 9 * 60;
+const START_MINUTES = 0;
 
 const recomputeArrivalTimes = (
   origin: RouteOrigin | null,
@@ -112,6 +123,50 @@ const recomputeArrivalTimes = (
   return updated;
 };
 
+function routeEventsDataEqual(a: RouteEvent[], b: RouteEvent[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    const x = a[i];
+    const y = b[i];
+    if (
+      x.id !== y.id ||
+      x.arrivalTime !== y.arrivalTime ||
+      x.duration !== y.duration ||
+      (x.customTitle ?? '') !== (y.customTitle ?? '') ||
+      x.coords.lat !== y.coords.lat ||
+      x.coords.lng !== y.coords.lng ||
+      x.travelModeToNext !== y.travelModeToNext ||
+      Boolean(x.lockTimes) !== Boolean(y.lockTimes) ||
+      (x.placeId ?? '') !== (y.placeId ?? '') ||
+      (x.description ?? '') !== (y.description ?? '') ||
+      (x.address ?? '') !== (y.address ?? '') ||
+      (x.openingHours ?? '') !== (y.openingHours ?? '') ||
+      (x.budgetNote ?? '') !== (y.budgetNote ?? '')
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function segmentsDataEqual(a: RouteSegment[], b: RouteSegment[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    const x = a[i];
+    const y = b[i];
+    if (
+      x.fromEventId !== y.fromEventId ||
+      x.toEventId !== y.toEventId ||
+      x.distanceMeters !== y.distanceMeters ||
+      x.durationMinutes !== y.durationMinutes ||
+      x.travelMode !== y.travelMode
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export const RouteProvider = ({ children }: RouteProviderProps) => {
   const [state, setState] = useState<DayRouteState>({
     origin: null,
@@ -121,6 +176,36 @@ export const RouteProvider = ({ children }: RouteProviderProps) => {
   });
   const [pendingInsertIndex, setPendingInsertIndex] = useState<number | null>(null);
 
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  const routesByDayRef = useRef<
+    Record<string, { origin: RouteOrigin | null; events: RouteEvent[] }>
+  >({});
+  const activeDayKeyRef = useRef(localRouteDayKey(new Date()));
+
+  const syncPlanCalendarDay = useCallback((date: Date) => {
+    const newKey = localRouteDayKey(date);
+    if (newKey === activeDayKeyRef.current) {
+      return;
+    }
+    const cur = stateRef.current;
+    routesByDayRef.current[activeDayKeyRef.current] = {
+      origin: cur.origin,
+      events: cur.events,
+    };
+    activeDayKeyRef.current = newKey;
+    const saved = routesByDayRef.current[newKey];
+    setState(prev => ({
+      ...prev,
+      origin: saved !== undefined ? saved.origin : null,
+      events: saved !== undefined ? saved.events : [],
+      segments: [],
+      cachedPolyline: null,
+    }));
+    setPendingInsertIndex(null);
+  }, []);
+
   const recomputeCachedPolyline = useCallback((segments: RouteSegment[]) => {
     if (segments.length === 0) {
       return null;
@@ -128,7 +213,7 @@ export const RouteProvider = ({ children }: RouteProviderProps) => {
     return segments.map(s => s.geometry.polyline).join('|');
   }, []);
 
-  const setOrigin = useCallback((origin: RouteOrigin) => {
+  const setOrigin = useCallback((origin: RouteOrigin | null) => {
     setState(prev => ({
       ...prev,
       origin,
@@ -156,6 +241,43 @@ export const RouteProvider = ({ children }: RouteProviderProps) => {
     },
     []
   );
+
+  const insertEventWithOrigin = useCallback(
+    (
+      index: number,
+      event: RouteEvent,
+      originUpdate: 'unchanged' | RouteOrigin | null
+    ) => {
+      setState(prev => {
+        const events = [...prev.events];
+        const safeIndex = Math.max(0, Math.min(index, events.length));
+        events.splice(safeIndex, 0, event);
+        const origin =
+          originUpdate === 'unchanged' ? prev.origin : originUpdate;
+        return {
+          ...prev,
+          events,
+          origin,
+        };
+      });
+    },
+    []
+  );
+
+  const updateEvent = useCallback((eventId: string, updates: Partial<RouteEvent>) => {
+    setState(prev => ({
+      ...prev,
+      events: prev.events.map(e =>
+        e.id === eventId
+          ? {
+              ...e,
+              ...updates,
+              lockTimes: updates.lockTimes !== undefined ? updates.lockTimes : true,
+            }
+          : e
+      ),
+    }));
+  }, []);
 
   const removeEvent = useCallback((eventId: string) => {
     setState(prev => ({
@@ -191,6 +313,10 @@ export const RouteProvider = ({ children }: RouteProviderProps) => {
       segments: [],
       cachedPolyline: null,
     });
+    routesByDayRef.current[activeDayKeyRef.current] = {
+      origin: null,
+      events: [],
+    };
     setPendingInsertIndex(null);
   }, []);
 
@@ -198,19 +324,40 @@ export const RouteProvider = ({ children }: RouteProviderProps) => {
     const updateRoute = async () => {
       const origin = state.origin;
       const events = state.events;
-      if (!origin || events.length === 0) {
-        setState(prev => ({
-          ...prev,
-          segments: [],
-          cachedPolyline: null,
-        }));
+      if (events.length === 0) {
+        setState(prev => {
+          if (prev.segments.length === 0 && prev.cachedPolyline == null) {
+            return prev;
+          }
+          return {
+            ...prev,
+            segments: [],
+            cachedPolyline: null,
+          };
+        });
         return;
       }
 
-      const points: { lat: number; lng: number }[] = [
-        origin.coords,
-        ...events.map(e => e.coords),
-      ];
+      const useOriginLeg =
+        origin != null && origin.id !== 'from_first_stop';
+
+      const points: { lat: number; lng: number }[] = useOriginLeg
+        ? [origin.coords, ...events.map(e => e.coords)]
+        : events.map(e => e.coords);
+
+      if (points.length < 2) {
+        setState(prev => {
+          if (prev.segments.length === 0 && prev.cachedPolyline == null) {
+            return prev;
+          }
+          return {
+            ...prev,
+            segments: [],
+            cachedPolyline: null,
+          };
+        });
+        return;
+      }
 
       const routing = await YandexRoutingService.getRoute(points, 'driving');
 
@@ -219,18 +366,20 @@ export const RouteProvider = ({ children }: RouteProviderProps) => {
       if (routing && routing.legs.length >= points.length - 1) {
         let legIndex = 0;
 
-        const firstLeg = routing.legs[legIndex++];
-        segments.push({
-          fromEventId: 'origin',
-          toEventId: events[0].id,
-          distanceMeters: firstLeg.distanceMeters,
-          durationMinutes: Math.max(
-            1,
-            Math.round(firstLeg.durationSeconds / 60)
-          ),
-          travelMode: 'driving',
-          geometry: { polyline: '' },
-        });
+        if (useOriginLeg) {
+          const firstLeg = routing.legs[legIndex++];
+          segments.push({
+            fromEventId: 'origin',
+            toEventId: events[0].id,
+            distanceMeters: firstLeg.distanceMeters,
+            durationMinutes: Math.max(
+              1,
+              Math.round(firstLeg.durationSeconds / 60)
+            ),
+            travelMode: 'driving',
+            geometry: { polyline: '' },
+          });
+        }
 
         for (let i = 1; i < events.length; i += 1) {
           const from = events[i - 1];
@@ -252,7 +401,7 @@ export const RouteProvider = ({ children }: RouteProviderProps) => {
           });
         }
       } else {
-        if (origin && events.length) {
+        if (useOriginLeg && origin && events.length) {
           const first = events[0];
           const baseFirst = mockRouteSegment(origin.coords, first.coords, 'driving');
           segments.push({
@@ -273,15 +422,42 @@ export const RouteProvider = ({ children }: RouteProviderProps) => {
         }
       }
 
-      const updatedEvents = recomputeArrivalTimes(origin, events, segments);
+      const updatedEvents = recomputeArrivalTimes(
+        useOriginLeg ? origin : null,
+        events,
+        segments
+      );
+      const merged = updatedEvents.map(ev => {
+        const orig = events.find(e => e.id === ev.id);
+        if (orig?.lockTimes) {
+          return {
+            ...ev,
+            arrivalTime: orig.arrivalTime,
+            duration: orig.duration,
+            customTitle: orig.customTitle ?? ev.customTitle,
+            lockTimes: true,
+          };
+        }
+        return ev;
+      });
+
       const cachedPolyline = recomputeCachedPolyline(segments);
 
-      setState(prev => ({
-        ...prev,
-        events: updatedEvents,
-        segments,
-        cachedPolyline,
-      }));
+      setState(prev => {
+        if (
+          routeEventsDataEqual(merged, prev.events) &&
+          segmentsDataEqual(segments, prev.segments) &&
+          prev.cachedPolyline === cachedPolyline
+        ) {
+          return prev;
+        }
+        return {
+          ...prev,
+          events: merged,
+          segments,
+          cachedPolyline,
+        };
+      });
     };
 
     updateRoute();
@@ -293,21 +469,28 @@ export const RouteProvider = ({ children }: RouteProviderProps) => {
       setOrigin,
       setEvents,
       insertEvent,
+      insertEventWithOrigin,
+      updateEvent,
       removeEvent,
       updateTravelMode,
       clearRoute,
       pendingInsertIndex,
       setPendingInsertIndex,
+      syncPlanCalendarDay,
     }),
     [
       state,
       setOrigin,
       setEvents,
       insertEvent,
+      insertEventWithOrigin,
+      updateEvent,
       removeEvent,
       updateTravelMode,
       clearRoute,
       pendingInsertIndex,
+      setPendingInsertIndex,
+      syncPlanCalendarDay,
     ]
   );
 

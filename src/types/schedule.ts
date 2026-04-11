@@ -4,6 +4,8 @@ export interface Activity {
   startTime: string;
   endTime: string;
   location?: string;
+  /** Координаты для кастомных активностей (карта на главной) */
+  coordinates?: { lat: number; lng: number };
   type: 'meal' | 'custom' | 'activity';
   color?: string;
   duration?: number;

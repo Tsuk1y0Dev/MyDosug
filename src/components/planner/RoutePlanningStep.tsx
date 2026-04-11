@@ -314,7 +314,7 @@ const savePlanConfirmed = () => {
             onPress={() => setCurrentStep(3)}
           >
             <Feather name="plus" size={20} color="#3b82f6" />
-            <Text style={styles.addMoreText}>
+            <Text style={styles.addMoreButtonText}>
               {currentPlan.activities.length > 0 ? 'Добавить ещё' : 'Добавить места'}
             </Text>
           </TouchableOpacity>
@@ -549,11 +549,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#f1f5f9',
     backgroundColor: 'white',
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 20,
   },
   actionButton: {
     flex: 1,
