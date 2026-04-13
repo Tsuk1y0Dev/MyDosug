@@ -11,9 +11,7 @@ export interface RouteEvent {
 	arrivalTime: string; // HH:mm
 	duration: number; // minutes
 	travelModeToNext: TravelMode;
-	/** Не пересчитывать время прибытия автоматически по маршруту */
 	lockTimes?: boolean;
-	/** Доп. сведения для карточки / деталей (OSM и т.п.) */
 	description?: string;
 	address?: string;
 	openingHours?: string;

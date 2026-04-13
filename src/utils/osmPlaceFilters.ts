@@ -1,13 +1,14 @@
 import type { OSMPlace } from "../services/osm/OSMService";
 import type { GoalType, SearchCriteria } from "../types/searchCriteria";
 
-/** Заглушечные названия без смысла — не показываем в результатах */
 export function isPlaceholderOsmTitle(title: string): boolean {
 	const t = title.trim().toLowerCase();
 	return t === "место" || t === "place";
 }
 
-export function filterOsmPlaces<T extends Pick<OSMPlace, "title">>(places: T[]): T[] {
+export function filterOsmPlaces<T extends Pick<OSMPlace, "title">>(
+	places: T[],
+): T[] {
 	return places.filter((p) => !isPlaceholderOsmTitle(p.title));
 }
 
@@ -50,7 +51,10 @@ function matchesGoal(place: OSMPlace, goal: GoalType): boolean {
 				tourism === "attraction"
 			);
 		case "fun":
-			return ["cinema", "nightclub", "bar", "theatre"].includes(a) || leisure.includes("stadium");
+			return (
+				["cinema", "nightclub", "bar", "theatre"].includes(a) ||
+				leisure.includes("stadium")
+			);
 		case "romantic":
 			return (
 				a === "restaurant" ||
@@ -75,11 +79,6 @@ function matchesGoal(place: OSMPlace, goal: GoalType): boolean {
 	}
 }
 
-/**
- * Дополнительные критерии планировщика (цель, outdoor / дети / вегетарианское).
- * Бюджет в OSM почти не размечен — места не отсекаем, в UI показываем подпись.
- * Доступность обрабатывается отдельно в шаге результатов.
- */
 export function matchesExtendedSearchCriteria(
 	place: OSMPlace,
 	criteria: SearchCriteria,

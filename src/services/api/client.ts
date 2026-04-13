@@ -13,7 +13,6 @@ export interface ApiError {
 	status?: number;
 }
 
-/** Мок для офлайн-методов в favoritesApi, placesApi и т.д. */
 export async function mockRequest<T>(data: T): Promise<ApiResponse<T>> {
 	return { data };
 }
@@ -43,11 +42,9 @@ class ApiClient {
 		if (optHeaders instanceof Headers) {
 			optHeaders.forEach((value, key) => headers.set(key, value));
 		} else if (optHeaders && typeof optHeaders === "object") {
-			Object.entries(optHeaders as Record<string, string>).forEach(
-				([k, v]) => {
-					if (v != null) headers.set(k, String(v));
-				},
-			);
+			Object.entries(optHeaders as Record<string, string>).forEach(([k, v]) => {
+				if (v != null) headers.set(k, String(v));
+			});
 		}
 		if (this.token) {
 			headers.set("Authorization", `Bearer ${this.token}`);
@@ -112,5 +109,4 @@ class ApiClient {
 	}
 }
 
-// Экспортируем singleton instance
 export const apiClient = new ApiClient();

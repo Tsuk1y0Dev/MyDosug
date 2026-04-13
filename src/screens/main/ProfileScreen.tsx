@@ -74,7 +74,6 @@ export const ProfileScreen = () => {
 		}
 	};
 
-	// Если пользователь не залогинен, показываем пустой экран (редирект произойдет)
 	if (!user) {
 		return (
 			<SafeAreaView style={styles.container}>

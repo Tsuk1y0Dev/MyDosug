@@ -17,6 +17,7 @@ import { useSchedule } from "../../services/schedule/ScheduleContext";
 import { useRoute as useDayRoute } from "../../services/planner/RouteContext";
 import { useDeviceCoords } from "../../hooks/useDeviceCoords";
 import { useFavorites } from "../../services/favorites/FavoritesContext";
+import { useUser } from "../../context/UserContext";
 import { Activity } from "../../types/schedule";
 import { Feather } from "@expo/vector-icons";
 import { calculateEndTime } from "../../utils/timingUtils";
@@ -58,8 +59,9 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({
 		dismissCatalogStandalone,
 	} = usePlanner();
 	const { addActivity } = useSchedule();
-	const { insertEventWithOrigin, events } = useDayRoute();
+	const { insertEventWithOrigin, events, pendingInsertIndex } = useDayRoute();
 	const { addUserCreatedPlace } = useFavorites();
+	const { addSavedLocation } = useUser();
 	const deviceCoords = useDeviceCoords();
 
 	const [customActivity, setCustomActivity] = useState({
@@ -92,9 +94,7 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({
 					lng: pos.coords.longitude,
 				};
 				applyCoords(c);
-			} catch {
-				// оставляем DEFAULT_COORDS
-			}
+			} catch {}
 		})();
 		return () => {
 			cancelled = true;
@@ -107,7 +107,10 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({
 			applyCoords(parsed);
 		} else {
 			setCoordText(formatCoords(coordinates));
-			Alert.alert("Координаты", "Введите две числа: широта и долгота через запятую.");
+			Alert.alert(
+				"Координаты",
+				"Введите две числа: широта и долгота через запятую.",
+			);
 		}
 	};
 
@@ -131,7 +134,11 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({
 		}
 
 		const coords = parseCoordsText(coordText) ?? coordinates;
-		if (!coords || !Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) {
+		if (
+			!coords ||
+			!Number.isFinite(coords.lat) ||
+			!Number.isFinite(coords.lng)
+		) {
 			Alert.alert("Ошибка", "Укажите корректные координаты (широта, долгота)");
 			return;
 		}
@@ -142,10 +149,7 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({
 			id: activityId,
 			title: customActivity.title.trim(),
 			startTime: planningRequest.startTime,
-			endTime: calculateEndTime(
-				planningRequest.startTime,
-				durationMinutes,
-			),
+			endTime: calculateEndTime(planningRequest.startTime, durationMinutes),
 			location: formatCoords(coords),
 			coordinates: coords,
 			type: "custom",
@@ -161,6 +165,13 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({
 			customActivity.description.trim(),
 		);
 		addUserCreatedPlace(place);
+		void addSavedLocation({
+			type: "other",
+			name: newActivity.title,
+			icon: "📍",
+			description: customActivity.description.trim() || undefined,
+			coords,
+		});
 
 		if (catalogStandalone) {
 			if (onPlanSaved) onPlanSaved();
@@ -190,9 +201,10 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({
 			else setCurrentStep(1);
 		};
 
+		const insertIdx = pendingInsertIndex ?? events.length;
 		const wasEmpty = events.length === 0;
 		if (!wasEmpty) {
-			insertEventWithOrigin(events.length, routeEvent, "unchanged");
+			insertEventWithOrigin(insertIdx, routeEvent, "unchanged");
 			afterSave();
 			return;
 		}
@@ -205,7 +217,7 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({
 					text: "Нет, только точки плана",
 					style: "cancel",
 					onPress: () => {
-						insertEventWithOrigin(events.length, routeEvent, {
+						insertEventWithOrigin(insertIdx, routeEvent, {
 							id: "from_first_stop",
 							label: newActivity.title,
 							coords,
@@ -217,7 +229,7 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({
 					text: "Да, от меня",
 					onPress: () => {
 						if (deviceCoords) {
-							insertEventWithOrigin(events.length, routeEvent, {
+							insertEventWithOrigin(insertIdx, routeEvent, {
 								id: "default",
 								label: "Вы здесь",
 								coords: deviceCoords,
@@ -231,7 +243,7 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({
 									{
 										text: "Понятно",
 										onPress: () => {
-											insertEventWithOrigin(events.length, routeEvent, {
+											insertEventWithOrigin(insertIdx, routeEvent, {
 												id: "from_first_stop",
 												label: newActivity.title,
 												coords,
@@ -249,7 +261,8 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({
 	};
 
 	const canSave =
-		customActivity.title.trim().length > 0 && parseCoordsText(coordText) != null;
+		customActivity.title.trim().length > 0 &&
+		parseCoordsText(coordText) != null;
 
 	return (
 		<View style={styles.container}>
@@ -257,9 +270,7 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({
 				<TouchableOpacity
 					style={styles.headerBackButton}
 					onPress={() =>
-						catalogStandalone
-							? dismissCatalogStandalone()
-							: setCurrentStep(2)
+						catalogStandalone ? dismissCatalogStandalone() : setCurrentStep(2)
 					}
 				>
 					<Feather name="arrow-left" size={24} color="#374151" />
@@ -324,7 +335,7 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({
 				</View>
 
 				<View style={styles.field}>
-					<Text style={styles.label}>Продолжительность (минуты, шаг 1 мин)</Text>
+					<Text style={styles.label}>Продолжительность</Text>
 					<TextInput
 						style={styles.input}
 						value={durationText}
@@ -338,10 +349,7 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({
 				<View style={styles.timeInfo}>
 					<Text style={styles.timeInfoText}>
 						Время: {planningRequest.startTime} —{" "}
-						{calculateEndTime(
-							planningRequest.startTime,
-							durationMinutes,
-						)}
+						{calculateEndTime(planningRequest.startTime, durationMinutes)}
 					</Text>
 				</View>
 			</ScrollView>
@@ -377,9 +385,7 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({
 							<Text style={styles.mapModalCancel}>Отмена</Text>
 						</TouchableOpacity>
 						<Text style={styles.mapModalTitle}>Выберите точку</Text>
-						<TouchableOpacity
-							onPress={() => setMapModalVisible(false)}
-						>
+						<TouchableOpacity onPress={() => setMapModalVisible(false)}>
 							<Text style={styles.mapModalDone}>Готово</Text>
 						</TouchableOpacity>
 					</View>

@@ -75,7 +75,9 @@ export const ParametersStep = () => {
 	const [savedPickerOpen, setSavedPickerOpen] = useState(false);
 
 	const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
-	const [selectedSubCategoryIds, setSelectedSubCategoryIds] = useState<string[]>([]);
+	const [selectedSubCategoryIds, setSelectedSubCategoryIds] = useState<
+		string[]
+	>([]);
 	const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(
 		null,
 	);
@@ -123,7 +125,9 @@ export const ParametersStep = () => {
 		const criteria: SearchCriteria = {
 			startCoords,
 			categoryIds: selectedCategoryIds.length ? selectedCategoryIds : undefined,
-			subCategoryIds: selectedSubCategoryIds.length ? selectedSubCategoryIds : undefined,
+			subCategoryIds: selectedSubCategoryIds.length
+				? selectedSubCategoryIds
+				: undefined,
 			budgetMin: 0,
 			budgetMax,
 			goal: goal ?? undefined,
@@ -141,11 +145,12 @@ export const ParametersStep = () => {
 	};
 
 	const finishInsert = useCallback(
-		(
-			ev: RouteEvent,
-			originUpdate: "unchanged" | RouteOrigin | null,
-		) => {
-			insertEventWithOrigin(pendingInsertIndex ?? events.length, ev, originUpdate);
+		(ev: RouteEvent, originUpdate: "unchanged" | RouteOrigin | null) => {
+			insertEventWithOrigin(
+				pendingInsertIndex ?? events.length,
+				ev,
+				originUpdate,
+			);
 			setFavModalPlace(null);
 		},
 		[insertEventWithOrigin, events.length, pendingInsertIndex],
@@ -166,8 +171,7 @@ export const ParametersStep = () => {
 				lockTimes: true,
 				description: place.description,
 				address: place.address,
-				openingHours:
-					place.workingHours?.trim() || "Не нашли время работы",
+				openingHours: place.workingHours?.trim() || "Не нашли время работы",
 				budgetNote: place.averageBill
 					? `~${place.averageBill} ₽`
 					: "Не нашли информацию о бюджете",
@@ -261,12 +265,13 @@ export const ParametersStep = () => {
 					</View>
 				)}
 
-				{/* Категории — список с выпадающими подкатегориями */}
 				<View style={styles.section}>
 					<Text style={styles.sectionTitle}>Категория</Text>
 					{activityCategories.map((cat) => {
 						const subIds = cat.subcategories.map((s) => s.id);
-						const isAllInCategorySelected = selectedCategoryIds.includes(cat.id);
+						const isAllInCategorySelected = selectedCategoryIds.includes(
+							cat.id,
+						);
 						const selectedCountFromSubs = subIds.filter((id) =>
 							selectedSubCategoryIds.includes(id),
 						).length;
@@ -305,7 +310,6 @@ export const ParametersStep = () => {
 
 								{isExpanded && (
 									<View style={styles.accordionBody}>
-										{/* Выбор всей категории */}
 										<TouchableOpacity
 											style={[
 												styles.subItem,
@@ -317,7 +321,8 @@ export const ParametersStep = () => {
 												);
 												setSelectedCategoryIds((prev) => {
 													const already = prev.includes(cat.id);
-													if (already) return prev.filter((id) => id !== cat.id);
+													if (already)
+														return prev.filter((id) => id !== cat.id);
 													return [...prev, cat.id];
 												});
 											}}
@@ -328,9 +333,10 @@ export const ParametersStep = () => {
 											)}
 										</TouchableOpacity>
 
-										{/* Выбор подкатегорий */}
 										{cat.subcategories.map((sub) => {
-											const isSelected = selectedSubCategoryIds.includes(sub.id);
+											const isSelected = selectedSubCategoryIds.includes(
+												sub.id,
+											);
 
 											return (
 												<TouchableOpacity
@@ -340,7 +346,6 @@ export const ParametersStep = () => {
 														isSelected && styles.subItemSelected,
 													]}
 													onPress={() => {
-														// Если выбрали конкретную подкатегорию — “вся категория” больше не активна.
 														setSelectedCategoryIds((prev) =>
 															prev.filter((id) => id !== cat.id),
 														);
@@ -352,7 +357,9 @@ export const ParametersStep = () => {
 														});
 													}}
 												>
-													<Text style={styles.subItemIcon}>{sub.icon || "•"}</Text>
+													<Text style={styles.subItemIcon}>
+														{sub.icon || "•"}
+													</Text>
 													<Text
 														style={styles.subItemText}
 														numberOfLines={1}
@@ -373,7 +380,6 @@ export const ParametersStep = () => {
 					})}
 				</View>
 
-				{/* Фильтры — чипы */}
 				<View style={styles.section}>
 					<Text style={styles.sectionTitle}>Удобства и доступность</Text>
 					<View style={styles.chipsWrap}>
@@ -398,7 +404,6 @@ export const ParametersStep = () => {
 					</View>
 				</View>
 
-				{/* Бюджет — слайдер */}
 				<View style={styles.section}>
 					<Text style={styles.sectionTitle}>Бюджет до</Text>
 					<Text style={styles.budgetValue}>{budgetMax} ₽</Text>
@@ -443,7 +448,6 @@ export const ParametersStep = () => {
 					</View>
 				</View>
 
-				{/* Цель / настроение */}
 				<View style={styles.section}>
 					<Text style={styles.sectionTitle}>Цель</Text>
 					<View style={styles.goalWrap}>
@@ -474,7 +478,6 @@ export const ParametersStep = () => {
 					</View>
 				</View>
 
-				{/* Своя активность */}
 				<TouchableOpacity
 					style={styles.customButton}
 					onPress={handleCustomActivity}
@@ -498,7 +501,6 @@ export const ParametersStep = () => {
 					</Text>
 				</TouchableOpacity>
 
-				{/* Показать результаты */}
 				<TouchableOpacity
 					style={styles.primaryButton}
 					onPress={handleShowResults}
@@ -734,7 +736,7 @@ const styles = StyleSheet.create({
 	categoryCount: {
 		fontSize: 14,
 		fontWeight: "600",
-		color: "#6b7280", // тёмно-серый счетчик
+		color: "#6b7280",
 		marginRight: 4,
 	},
 	subItem: {

@@ -30,39 +30,57 @@ export const CategoryPickerModal: React.FC<CategoryPickerModalProps> = ({
 	const selectedSubCategoryIdSet = new Set(selectedSubCategoryIds);
 
 	const toggleCategory = (catId: string, subIds: string[]) => {
-		const alreadyAllSelected = subIds.length > 0 && subIds.every((id) => selectedSubCategoryIdSet.has(id));
+		const alreadyAllSelected =
+			subIds.length > 0 &&
+			subIds.every((id) => selectedSubCategoryIdSet.has(id));
 
 		if (subIds.length === 0) {
 			const nextCategoryIds = selectedCategoryIdSet.has(catId)
 				? selectedCategoryIds.filter((id) => id !== catId)
 				: [...selectedCategoryIds, catId];
-			onSelect({ categoryIds: nextCategoryIds, subCategoryIds: selectedSubCategoryIds });
+			onSelect({
+				categoryIds: nextCategoryIds,
+				subCategoryIds: selectedSubCategoryIds,
+			});
 			return;
 		}
 
 		if (alreadyAllSelected) {
 			const removedSubSet = new Set(subIds);
-			const nextSubCategoryIds = selectedSubCategoryIds.filter((id) => !removedSubSet.has(id));
+			const nextSubCategoryIds = selectedSubCategoryIds.filter(
+				(id) => !removedSubSet.has(id),
+			);
 			const nextCategoryIds = selectedCategoryIds.filter((id) => id !== catId);
-			onSelect({ categoryIds: nextCategoryIds, subCategoryIds: nextSubCategoryIds });
+			onSelect({
+				categoryIds: nextCategoryIds,
+				subCategoryIds: nextSubCategoryIds,
+			});
 		} else {
 			const toAdd = subIds.filter((id) => !selectedSubCategoryIdSet.has(id));
 			const nextSubCategoryIds = [...selectedSubCategoryIds, ...toAdd];
 			const nextCategoryIds = selectedCategoryIdSet.has(catId)
 				? selectedCategoryIds
 				: [...selectedCategoryIds, catId];
-			onSelect({ categoryIds: nextCategoryIds, subCategoryIds: nextSubCategoryIds });
+			onSelect({
+				categoryIds: nextCategoryIds,
+				subCategoryIds: nextSubCategoryIds,
+			});
 		}
 	};
 
-	const toggleSubcategory = (catId: string, allSubIds: string[], subId: string) => {
+	const toggleSubcategory = (
+		catId: string,
+		allSubIds: string[],
+		subId: string,
+	) => {
 		const isSelected = selectedSubCategoryIdSet.has(subId);
 		const nextSubCategoryIds = isSelected
 			? selectedSubCategoryIds.filter((id) => id !== subId)
 			: [...selectedSubCategoryIds, subId];
 
 		const nextSubSet = new Set(nextSubCategoryIds);
-		const shouldSelectCategory = allSubIds.length > 0 && allSubIds.every((id) => nextSubSet.has(id));
+		const shouldSelectCategory =
+			allSubIds.length > 0 && allSubIds.every((id) => nextSubSet.has(id));
 		const nextCategoryIds = (() => {
 			if (shouldSelectCategory) {
 				return selectedCategoryIdSet.has(catId)
@@ -72,7 +90,10 @@ export const CategoryPickerModal: React.FC<CategoryPickerModalProps> = ({
 			return selectedCategoryIds.filter((id) => id !== catId);
 		})();
 
-		onSelect({ categoryIds: nextCategoryIds, subCategoryIds: nextSubCategoryIds });
+		onSelect({
+			categoryIds: nextCategoryIds,
+			subCategoryIds: nextSubCategoryIds,
+		});
 	};
 
 	return (
@@ -98,7 +119,10 @@ export const CategoryPickerModal: React.FC<CategoryPickerModalProps> = ({
 							<Feather name="x" size={24} color="#374151" />
 						</TouchableOpacity>
 					</View>
-					<ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+					<ScrollView
+						style={styles.scroll}
+						showsVerticalScrollIndicator={false}
+					>
 						<TouchableOpacity
 							style={[
 								styles.row,
@@ -118,7 +142,8 @@ export const CategoryPickerModal: React.FC<CategoryPickerModalProps> = ({
 							const selectedCount = subIds.filter((id) =>
 								selectedSubCategoryIdSet.has(id),
 							).length;
-							const allSelected = subIds.length > 0 && selectedCount === subIds.length;
+							const allSelected =
+								subIds.length > 0 && selectedCount === subIds.length;
 							const partiallySelected = selectedCount > 0 && !allSelected;
 
 							return (
@@ -143,7 +168,8 @@ export const CategoryPickerModal: React.FC<CategoryPickerModalProps> = ({
 													key={sub.id}
 													style={[
 														styles.subRow,
-														selectedSubCategoryIdSet.has(sub.id) && styles.rowSelected,
+														selectedSubCategoryIdSet.has(sub.id) &&
+															styles.rowSelected,
 													]}
 													onPress={() => {
 														toggleSubcategory(cat.id, subIds, sub.id);

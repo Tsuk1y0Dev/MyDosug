@@ -48,7 +48,6 @@ interface PlannerContextType {
 	planningDate: Date;
 	searchCriteria: SearchCriteria | null;
 	setSearchCriteria: (c: SearchCriteria | null) => void;
-	/** Режим «только создать место в каталог» без полного планировщика */
 	catalogStandalone: boolean;
 	dismissCatalogStandalone: () => void;
 }
@@ -144,7 +143,6 @@ export const PlannerProvider = ({
 		null,
 	);
 
-	// Генератор уникальных ID
 	const generateUniqueId = useCallback(() => {
 		return `activity-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 	}, []);
@@ -171,18 +169,15 @@ export const PlannerProvider = ({
 		[],
 	);
 
-	// Функция для расчета времени пути между двумя местами
 	const calculateTravelTime = useCallback(
 		(from: Place, to: Place): number => {
 			const distance = calculateDistance(from.coordinates, to.coordinates);
-			// Предполагаем среднюю скорость 5 км/ч для пешехода
 			const timeInMinutes = Math.round((distance / 5000) * 60);
-			return Math.max(5, Math.min(timeInMinutes, 120)); // Минимум 5 минут, максимум 2 часа
+			return Math.max(5, Math.min(timeInMinutes, 120));
 		},
 		[calculateDistance],
 	);
 
-	// Функция для расчета общей продолжительности плана
 	const calculateTotalDuration = useCallback(
 		(activities: PlannedActivity[]): number => {
 			if (activities.length === 0) return 0;
@@ -223,7 +218,6 @@ export const PlannerProvider = ({
 		customStartTime?: string,
 		customEndTime?: string,
 	) => {
-		// Проверяем, если выбран тип "одно мероприятие" и уже есть активность
 		if (
 			planningRequest.planType === "single" &&
 			currentPlan.activities.length > 0
@@ -239,7 +233,6 @@ export const PlannerProvider = ({
 		const activities = [...currentPlan.activities];
 		const lastActivity = activities[activities.length - 1];
 
-		// Вычисляем продолжительность на основе настроек места
 		const duration = calculateDuration(
 			place.durationSettings,
 			planningRequest.company || "friends",
@@ -249,11 +242,9 @@ export const PlannerProvider = ({
 		let startTime: string;
 		let travelTimeFromPrevious = 0;
 
-		// Если передано пользовательское время, используем его
 		if (customStartTime && customEndTime) {
 			startTime = customStartTime;
 
-			// Если есть предыдущая активность, рассчитываем время пути
 			if (lastActivity) {
 				travelTimeFromPrevious = calculateTravelTime(lastActivity.place, place);
 			}
@@ -284,37 +275,27 @@ export const PlannerProvider = ({
 			return null;
 		}
 
-		// Иначе вычисляем автоматически и возвращаем предложенное время
-		// Время начала: для первого места - из planningRequest, для последующих - с учетом логистики
 		startTime = planningRequest.startTime;
 
 		if (lastActivity) {
-			// Рассчитываем время пути от предыдущего места (логистика)
 			travelTimeFromPrevious = calculateTravelTime(lastActivity.place, place);
 
-			// Время начала = время окончания предыдущей активности + время пути
 			const prevMinutes = timeToMinutes(lastActivity.endTime);
 			const totalMinutes = prevMinutes + travelTimeFromPrevious;
 			startTime = minutesToTime(totalMinutes);
 		}
 
-		// Время окончания = время начала + продолжительность (автоматически из настроек места)
 		const startMinutes = timeToMinutes(startTime);
 		const endTime = minutesToTime(startMinutes + duration);
 
-		// Для одного мероприятия всегда возвращаем предложенное время для модального окна
-		// Для цепочки - возвращаем только если это первая активность или пользователь хочет изменить
 		if (planningRequest.planType === "single") {
 			return { startTime, endTime, place };
 		}
 
-		// Для цепочки: если это первая активность, показываем модальное окно
-		// Если уже есть активности, добавляем автоматически без модального окна
 		if (activities.length === 0) {
 			return { startTime, endTime, place };
 		}
 
-		// Для последующих активностей в цепочке добавляем автоматически
 		const newActivity: PlannedActivity = {
 			id: generateUniqueId(),
 			place,
@@ -524,4 +505,3 @@ export const usePlanner = () => {
 	}
 	return context;
 };
-

@@ -25,25 +25,65 @@ export interface OSMPlace {
 		publicTransportNearby: boolean;
 	};
 	tags: Record<string, string>;
-	/** Сырое значение opening_hours из OSM */
 	openingHoursRaw?: string;
 }
 
-const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
+const PUBLIC_OVERPASS_URL = "https://overpass-api.de/api/interpreter";
+const LOCAL_OVERPASS_URL = "http://192.168.1.186:54321/api/interpreter";
 
-// Throttle + retry, чтобы уменьшить шанс 429 и не показывать ошибки пользователю.
 let lastOverpassRequestAt = 0;
 const MIN_OVERPASS_INTERVAL_MS = 700;
 const MAX_RETRIES = 10;
 const RETRY_BASE_DELAY_MS = 800;
+const LOCAL_PROBE_CACHE_MS = 60_000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const isRetryableStatus = (status: number) => status === 429 || status === 504;
+const canUseAbortController = typeof AbortController !== "undefined";
+
+let localProbe: { available: boolean; checkedAt: number } | null = null;
+
+async function probeLocalOverpass(): Promise<boolean> {
+	const now = Date.now();
+	if (localProbe && now - localProbe.checkedAt < LOCAL_PROBE_CACHE_MS) {
+		return localProbe.available;
+	}
+	const mark = (available: boolean) => {
+		localProbe = { available, checkedAt: Date.now() };
+		return available;
+	};
+	const probeQuery = `[out:json][timeout:5];node(0,0,0,0);out ids 1;`;
+	try {
+		if (canUseAbortController) {
+			const controller = new AbortController();
+			const t = setTimeout(() => controller.abort(), 1200);
+			try {
+				const res = await fetch(LOCAL_OVERPASS_URL, {
+					method: "POST",
+					headers: { "Content-Type": "text/plain;charset=UTF-8" },
+					body: probeQuery,
+					signal: controller.signal,
+				});
+				return mark(res.ok);
+			} finally {
+				clearTimeout(t);
+			}
+		}
+		const res = await fetch(LOCAL_OVERPASS_URL, {
+			method: "POST",
+			headers: { "Content-Type": "text/plain;charset=UTF-8" },
+			body: probeQuery,
+		});
+		return mark(res.ok);
+	} catch {
+		return mark(false);
+	}
+}
 
 type OverpassElement = {
 	id: number;
-	type?: string; // node/way/relation
+	type?: string;
 	lat?: number;
 	lon?: number;
 	center?: { lat: number; lon: number };
@@ -83,7 +123,6 @@ const buildOverpassQuery = (
 	const categoryIds = criteria?.categoryIds ?? [];
 	const subCategoryIds = criteria?.subCategoryIds ?? [];
 
-	// Важно: Wi‑Fi фильтр в OSM встречается как `internet_access=wlan`.
 	const wifiRequested =
 		criteria?.filters?.wifi === true ||
 		subCategoryIds.includes("wifi_place") ||
@@ -93,11 +132,8 @@ const buildOverpassQuery = (
 		food: [`nwr["amenity"~"restaurant|cafe|fast_food|bar|pub|bakery"]`],
 		entertainment: [`nwr["amenity"~"cinema|theatre|nightclub"]`],
 		sports: [
-			// Общие спортивные объекты
 			`nwr["amenity"~"sports_centre|gym|stadium"]`,
-			// Часто фитнес/бассейны размечают через leisure
 			`nwr["leisure"~"fitness_centre|sports_centre|swimming_pool|ice_rink|yoga_studio"]`,
-			// Командные/контактные виды спорта через sport=*
 			`nwr["sport"~"hockey|football|basketball|volleyball|tennis|handball|rugby|ice_skating|roller_skating"]`,
 		],
 		culture: [
@@ -137,14 +173,12 @@ const buildOverpassQuery = (
 	};
 
 	const SUBCATEGORY_EXPRESSIONS: Record<string, string[]> = {
-		// Food subcategories
 		restaurant: [`nwr["amenity"="restaurant"]`],
 		cafe: [`nwr["amenity"="cafe"]`],
 		fastfood: [`nwr["amenity"="fast_food"]`],
 		bar: [`nwr["amenity"~"bar|pub"]`],
 		bakery: [`nwr["amenity"~"bakery|cafe"]`],
 
-		// Shopping
 		mall: [`nwr["shop"="mall"]`],
 		hypermarket: [`nwr["shop"="supermarket"]`],
 		clothes: [`nwr["shop"="clothes"]`],
@@ -154,7 +188,6 @@ const buildOverpassQuery = (
 		market: [`nwr["shop"~"marketplace|convenience|supermarket"]`],
 		souvenir: [`nwr["shop"="gift"]`],
 
-		// Sports subcategories (gym/pool/yoga/skating/rent/team/outdoor)
 		gym: [
 			`nwr["amenity"~"gym|fitness_centre"]`,
 			`nwr["leisure"~"fitness_centre"]`,
@@ -186,27 +219,23 @@ const buildOverpassQuery = (
 			`nwr["highway"~"path|footway|cycleway"]`,
 		],
 
-		// Health
 		pharmacy_24: [`nwr["amenity"="pharmacy"]`],
 		dentistry: [`nwr["amenity"="dentist"]`],
 		private_clinic: [`nwr["amenity"="clinic"]`],
 		spa: [`nwr["amenity"="spa"]`],
 		optics: [`nwr["shop"="optician"]`],
 
-		// Transport
 		bus_station: [`nwr["amenity"="bus_station"]`],
 		train_station: [`nwr["amenity"="train_station"]`],
 		airport: [`nwr["aeroway"="aerodrome"]`],
 		car_rental: [`nwr["amenity"="car_rental"]`],
 		tire_service: [`nwr["craft"~"tyres|car_repair"]`],
 
-		// Walking
 		park: [`nwr["leisure"="park"]`],
 		viewpoint: [`nwr["tourism"="viewpoint"]`],
 		zoo: [`nwr["tourism"="zoo"]`],
 		botanical: [`nwr["leisure"="botanical_garden"]`],
 
-		// Services (subset)
 		laundry: [`nwr["amenity"="laundry"]`],
 		dry_cleaner: [`nwr["amenity"="dry_cleaning"]`],
 		copy_center: [`nwr["shop"="copyshop"]`],
@@ -227,8 +256,6 @@ const buildOverpassQuery = (
 				expressionsSet.add(expr);
 			}
 		} else if (categoryIds.includes("food")) {
-			// "food special-case": если subId не распознан как подкатегория,
-			// пытаемся сопоставить это как cuisine=* для категории "food".
 			expressionsSet.add(`nwr["cuisine"="${subId}"]`);
 		}
 	}
@@ -280,14 +307,15 @@ function buildOsmDescription(tags: Record<string, string>): string {
 
 	if (amenity) {
 		bits.push(
-			AMENITY_LABELS[amenity] ? `${AMENITY_LABELS[amenity]} (${amenity})` : `Тип: ${amenity}`,
+			AMENITY_LABELS[amenity]
+				? `${AMENITY_LABELS[amenity]} (${amenity})`
+				: `Тип: ${amenity}`,
 		);
 	}
 	if (shop) bits.push(`Магазин: ${shop}`);
 	if (leisure) bits.push(`Досуг: ${leisure}`);
 	if (tourism) bits.push(tourism);
 	if (tags.cuisine) bits.push(`Кухня: ${tags.cuisine}`);
-	/* Часы, телефон, сайт и произвольное description — в карточке места отдельно, не дублируем в строке описания */
 
 	if (bits.length) return bits.join(" · ");
 	return "Данные из сообщества OpenStreetMap (без описания в базе).";
@@ -388,9 +416,10 @@ export const OSMService = {
 	): Promise<OSMPlace[]> {
 		const query = buildOverpassQuery(center, radius, criteria);
 		let lastError: any = null;
+		const localAvailable = await probeLocalOverpass();
+		let forcePublicOnly = false;
 
 		for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-			// Клиентский throttle: минимальный интервал между запросами.
 			const now = Date.now();
 			const elapsed = now - lastOverpassRequestAt;
 			if (elapsed < MIN_OVERPASS_INTERVAL_MS) {
@@ -399,13 +428,42 @@ export const OSMService = {
 			lastOverpassRequestAt = Date.now();
 
 			try {
-				const response = await fetch(OVERPASS_URL, {
-					method: "POST",
-					headers: {
-						"Content-Type": "text/plain;charset=UTF-8",
-					},
-					body: query,
-				});
+				const endpoints =
+					localAvailable && !forcePublicOnly
+						? [LOCAL_OVERPASS_URL, PUBLIC_OVERPASS_URL]
+						: [PUBLIC_OVERPASS_URL];
+				let response: Response | null = null;
+				let lastEndpointError: any = null;
+
+				for (const endpoint of endpoints) {
+					try {
+						response = await fetch(endpoint, {
+							method: "POST",
+							headers: {
+								"Content-Type": "text/plain;charset=UTF-8",
+								"User-Agent": "MyDosugApp/1.0 (matpol050110@gmail.com)",
+							},
+							body: query,
+						});
+						if (endpoint === LOCAL_OVERPASS_URL && !response.ok) {
+							forcePublicOnly = true;
+							localProbe = { available: false, checkedAt: Date.now() };
+						}
+						if (response.ok || endpoint === PUBLIC_OVERPASS_URL) break;
+					} catch (e) {
+						lastEndpointError = e;
+						if (endpoint === LOCAL_OVERPASS_URL) {
+							forcePublicOnly = true;
+							localProbe = { available: false, checkedAt: Date.now() };
+							continue;
+						}
+						throw e;
+					}
+				}
+
+				if (!response) {
+					throw lastEndpointError || new Error("Overpass endpoint unavailable");
+				}
 
 				if (response.ok) {
 					const json = await response.json();
@@ -419,7 +477,6 @@ export const OSMService = {
 					return filterOsmPlaces(raw);
 				}
 
-				// Для 429/504 — тихая повторная попытка с экспоненциальной задержкой.
 				if (isRetryableStatus(response.status) && attempt < MAX_RETRIES) {
 					const delay =
 						RETRY_BASE_DELAY_MS * Math.pow(3, attempt) +
@@ -434,7 +491,6 @@ export const OSMService = {
 			} catch (e: any) {
 				lastError = e;
 
-				// Если fetch упал, но это похоже на сеть — пробуем ещё раз.
 				if (attempt < MAX_RETRIES) {
 					const delay = RETRY_BASE_DELAY_MS * Math.pow(3, attempt);
 					await sleep(delay);

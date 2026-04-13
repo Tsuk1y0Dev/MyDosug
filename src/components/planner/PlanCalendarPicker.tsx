@@ -22,8 +22,9 @@ function sameLocalDay(a: Date, b: Date): boolean {
 	);
 }
 
-/** Первая ячейка — понедельник недели, содержащей 1-е число `visibleMonth`. */
-export function buildMonthGrid(visibleMonth: Date): { date: Date; inMonth: boolean }[] {
+export function buildMonthGrid(
+	visibleMonth: Date,
+): { date: Date; inMonth: boolean }[] {
 	const y = visibleMonth.getFullYear();
 	const m = visibleMonth.getMonth();
 	const first = new Date(y, m, 1);
@@ -56,7 +57,6 @@ function monthTitleRu(d: Date): string {
 
 type Props = {
 	selectedDate: Date;
-	/** Первый день отображаемого месяца (например new Date(y, m, 1)). */
 	visibleMonth: Date;
 	minDate: Date;
 	onSelectDay: (day: Date) => void;
@@ -72,10 +72,7 @@ export const PlanCalendarPicker: React.FC<Props> = ({
 	onPrevMonth,
 	onNextMonth,
 }) => {
-	const cells = useMemo(
-		() => buildMonthGrid(visibleMonth),
-		[visibleMonth],
-	);
+	const cells = useMemo(() => buildMonthGrid(visibleMonth), [visibleMonth]);
 	const today = startOfLocalDay(new Date());
 	const minT = startOfLocalDay(minDate).getTime();
 

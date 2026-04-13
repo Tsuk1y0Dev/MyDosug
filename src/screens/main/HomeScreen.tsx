@@ -30,6 +30,7 @@ import {
 	calculateEndTime,
 	isSameLocalCalendarDay,
 	minutesSinceLocalMidnight,
+	localRouteDayKey,
 } from "../../utils/timingUtils";
 import { useDeviceCoords } from "../../hooks/useDeviceCoords";
 import { useAuth } from "../../services/auth/AuthContext";
@@ -52,13 +53,6 @@ function formatPlanDate(d: Date): string {
 	return `${dayName}, ${d.getDate()}.${(d.getMonth() + 1).toString().padStart(2, "0")}`;
 }
 
-function formatTimelineClock(ts: number): string {
-	return new Date(ts * 1000).toLocaleTimeString("ru-RU", {
-		hour: "2-digit",
-		minute: "2-digit",
-	});
-}
-
 export const HomeScreen = () => {
 	const {
 		origin,
@@ -72,22 +66,20 @@ export const HomeScreen = () => {
 		setPendingInsertIndex,
 		syncPlanCalendarDay,
 	} = useRoute();
-	const {
-		profile,
-		getTimelineEventsByDate,
-		deleteTimelineEvent,
-		syncRouteDayToTimeline,
-	} = useUser();
+	const { profile, syncRouteDayToTimeline } = useUser();
 	const { user } = useAuth();
 	const { addFavoritePlace, removeFavoritePlace, isFavorite } = useFavorites();
 	const deviceCoords = useDeviceCoords();
 
 	const [viewMode, setViewMode] = useState<ViewMode>("timeline");
-	const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(
-		null,
-	);
+	const [mapCenter, setMapCenter] = useState<{
+		lat: number;
+		lng: number;
+	} | null>(null);
 	const [routeSummaryVisible, setRouteSummaryVisible] = useState(false);
-	const [selectedDate, setSelectedDate] = useState(() => startOfLocalDay(new Date()));
+	const [selectedDate, setSelectedDate] = useState(() =>
+		startOfLocalDay(new Date()),
+	);
 	const [showDatePicker, setShowDatePicker] = useState(false);
 	const [calendarVisibleMonth, setCalendarVisibleMonth] = useState(() => {
 		const t = startOfLocalDay(new Date());
@@ -105,18 +97,26 @@ export const HomeScreen = () => {
 		setShowDatePicker(true);
 	};
 
-	const plannedDayTimeline = useMemo(
-		() => getTimelineEventsByDate(selectedDate),
-		[getTimelineEventsByDate, selectedDate.getTime()],
-	);
-
 	useEffect(() => {
 		syncPlanCalendarDay(selectedDate);
 	}, [selectedDate.getTime(), syncPlanCalendarDay]);
 
+	const routeHadStopsByDayRef = useRef<Record<string, boolean>>({});
 	const routeSyncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	useEffect(() => {
-		if (!user) return;
+		if (!user) {
+			routeHadStopsByDayRef.current = {};
+			return;
+		}
+		const dayKey = localRouteDayKey(selectedDate);
+		if (events.length > 0) {
+			routeHadStopsByDayRef.current[dayKey] = true;
+		}
+		const allowEmptyServerWrite =
+			events.length > 0 || routeHadStopsByDayRef.current[dayKey] === true;
+		if (!allowEmptyServerWrite) {
+			return;
+		}
 		if (routeSyncTimer.current) clearTimeout(routeSyncTimer.current);
 		routeSyncTimer.current = setTimeout(() => {
 			void syncRouteDayToTimeline(events, selectedDate);
@@ -192,10 +192,7 @@ export const HomeScreen = () => {
 		};
 	};
 
-	const bumpSlotToDayFloor = (slot: {
-		startTime: string;
-		endTime: string;
-	}) => {
+	const bumpSlotToDayFloor = (slot: { startTime: string; endTime: string }) => {
 		const floor = dayFloorMinutes;
 		const sm = timeToMinutes(slot.startTime);
 		if (sm >= floor) return slot;
@@ -216,16 +213,14 @@ export const HomeScreen = () => {
 			const nextStart = timeToMinutes(next.arrivalTime);
 			const gap = nextStart - prevEnd;
 
-			if (gap >= MIN_ACTIVITY_DURATION_MIN) {
-				slot = bumpSlotToDayFloor({
-					startTime: minutesToTime(prevEnd),
-					endTime: minutesToTime(prevEnd + MIN_ACTIVITY_DURATION_MIN),
-				});
-			} else {
-				slot = bumpSlotToDayFloor(
-					findFirstFreeSlot(events, MIN_ACTIVITY_DURATION_MIN, dayFloorMinutes),
-				);
-			}
+			const blockLen =
+				gap >= MIN_ACTIVITY_DURATION_MIN
+					? MIN_ACTIVITY_DURATION_MIN
+					: Math.max(1, gap);
+			slot = bumpSlotToDayFloor({
+				startTime: minutesToTime(prevEnd),
+				endTime: minutesToTime(prevEnd + blockLen),
+			});
 		} else if (
 			insertIndex != null &&
 			insertIndex === events.length &&
@@ -263,7 +258,6 @@ export const HomeScreen = () => {
 		setPlannerVisible(true);
 	};
 
-	// Центр карты: сначала GPS, иначе первая точка плана (без Читы).
 	useEffect(() => {
 		if (deviceCoords) {
 			setMapCenter(deviceCoords);
@@ -274,7 +268,6 @@ export const HomeScreen = () => {
 		}
 	}, [deviceCoords, events]);
 
-	// Старт маршрута: только GPS или сохранённые «дом/работа» из профиля — без запасной Читы.
 	useEffect(() => {
 		if (events.length > 0) return;
 		if (origin?.id === "from_first_stop") return;
@@ -407,7 +400,10 @@ export const HomeScreen = () => {
 	const toggleDetailFavorite = () => {
 		if (!detailEvent) return;
 		if (!user) {
-			Alert.alert("Вход", "Войдите в аккаунт, чтобы сохранять места в избранное.");
+			Alert.alert(
+				"Вход",
+				"Войдите в аккаунт, чтобы сохранять места в избранное.",
+			);
 			return;
 		}
 		const pid = detailEvent.placeId || detailEvent.id;
@@ -418,7 +414,6 @@ export const HomeScreen = () => {
 		}
 	};
 
-	// Маркеры для карты: события с порядковыми номерами
 	const mapMarkers = useMemo(
 		() =>
 			events.map((e, i) => ({
@@ -430,7 +425,6 @@ export const HomeScreen = () => {
 		[events],
 	);
 
-	// Линии маршрута между точками (origin -> event0 -> event1 -> ...)
 	const segmentLines = useMemo(() => {
 		const lines: Array<{
 			from: { lat: number; lng: number };
@@ -518,10 +512,9 @@ export const HomeScreen = () => {
 		};
 	}, [detailEvent, segments, events, origin]);
 
-	const mapViewCenter =
-		mapCenter ??
+	const mapViewCenter = mapCenter ??
 		deviceCoords ??
-		(events[0]?.coords ?? { lat: 55.75, lng: 37.62 });
+		events[0]?.coords ?? { lat: 55.75, lng: 37.62 };
 
 	const mapSection = (
 		<View style={styles.mapWrapper}>
@@ -602,59 +595,6 @@ export const HomeScreen = () => {
 			contentContainerStyle={styles.timelineContent}
 			showsVerticalScrollIndicator={false}
 		>
-			{plannedDayTimeline.length > 0 ? (
-				<View style={styles.serverTimelineBlock}>
-					<Text style={styles.serverTimelineHeading}>События дня</Text>
-					<Text style={styles.serverTimelineHint}>
-						Из профиля (сервер). Маршрут ниже — локальный план.
-					</Text>
-					{plannedDayTimeline.map((ev) => (
-						<View
-							key={`${ev.id}_${ev.timestamp}`}
-							style={styles.serverTimelineRow}
-						>
-							<View style={styles.serverTimelineTimeCol}>
-								<Text style={styles.serverTimelineTime}>
-									{formatTimelineClock(ev.timestamp)}
-								</Text>
-								{typeof ev.duration === "number" ? (
-									<Text style={styles.serverTimelineDur}>
-										{ev.duration} мин
-									</Text>
-								) : null}
-							</View>
-							<View style={styles.serverTimelineMain}>
-								<Text
-									style={styles.serverTimelineTitle}
-									numberOfLines={2}
-									ellipsizeMode="tail"
-								>
-									{ev.title}
-								</Text>
-								{ev.note ? (
-									<Text
-										style={styles.serverTimelineNote}
-										numberOfLines={2}
-										ellipsizeMode="tail"
-									>
-										{ev.note}
-									</Text>
-								) : null}
-								<Text style={styles.serverTimelineId} numberOfLines={1}>
-									{ev.id}
-								</Text>
-							</View>
-							<TouchableOpacity
-								style={styles.serverTimelineDelete}
-								onPress={() => void deleteTimelineEvent(ev.timestamp, ev.id)}
-								hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-							>
-								<Feather name="trash-2" size={18} color="#ef4444" />
-							</TouchableOpacity>
-						</View>
-					))}
-				</View>
-			) : null}
 			{events.length === 0 && (
 				<View style={styles.emptyTimeline}>
 					<Feather name="map-pin" size={48} color="#d1d5db" />
@@ -767,13 +707,9 @@ export const HomeScreen = () => {
 
 	return (
 		<SafeAreaView style={styles.container}>
-			{/* Выбор даты плана */}
 			<View style={styles.dateRow}>
 				<Text style={styles.dateRowLabel}>План на</Text>
-				<TouchableOpacity
-					style={styles.dateChip}
-					onPress={openPlanCalendar}
-				>
+				<TouchableOpacity style={styles.dateChip} onPress={openPlanCalendar}>
 					<Feather name="calendar" size={18} color="#3b82f6" />
 					<Text
 						style={styles.dateChipText}
@@ -821,14 +757,12 @@ export const HomeScreen = () => {
 								}}
 								onPrevMonth={() =>
 									setCalendarVisibleMonth(
-										(m) =>
-											new Date(m.getFullYear(), m.getMonth() - 1, 1),
+										(m) => new Date(m.getFullYear(), m.getMonth() - 1, 1),
 									)
 								}
 								onNextMonth={() =>
 									setCalendarVisibleMonth(
-										(m) =>
-											new Date(m.getFullYear(), m.getMonth() + 1, 1),
+										(m) => new Date(m.getFullYear(), m.getMonth() + 1, 1),
 									)
 								}
 							/>
@@ -843,7 +777,6 @@ export const HomeScreen = () => {
 				</Modal>
 			)}
 
-			{/* Переключатель режимов */}
 			<View style={styles.header}>
 				<View style={styles.segmentedControl}>
 					{(["split", "map", "timeline"] as const).map((mode) => (
@@ -884,16 +817,12 @@ export const HomeScreen = () => {
 					onPress={() => setRouteSummaryVisible(true)}
 				>
 					<Feather name="bar-chart-2" size={18} color="#3b82f6" />
-					<Text
-						style={styles.routeSummaryButtonText}
-						numberOfLines={1}
-					>
+					<Text style={styles.routeSummaryButtonText} numberOfLines={1}>
 						Маршрут
 					</Text>
 				</TouchableOpacity>
 			</View>
 
-			{/* Контент */}
 			{viewMode === "split" && (
 				<View style={styles.splitContainer}>
 					{mapSection}
@@ -939,6 +868,7 @@ export const HomeScreen = () => {
 				onClose={() => {
 					setPlannerVisible(false);
 					setPlannerInitialTimeSlot(null);
+					setPendingInsertIndex(null);
 				}}
 				initialTimeSlot={plannerInitialTimeSlot || undefined}
 				initialStep={plannerInitialTimeSlot ? 2 : undefined}
@@ -973,9 +903,8 @@ export const HomeScreen = () => {
 							{detailEvent ? (
 								<>
 									<Text style={styles.detailOrderHint}>
-										Точка{" "}
-										{events.findIndex((e) => e.id === detailEvent.id) + 1} из{" "}
-										{events.length}
+										Точка {events.findIndex((e) => e.id === detailEvent.id) + 1}{" "}
+										из {events.length}
 									</Text>
 									<Text style={styles.detailSectionLabel}>Координаты</Text>
 									<Text style={styles.detailBodyText}>
@@ -1025,16 +954,17 @@ export const HomeScreen = () => {
 											</Text>
 											<Text style={styles.detailBodyText}>
 												От «{detailInboundLeg.fromLabel}»: ~
-												{detailInboundLeg.minutes} мин,{" "}
-												{detailInboundLeg.km} км (
-												{travelModeLabel(detailInboundLeg.mode)})
+												{detailInboundLeg.minutes} мин, {detailInboundLeg.km} км
+												({travelModeLabel(detailInboundLeg.mode)})
 											</Text>
 										</>
 									) : null}
 									{detailEvent.placeId ? (
 										<>
 											<Text style={styles.detailSectionLabel}>ID в данных</Text>
-											<Text style={styles.detailMono}>{detailEvent.placeId}</Text>
+											<Text style={styles.detailMono}>
+												{detailEvent.placeId}
+											</Text>
 										</>
 									) : null}
 								</>
@@ -1080,11 +1010,15 @@ export const HomeScreen = () => {
 										<TouchableOpacity
 											style={styles.detailTimeChip}
 											onPress={() => {
-												const i = events.findIndex((e) => e.id === detailEvent.id);
-												const floor =
-													isSameLocalCalendarDay(selectedDate, new Date())
-														? minutesSinceLocalMidnight()
-														: 0;
+												const i = events.findIndex(
+													(e) => e.id === detailEvent.id,
+												);
+												const floor = isSameLocalCalendarDay(
+													selectedDate,
+													new Date(),
+												)
+													? minutesSinceLocalMidnight()
+													: 0;
 												const afterPrev =
 													i > 0
 														? timeToMinutes(events[i - 1].arrivalTime) +
@@ -1094,7 +1028,9 @@ export const HomeScreen = () => {
 												setEditArrival(minutesToTime(m));
 											}}
 										>
-											<Text style={styles.detailTimeChipText}>Мин. допустимое</Text>
+											<Text style={styles.detailTimeChipText}>
+												Мин. допустимое
+											</Text>
 										</TouchableOpacity>
 										<TouchableOpacity
 											style={styles.detailTimeChip}
@@ -1168,7 +1104,6 @@ export const HomeScreen = () => {
 				</View>
 			</Modal>
 
-			{/* Модальное окно сводки маршрута */}
 			<Modal
 				visible={routeSummaryVisible}
 				transparent
@@ -1190,43 +1125,43 @@ export const HomeScreen = () => {
 							activeOpacity={1}
 							onPress={() => {}}
 						>
-						<Text style={styles.modalTitle}>Сводка маршрута</Text>
-						<View style={styles.modalRow}>
-							<Text style={styles.modalLabel}>Точек:</Text>
-							<Text style={styles.modalValue}>{events.length}</Text>
-						</View>
-						<View style={styles.modalRow}>
-							<Text style={styles.modalLabel}>В пути:</Text>
-							<Text style={styles.modalValue}>
-								{Math.floor(totalTravelMinutes / 60)} ч{" "}
-								{totalTravelMinutes % 60} мин
-							</Text>
-						</View>
-						<View style={styles.modalRow}>
-							<Text style={styles.modalLabel}>На месте:</Text>
-							<Text style={styles.modalValue}>
-								{Math.floor(totalActivityMinutes / 60)} ч{" "}
-								{totalActivityMinutes % 60} мин
-							</Text>
-						</View>
-						<View style={styles.modalRow}>
-							<Text style={styles.modalLabel}>Расстояние:</Text>
-							<Text style={styles.modalValue}>
-								{totalDistance >= 1000
-									? `${(totalDistance / 1000).toFixed(1)} км`
-									: `${totalDistance} м`}
-							</Text>
-						</View>
-						<View style={styles.modalRow}>
-							<Text style={styles.modalLabel}>Бюджет:</Text>
-							<Text style={styles.modalValue}>—</Text>
-						</View>
-						<TouchableOpacity
-							style={styles.modalCloseButton}
-							onPress={() => setRouteSummaryVisible(false)}
-						>
-							<Text style={styles.modalCloseText}>Закрыть</Text>
-						</TouchableOpacity>
+							<Text style={styles.modalTitle}>Сводка маршрута</Text>
+							<View style={styles.modalRow}>
+								<Text style={styles.modalLabel}>Точек:</Text>
+								<Text style={styles.modalValue}>{events.length}</Text>
+							</View>
+							<View style={styles.modalRow}>
+								<Text style={styles.modalLabel}>В пути:</Text>
+								<Text style={styles.modalValue}>
+									{Math.floor(totalTravelMinutes / 60)} ч{" "}
+									{totalTravelMinutes % 60} мин
+								</Text>
+							</View>
+							<View style={styles.modalRow}>
+								<Text style={styles.modalLabel}>На месте:</Text>
+								<Text style={styles.modalValue}>
+									{Math.floor(totalActivityMinutes / 60)} ч{" "}
+									{totalActivityMinutes % 60} мин
+								</Text>
+							</View>
+							<View style={styles.modalRow}>
+								<Text style={styles.modalLabel}>Расстояние:</Text>
+								<Text style={styles.modalValue}>
+									{totalDistance >= 1000
+										? `${(totalDistance / 1000).toFixed(1)} км`
+										: `${totalDistance} м`}
+								</Text>
+							</View>
+							<View style={styles.modalRow}>
+								<Text style={styles.modalLabel}>Бюджет:</Text>
+								<Text style={styles.modalValue}>—</Text>
+							</View>
+							<TouchableOpacity
+								style={styles.modalCloseButton}
+								onPress={() => setRouteSummaryVisible(false)}
+							>
+								<Text style={styles.modalCloseText}>Закрыть</Text>
+							</TouchableOpacity>
 						</TouchableOpacity>
 					</ScrollView>
 				</View>
@@ -1327,71 +1262,6 @@ const styles = StyleSheet.create({
 		marginBottom: 8,
 		lineHeight: 18,
 		paddingHorizontal: 8,
-	},
-	serverTimelineBlock: {
-		marginBottom: 16,
-		padding: 14,
-		backgroundColor: "#f0fdf4",
-		borderRadius: 14,
-		borderWidth: 1,
-		borderColor: "#bbf7d0",
-	},
-	serverTimelineHeading: {
-		fontSize: 15,
-		fontWeight: "700",
-		color: "#166534",
-		marginBottom: 4,
-	},
-	serverTimelineHint: {
-		fontSize: 12,
-		color: "#15803d",
-		marginBottom: 10,
-	},
-	serverTimelineRow: {
-		flexDirection: "row",
-		alignItems: "flex-start",
-		paddingVertical: 10,
-		borderTopWidth: 1,
-		borderTopColor: "#d1fae5",
-	},
-	serverTimelineTimeCol: {
-		width: 52,
-		marginRight: 10,
-	},
-	serverTimelineTime: {
-		fontSize: 14,
-		fontWeight: "700",
-		color: "#14532d",
-	},
-	serverTimelineDur: {
-		fontSize: 11,
-		color: "#166534",
-		marginTop: 2,
-	},
-	serverTimelineMain: {
-		flex: 1,
-		minWidth: 0,
-	},
-	serverTimelineTitle: {
-		fontSize: 15,
-		fontWeight: "600",
-		color: "#14532d",
-		flexShrink: 1,
-	},
-	serverTimelineNote: {
-		fontSize: 13,
-		color: "#166534",
-		marginTop: 2,
-		flexShrink: 1,
-	},
-	serverTimelineId: {
-		fontSize: 11,
-		color: "#86efac",
-		marginTop: 4,
-	},
-	serverTimelineDelete: {
-		padding: 4,
-		marginLeft: 4,
 	},
 	datePickerDone: {
 		marginTop: 20,

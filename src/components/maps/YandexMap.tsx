@@ -78,17 +78,18 @@ export const YandexMap: React.FC<YandexMapProps> = ({
 	const showUserGpsMarker = useMemo(() => {
 		if (!userLocation) return false;
 		if (!origin) return true;
-		return haversineMeters(userLocation, {
-			lat: origin.lat,
-			lng: origin.lng,
-		}) > 80;
+		return (
+			haversineMeters(userLocation, {
+				lat: origin.lat,
+				lng: origin.lng,
+			}) > 80
+		);
 	}, [userLocation, origin]);
 
 	const generateHTML = () => {
 		const hasOrigin = origin != null;
 		const hasMarkers = markers && markers.length > 0;
 		const hasUserGps = Boolean(userLocation && showUserGpsMarker);
-		// Разрешаем selectionMode даже без origin/markers (например, выбор точки на карте).
 		if (!hasOrigin && !hasMarkers && !selectionMode && !hasUserGps) {
 			return `
         <!DOCTYPE html>
@@ -272,8 +273,6 @@ export const YandexMap: React.FC<YandexMapProps> = ({
               
               ${selectionInit}
 
-              // Фолбэк-линия: отрисовываем прямые отрезки между точками,
-              // чтобы маршрут был виден даже если MultiRoute не построился (например, в APK).
               var segmentLinesData = ${segmentLinesJson};
               function drawSegmentLines() {
                 try {
@@ -298,14 +297,10 @@ export const YandexMap: React.FC<YandexMapProps> = ({
                 } catch (e) {}
               }
 
-              // Фолбэк-линия: рисуем прямые отрезки только когда:
-              // 1) маршрутизация включена (главный экран)
-              // 2) ключ маршрутизатора отсутствует (MultiRoute не сможет построиться)
               if (${routingEnabled} && !${hasRoutingKey}) {
                 drawSegmentLines();
               }
 
-              // Для режимов без маршрутизации или без ключа — просто подстроим зум под точки.
               if (!${routingEnabled} || !${hasRoutingKey}) {
                 try {
                   if (myMap.geoObjects.getLength() > 0) {
@@ -317,8 +312,6 @@ export const YandexMap: React.FC<YandexMapProps> = ({
                 } catch (e) {}
               }
 
-              // Строим маршрут по дорогам через MultiRoute (только если разрешено).
-              // Точки маршрута — старт + остановки; метка GPS не участвует в цепочке.
               if (${routingEnabled}) {
                 try {
                 var routeWaypoints = ${routingPointsJson};
@@ -384,7 +377,6 @@ export const YandexMap: React.FC<YandexMapProps> = ({
                   routeErrorEl.style.display = 'block';
                 }
 
-                // Успешное построение маршрута
                 multiRoute.model.events.add('requestsuccess', function () {
                   if (routeErrorEl) {
                     routeErrorEl.style.display = 'none';
@@ -398,7 +390,6 @@ export const YandexMap: React.FC<YandexMapProps> = ({
                   }
                 });
 
-                // Ошибка запроса к маршрутизатору
                 multiRoute.model.events.add('requestfail', function () {
                   showRouteError('Не удалось построить маршрут по дорогам. Попробуйте изменить точки.');
                   drawSegmentLines();
@@ -410,7 +401,6 @@ export const YandexMap: React.FC<YandexMapProps> = ({
                   }
                 });
 
-                // Если активный маршрут отсутствует (например, точки невозможно связать дорогами)
                 multiRoute.events.add('activeroutechange', function () {
                   var activeRoute = multiRoute.getActiveRoute();
                   if (!activeRoute) {
@@ -437,7 +427,6 @@ export const YandexMap: React.FC<YandexMapProps> = ({
               ${
 								selectionMode
 									? `
-              // Режим выбора точки на карте
               myMap.events.add('click', function (e) {
                 var coords = e.get('coords');
                 if (typeof selectedPlacemark !== 'undefined' && selectedPlacemark) {
@@ -481,7 +470,6 @@ export const YandexMap: React.FC<YandexMapProps> = ({
 		}
 	};
 
-	// Для веба используем упрощенную визуализацию
 	if (Platform.OS === "web") {
 		const webMarkers = [
 			...(origin
@@ -548,11 +536,7 @@ export const YandexMap: React.FC<YandexMapProps> = ({
 											name="map-pin"
 											size={20}
 											color={
-												isOrigin
-													? "#1d4ed8"
-													: isUserGps
-														? "#15803d"
-														: "#ef4444"
+												isOrigin ? "#1d4ed8" : isUserGps ? "#15803d" : "#ef4444"
 											}
 										/>
 									</View>
@@ -590,7 +574,6 @@ export const YandexMap: React.FC<YandexMapProps> = ({
 		);
 	}
 
-	// Для мобильных платформ используем WebView
 	return (
 		<View style={[styles.container, { height }]}>
 			<WebView

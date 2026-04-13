@@ -1,15 +1,21 @@
 import type { TimelineEvent } from "../../types/timeline";
 
 function tryParseJsonArray(raw: string): unknown[] | null {
-	try {
-		const v = JSON.parse(raw);
-		return Array.isArray(v) ? v : null;
-	} catch {
-		return null;
+	let current: unknown = raw;
+	for (let i = 0; i < 3; i += 1) {
+		if (Array.isArray(current)) return current;
+		if (typeof current !== "string") return null;
+		const t = current.trim();
+		if (!t) return null;
+		try {
+			current = JSON.parse(t);
+		} catch {
+			return null;
+		}
 	}
+	return Array.isArray(current) ? current : null;
 }
 
-/** Одна запись из API → нормализованное событие (новый или legacy-формат). */
 export function normalizeTimelineRow(row: unknown): TimelineEvent | null {
 	if (!row || typeof row !== "object") return null;
 	const o = row as Record<string, unknown>;
@@ -50,7 +56,6 @@ export function parseTimelineEventsArray(arr: unknown): TimelineEvent[] {
 	return sortTimelineEvents(out);
 }
 
-/** Поле timeline_events с API (строка JSON или массив). */
 export function parseTimelineEventsField(raw: unknown): TimelineEvent[] {
 	if (raw == null) return [];
 	if (typeof raw === "string") {
@@ -67,14 +72,12 @@ export function sortTimelineEvents(events: TimelineEvent[]): TimelineEvent[] {
 	return [...events].sort((a, b) => a.timestamp - b.timestamp);
 }
 
-/** Начало локального календарного дня в секундах (Unix). */
 export function startOfLocalDaySeconds(d: Date = new Date()): number {
 	return Math.floor(
 		new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 1000,
 	);
 }
 
-/** Оставить только «сегодня» и будущее (по локальному календарю). */
 export function prunePastTimelineEvents(
 	events: TimelineEvent[],
 	now: Date = new Date(),

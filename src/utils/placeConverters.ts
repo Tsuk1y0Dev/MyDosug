@@ -1,7 +1,11 @@
 import type { Place, ActivityType } from "../types/planner";
 import type { OSMPlace } from "../services/osm/OSMService";
 import type { RouteEvent } from "../types/route";
-import { formatOsmBudgetCaption, formatOsmOpeningCaption } from "./osmPlaceCaption";
+import type { SavedLocation } from "../types/userProfile";
+import {
+	formatOsmBudgetCaption,
+	formatOsmOpeningCaption,
+} from "./osmPlaceCaption";
 
 const defaultDurationSettings: Place["durationSettings"] = {
 	baseDuration: 60,
@@ -81,7 +85,15 @@ export function buildUserCreatedPlace(
 	};
 }
 
-/** Для избранного с таймлайна (OSM или своё место) */
+export function savedLocationToPlace(loc: SavedLocation): Place {
+	return buildUserCreatedPlace(
+		loc.id,
+		loc.name,
+		loc.coords,
+		loc.description?.trim() || "",
+	);
+}
+
 export function routeEventToPlace(ev: RouteEvent): Place {
 	const id = ev.placeId || ev.id;
 	const name = ev.customTitle?.trim() || "Точка маршрута";

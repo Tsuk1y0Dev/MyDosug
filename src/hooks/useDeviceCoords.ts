@@ -3,9 +3,6 @@ import * as Location from "expo-location";
 
 export type DeviceCoords = { lat: number; lng: number };
 
-/**
- * Текущие координаты устройства (после разрешения). Без Читы и прочих запасных точек.
- */
 export function useDeviceCoords(): DeviceCoords | null {
 	const [coords, setCoords] = useState<DeviceCoords | null>(null);
 
@@ -23,9 +20,7 @@ export function useDeviceCoords(): DeviceCoords | null {
 					lat: pos.coords.latitude,
 					lng: pos.coords.longitude,
 				});
-			} catch {
-				// остаётся null
-			}
+			} catch {}
 		})();
 		return () => {
 			cancelled = true;

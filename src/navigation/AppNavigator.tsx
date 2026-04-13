@@ -9,10 +9,8 @@ const Stack = createStackNavigator<RootStackParamList>();
 export const AppNavigator = () => {
 	const { isLoading } = useAuth();
 
-	// Показываем главный экран даже без авторизации (гостевой режим)
-	// Пользователь может использовать приложение, но избранное не будет работать
 	if (isLoading) {
-		return null; // Можно показать загрузку
+		return null;
 	}
 
 	return (
@@ -21,4 +19,3 @@ export const AppNavigator = () => {
 		</Stack.Navigator>
 	);
 };
-

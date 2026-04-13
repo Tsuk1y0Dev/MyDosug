@@ -17,19 +17,14 @@ export const PlannerContent: React.FC<PlannerContentProps> = ({
 }) => {
 	const { currentStep, planningRequest } = usePlanner();
 
-	// Определяем общее количество шагов и метки
 	const { totalSteps, stepLabels } = useMemo(() => {
-		// Убираем выбор "single/chain": везде логика работает как "single".
-		// Оставляем 4 шага для визуальной совместимости, но шаг "Тип" не отображаем.
 		return {
 			totalSteps: 4,
 			stepLabels: ["", "Параметры", "Результаты", "Маршрут"],
 		};
 	}, []);
 
-	// Нормализуем текущий шаг для индикатора
 	const normalizedStep = useMemo(() => {
-		// Для single: 0->0, 1->1, 2->1, 3->2, 4->3
 		if (currentStep === 0) return 0;
 		if (currentStep === 1 || currentStep === 2) return 1;
 		if (currentStep === 3) return 2;
@@ -40,26 +35,20 @@ export const PlannerContent: React.FC<PlannerContentProps> = ({
 	const renderStep = () => {
 		switch (currentStep) {
 			case 0:
-				// Шаг 0: больше не показываем выбор типа (цепочка отключена)
 				return <ParametersStep />;
 			case 1:
-				// Шаг 1: для single всегда сразу параметры
 				return <ParametersStep />;
 			case 2:
-				// Шаг 2: Параметры поиска или создание кастомной активности
 				if (planningRequest.activityType === "custom") {
 					return <CustomActivityStep onPlanSaved={onPlanSaved} />;
 				}
 				return <ParametersStep />;
 			case 3:
-				// Шаг 3: Результаты поиска (только если не custom)
 				if (planningRequest.activityType === "custom") {
-					// Если custom, уже создали активность на шаге 2, возвращаемся
 					return <CustomActivityStep onPlanSaved={onPlanSaved} />;
 				}
 				return <SearchResultsStep onPlanSaved={onPlanSaved} />;
 			case 4:
-				// Шаг 4: Планирование маршрута
 				return <RoutePlanningStep onPlanSaved={onPlanSaved} />;
 			default:
 				return <ParametersStep />;

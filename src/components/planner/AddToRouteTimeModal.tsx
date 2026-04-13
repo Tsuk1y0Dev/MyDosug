@@ -19,17 +19,12 @@ import { isOpenAtMinutesFromRaw } from "../../utils/openingHoursRu";
 type Props = {
 	visible: boolean;
 	onClose: () => void;
-	/** Возвращает время прибытия HH:mm и длительность в минутах */
 	onConfirm: (arrivalTime: string, durationMinutes: number) => void;
 	placeTitle: string;
-	/** Рекомендуемое время прибытия (с учётом логистики) */
 	defaultArrival: string;
 	defaultDurationMinutes: number;
-	/** Минимально допустимое время прибытия (минуты от полуночи) */
 	minArrivalMinutes: number;
-	/** Название события/старт для текста конфликта */
 	blockingEventTitle: string;
-	/** Строка opening_hours из OSM — для предупреждения «может быть закрыто» */
 	openingHoursRaw?: string;
 	planningDate?: Date;
 };
@@ -53,21 +48,18 @@ export function AddToRouteTimeModal({
 	const [showTimePicker, setShowTimePicker] = useState(false);
 	const [wheelDate, setWheelDate] = useState(() => new Date());
 
-	const parseArrivalMin = useCallback(
-		(t: string): number | null => {
-			let s = t.trim();
-			if (!/^\d{1,2}:\d{2}$/.test(s)) return null;
-			const [h, m] = s.split(":").map(Number);
-			if (h > 23 || m > 59) return null;
-			s = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-			try {
-				return timeToMinutes(s);
-			} catch {
-				return null;
-			}
-		},
-		[],
-	);
+	const parseArrivalMin = useCallback((t: string): number | null => {
+		let s = t.trim();
+		if (!/^\d{1,2}:\d{2}$/.test(s)) return null;
+		const [h, m] = s.split(":").map(Number);
+		if (h > 23 || m > 59) return null;
+		s = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+		try {
+			return timeToMinutes(s);
+		} catch {
+			return null;
+		}
+	}, []);
 
 	useEffect(() => {
 		if (visible) {
@@ -76,12 +68,7 @@ export function AddToRouteTimeModal({
 			setShowTimePicker(false);
 			const [h, m] = defaultArrival.split(":").map(Number);
 			const d = new Date();
-			d.setHours(
-				Number.isFinite(h) ? h : 12,
-				Number.isFinite(m) ? m : 0,
-				0,
-				0,
-			);
+			d.setHours(Number.isFinite(h) ? h : 12, Number.isFinite(m) ? m : 0, 0, 0);
 			setWheelDate(d);
 		}
 	}, [visible, defaultArrival, defaultDurationMinutes]);
@@ -97,10 +84,7 @@ export function AddToRouteTimeModal({
 		const out: { label: string; time: string }[] = [];
 		const uniq = new Set<string>();
 		const add = (label: string, mins: number) => {
-			const clamped = Math.min(
-				24 * 60 - 1,
-				Math.max(minM, mins),
-			);
+			const clamped = Math.min(24 * 60 - 1, Math.max(minM, mins));
 			const t = minutesToTime(clamped);
 			if (uniq.has(t)) return;
 			uniq.add(t);

@@ -1,115 +1,154 @@
 import React, {
-  createContext,
-  useState,
-  useContext,
-  ReactNode,
-  useCallback,
-} from 'react';
-import { Place } from '../../types/planner';
-import { RoutePlan } from '../../types/planner';
+	createContext,
+	useState,
+	useContext,
+	ReactNode,
+	useCallback,
+	useMemo,
+} from "react";
+import { Place } from "../../types/planner";
+import { RoutePlan } from "../../types/planner";
 
 interface FavoritesContextType {
-  favoritePlaces: Place[];
-  /** Места, созданные пользователем (кастомные активности), отдельно от избранного OSM */
-  userCreatedPlaces: Place[];
-  savedRoutes: RoutePlan[];
-  addFavoritePlace: (place: Place) => void;
-  removeFavoritePlace: (placeId: string) => void;
-  addUserCreatedPlace: (place: Place) => void;
-  removeUserCreatedPlace: (placeId: string) => void;
-  isFavorite: (placeId: string) => boolean;
-  addSavedRoute: (route: RoutePlan) => void;
-  removeSavedRoute: (routeId: string) => void;
-  /** Полная замена избранного (например после GET /user/profile). */
-  replaceFavoritePlaces: (places: Place[]) => void;
+	favoritePlaces: Place[];
+	userCreatedPlaces: Place[];
+	savedRoutes: RoutePlan[];
+	addFavoritePlace: (place: Place) => void;
+	removeFavoritePlace: (placeId: string) => void;
+	addUserCreatedPlace: (place: Place) => void;
+	removeUserCreatedPlace: (placeId: string) => void;
+	isFavorite: (placeId: string) => boolean;
+	addSavedRoute: (route: RoutePlan) => void;
+	removeSavedRoute: (routeId: string) => void;
+	replaceFavoritePlaces: (places: Place[]) => void;
+	replaceUserCreatedPlaces: (places: Place[]) => void;
 }
 
-const FavoritesContext = createContext<FavoritesContextType | undefined>(undefined);
+const FavoritesContext = createContext<FavoritesContextType | undefined>(
+	undefined,
+);
 
 type FavoritesProviderProps = {
-  children: ReactNode;
+	children: ReactNode;
 };
 
 export const FavoritesProvider = ({ children }: FavoritesProviderProps) => {
-  const [favoritePlaces, setFavoritePlaces] = useState<Place[]>([]);
-  const [userCreatedPlaces, setUserCreatedPlaces] = useState<Place[]>([]);
-  const [savedRoutes, setSavedRoutes] = useState<RoutePlan[]>([]);
+	const [favoritePlaces, setFavoritePlaces] = useState<Place[]>([]);
+	const [userCreatedPlaces, setUserCreatedPlaces] = useState<Place[]>([]);
+	const [savedRoutes, setSavedRoutes] = useState<RoutePlan[]>([]);
 
-  const addFavoritePlace = (place: Place) => {
-    // В гостевом режиме избранное не работает
-    // Проверка будет добавлена через useAuth в компонентах
-    setFavoritePlaces(prev => {
-      if (prev.find(p => p.id === place.id)) {
-        return prev;
-      }
-      return [...prev, place];
-    });
-  };
+	const normalizePlaceId = useCallback((raw: string) => {
+		const id = String(raw || "").trim();
+		if (!id) return "";
+		if (id.startsWith("osm_")) return id.slice(4);
+		return id;
+	}, []);
 
-  const removeFavoritePlace = (placeId: string) => {
-    setFavoritePlaces(prev => prev.filter(p => p.id !== placeId));
-  };
+	const favoriteIdSet = useMemo(
+		() => new Set(favoritePlaces.map((p) => normalizePlaceId(p.id))),
+		[favoritePlaces, normalizePlaceId],
+	);
 
-  const addUserCreatedPlace = (place: Place) => {
-    setUserCreatedPlaces(prev => {
-      if (prev.find(p => p.id === place.id)) {
-        return prev;
-      }
-      return [...prev, place];
-    });
-  };
+	const addFavoritePlace = useCallback(
+		(place: Place) => {
+			setFavoritePlaces((prev) => {
+				const norm = normalizePlaceId(place.id);
+				if (!norm) return prev;
+				if (prev.some((p) => normalizePlaceId(p.id) === norm)) {
+					return prev;
+				}
+				return [...prev, place];
+			});
+		},
+		[normalizePlaceId],
+	);
 
-  const removeUserCreatedPlace = (placeId: string) => {
-    setUserCreatedPlaces(prev => prev.filter(p => p.id !== placeId));
-  };
+	const removeFavoritePlace = useCallback(
+		(placeId: string) => {
+			const norm = normalizePlaceId(placeId);
+			setFavoritePlaces((prev) =>
+				prev.filter((p) => normalizePlaceId(p.id) !== norm),
+			);
+		},
+		[normalizePlaceId],
+	);
 
-  const isFavorite = (placeId: string): boolean => {
-    return favoritePlaces.some(p => p.id === placeId);
-  };
+	const addUserCreatedPlace = useCallback(
+		(place: Place) => {
+			setUserCreatedPlaces((prev) => {
+				const norm = normalizePlaceId(place.id);
+				if (prev.some((p) => normalizePlaceId(p.id) === norm)) {
+					return prev;
+				}
+				return [...prev, place];
+			});
+		},
+		[normalizePlaceId],
+	);
 
-  const addSavedRoute = (route: RoutePlan) => {
-    setSavedRoutes(prev => {
-      if (prev.find(r => r.id === route.id)) {
-        return prev;
-      }
-      return [...prev, route];
-    });
-  };
+	const removeUserCreatedPlace = useCallback(
+		(placeId: string) => {
+			const norm = normalizePlaceId(placeId);
+			setUserCreatedPlaces((prev) =>
+				prev.filter((p) => normalizePlaceId(p.id) !== norm),
+			);
+		},
+		[normalizePlaceId],
+	);
 
-  const removeSavedRoute = (routeId: string) => {
-    setSavedRoutes(prev => prev.filter(r => r.id !== routeId));
-  };
+	const isFavorite = useCallback(
+		(placeId: string): boolean => {
+			return favoriteIdSet.has(normalizePlaceId(placeId));
+		},
+		[favoriteIdSet, normalizePlaceId],
+	);
 
-  const replaceFavoritePlaces = useCallback((places: Place[]) => {
-    setFavoritePlaces(places);
-  }, []);
+	const addSavedRoute = (route: RoutePlan) => {
+		setSavedRoutes((prev) => {
+			if (prev.find((r) => r.id === route.id)) {
+				return prev;
+			}
+			return [...prev, route];
+		});
+	};
 
-  return (
-    <FavoritesContext.Provider
-      value={{
-        favoritePlaces,
-        userCreatedPlaces,
-        savedRoutes,
-        addFavoritePlace,
-        removeFavoritePlace,
-        addUserCreatedPlace,
-        removeUserCreatedPlace,
-        isFavorite,
-        addSavedRoute,
-        removeSavedRoute,
-        replaceFavoritePlaces,
-      }}
-    >
-      {children}
-    </FavoritesContext.Provider>
-  );
+	const removeSavedRoute = (routeId: string) => {
+		setSavedRoutes((prev) => prev.filter((r) => r.id !== routeId));
+	};
+
+	const replaceFavoritePlaces = useCallback((places: Place[]) => {
+		setFavoritePlaces(places);
+	}, []);
+	const replaceUserCreatedPlaces = useCallback((places: Place[]) => {
+		setUserCreatedPlaces(places);
+	}, []);
+
+	return (
+		<FavoritesContext.Provider
+			value={{
+				favoritePlaces,
+				userCreatedPlaces,
+				savedRoutes,
+				addFavoritePlace,
+				removeFavoritePlace,
+				addUserCreatedPlace,
+				removeUserCreatedPlace,
+				isFavorite,
+				addSavedRoute,
+				removeSavedRoute,
+				replaceFavoritePlaces,
+				replaceUserCreatedPlaces,
+			}}
+		>
+			{children}
+		</FavoritesContext.Provider>
+	);
 };
 
 export const useFavorites = () => {
-  const context = useContext(FavoritesContext);
-  if (context === undefined) {
-    throw new Error('useFavorites must be used within a FavoritesProvider');
-  }
-  return context;
+	const context = useContext(FavoritesContext);
+	if (context === undefined) {
+		throw new Error("useFavorites must be used within a FavoritesProvider");
+	}
+	return context;
 };
-

@@ -12,7 +12,6 @@ function endOfLocalDaySec(d: Date): number {
 	return startOfLocalDaySec(d) + 86400 - 1;
 }
 
-/** ID для API: osm_* из OpenStreetMap, u_* для кастомных. */
 export function timelinePlaceIdFromRouteEvent(ev: RouteEvent): string {
 	const raw = (ev.placeId ?? ev.id).trim();
 	if (raw.startsWith("osm_") || raw.startsWith("u_")) return raw;
@@ -20,7 +19,6 @@ export function timelinePlaceIdFromRouteEvent(ev: RouteEvent): string {
 	return `osm_${raw}`;
 }
 
-/** События маршрута на календарный день → записи timeline_events. */
 export function routeEventsToTimelineEvents(
 	events: RouteEvent[],
 	day: Date,
@@ -41,7 +39,6 @@ export function routeEventsToTimelineEvents(
 	});
 }
 
-/** Удаляем события, попавшие на этот календарный день, добавляем из маршрута. */
 export function mergeRouteIntoTimeline(
 	existing: TimelineEvent[],
 	routeEvents: RouteEvent[],

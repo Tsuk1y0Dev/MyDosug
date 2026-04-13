@@ -20,7 +20,6 @@ const DAY_NAMES_RU = [
 	"субботу",
 ];
 
-/** Минуты от полуночи; 24:00 → 1440 (конец дня). */
 function parseHHMM(s: string): number | null {
 	const m = s.trim().match(/^(\d{1,2}):(\d{2})$/);
 	if (!m) return null;
@@ -51,7 +50,6 @@ function expandDayRange(a: number, b: number): number[] {
 	return out;
 }
 
-/** «Mo-Th», «Fr-Sa», «Su», «Mo-Th, Su» */
 function parseDayTokens(spec: string): number[] {
 	const set = new Set<number>();
 	const parts = spec
@@ -79,11 +77,9 @@ function parseDayTokens(spec: string): number[] {
 
 type Interval = { start: number; end: number; overnight: boolean };
 
-/**
- * Разбор сегмента вида «Fr-Sa 12:00-02:00» или «Mo-Th, Su 12:00-24:00».
- * День и время разделяем по последнему интервалу времени в строке.
- */
-function parseIntervals(raw: string): Array<{ days: number[]; interval: Interval }> {
+function parseIntervals(
+	raw: string,
+): Array<{ days: number[]; interval: Interval }> {
 	const out: Array<{ days: number[]; interval: Interval }> = [];
 	const chunks = raw
 		.split(/;/)
@@ -143,9 +139,6 @@ function isOpenNowInRule(
 	return null;
 }
 
-/**
- * Краткая строка для списка: «Сегодня открыто до …», «Откроется в …», «Сегодня выходной».
- */
 export function getOpeningSummaryToday(
 	place: OSMPlace,
 	now = new Date(),
@@ -170,12 +163,10 @@ export function getOpeningSummaryToday(
 		if (!r.days.includes(jsDay)) continue;
 		const iv = r.interval;
 		if (!iv.overnight && iv.end < 24 * 60 && nowMin < iv.start) {
-			nextStart =
-				nextStart === null ? iv.start : Math.min(nextStart, iv.start);
+			nextStart = nextStart === null ? iv.start : Math.min(nextStart, iv.start);
 		}
 		if (iv.overnight && nowMin < iv.start && nowMin >= iv.end) {
-			nextStart =
-				nextStart === null ? iv.start : Math.min(nextStart, iv.start);
+			nextStart = nextStart === null ? iv.start : Math.min(nextStart, iv.start);
 		}
 	}
 	if (nextStart !== null) {
@@ -194,9 +185,6 @@ export function getOpeningSummaryToday(
 	return "Сегодня закрыто";
 }
 
-/**
- * Полный красивый текст для карточки (русские названия дней + интервалы).
- */
 export function formatOpeningHoursDetailRu(place: OSMPlace): string {
 	const raw = place.openingHoursRaw?.trim();
 	if (!raw) return "Время работы в данных не указано.";
@@ -215,15 +203,7 @@ export function formatOpeningHoursDetailRu(place: OSMPlace): string {
 	}
 
 	const order = [1, 2, 3, 4, 5, 6, 0];
-	const names = [
-		"Пн",
-		"Вт",
-		"Ср",
-		"Чт",
-		"Пт",
-		"Сб",
-		"Вс",
-	];
+	const names = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 	const lines: string[] = [];
 	for (const d of order) {
 		if (byDay[d].length) {
@@ -235,11 +215,7 @@ export function formatOpeningHoursDetailRu(place: OSMPlace): string {
 
 export function extractPlacePhone(place: OSMPlace): string | null {
 	const t = place.tags ?? {};
-	const p =
-		t.phone ||
-		t["contact:phone"] ||
-		t["phone:mobile"] ||
-		t.mobile;
+	const p = t.phone || t["contact:phone"] || t["phone:mobile"] || t.mobile;
 	if (!p || !String(p).trim()) return null;
 	return String(p).trim();
 }
@@ -251,7 +227,6 @@ export function extractPlaceWebsite(place: OSMPlace): string | null {
 	return String(w).trim();
 }
 
-/** Минуты от полуночи до закрытия сегодня, если сейчас открыто; иначе null. */
 export function getMinutesUntilClosingToday(
 	place: OSMPlace,
 	now = new Date(),
@@ -272,10 +247,6 @@ export function getMinutesUntilClosingToday(
 	return null;
 }
 
-/**
- * Открыто ли место в указанную минуту дня (0…1439), для выбранного календарного дня `onDate`.
- */
-/** То же, что isPlaceOpenAtLocalMinutes, но только строка часов OSM. */
 export function isOpenAtMinutesFromRaw(
 	openingHoursRaw: string | undefined,
 	onDate: Date,

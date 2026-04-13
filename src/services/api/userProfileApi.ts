@@ -1,8 +1,3 @@
-/**
- * Профиль и локации пользователя (chess.electroscope.ru).
- * Эндпоинты ожидают application/x-www-form-urlencoded и token в теле / query.
- */
-
 const API_BASE =
 	process.env.EXPO_PUBLIC_API_URL || "https://chess.electroscope.ru/api";
 
@@ -27,15 +22,12 @@ async function parseJsonResponse(res: Response): Promise<any> {
 		if (i >= 0) {
 			try {
 				return JSON.parse(text.slice(i));
-			} catch {
-				/* fallthrough */
-			}
+			} catch {}
 		}
 		return { raw: text };
 	}
 }
 
-/** GET /user/profile?token= */
 export async function fetchUserProfile(token: string): Promise<any> {
 	const url = buildUrl("/user/profile", { token });
 	const res = await fetch(url, { method: "GET" });
@@ -46,7 +38,6 @@ export async function fetchUserProfile(token: string): Promise<any> {
 	return body;
 }
 
-/** POST /user/profile — data — JSON-строка (как ждёт json_decode на сервере). */
 export async function postUserProfile(
 	token: string,
 	dataPayload: Record<string, unknown>,
@@ -77,7 +68,6 @@ export type ServerLocationInput = {
 	description?: string;
 };
 
-/** POST /user/locations/add — data: JSON-массив строкой. */
 export async function postUserLocationsAdd(
 	token: string,
 	locations: ServerLocationInput[],
@@ -101,7 +91,6 @@ export async function postUserLocationsAdd(
 	return json;
 }
 
-/** POST /user/locations/remove — id: индекс в массиве локаций (0 — первая). */
 export async function postUserLocationRemove(
 	token: string,
 	index: number,
@@ -125,7 +114,6 @@ export async function postUserLocationRemove(
 	return json;
 }
 
-/** POST /user/locations/update — id: индекс, data: JSON-объект локации. */
 export async function postUserLocationUpdate(
 	token: string,
 	index: number,

@@ -62,12 +62,12 @@ export interface PlacesSearchRequest {
 		child_friendly?: boolean;
 		[key: string]: boolean | undefined;
 	};
-	max_travel_time?: number; // минуты от текущей точки
+	max_travel_time?: number;
 	mood?: "romantic" | "family" | "friends" | "solo" | "work";
 	open_now?: boolean;
 	latitude?: number;
 	longitude?: number;
-	radius?: number; // метры
+	radius?: number;
 	limit?: number;
 	offset?: number;
 }
@@ -188,10 +188,6 @@ const getCategoryIdByType = (type: Place["type"]): number => {
 };
 
 export const placesApi = {
-	/**
-	 * Поиск мест
-	 * POST /api/places/search
-	 */
 	async searchPlaces(
 		data: PlacesSearchRequest,
 	): Promise<ApiResponse<PlacesSearchResponse>> {

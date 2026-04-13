@@ -96,12 +96,8 @@ export interface SearchResultsStepProps {
 export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 	onPlanSaved,
 }) => {
-	const {
-		searchCriteria,
-		setCurrentStep,
-		planningRequest,
-		planningDate,
-	} = usePlanner();
+	const { searchCriteria, setCurrentStep, planningRequest, planningDate } =
+		usePlanner();
 	const {
 		insertEventWithOrigin,
 		events,
@@ -276,22 +272,14 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 	]);
 
 	const finishAdd = useCallback(
-		(
-			event: RouteEvent,
-			originUpdate: "unchanged" | RouteOrigin | null,
-		) => {
+		(event: RouteEvent, originUpdate: "unchanged" | RouteOrigin | null) => {
 			const index = pendingInsertIndex ?? events.length;
 			insertEventWithOrigin(index, event, originUpdate);
 			setSelectedPlace(null);
 			setTimeModalPlace(null);
 			onPlanSaved?.();
 		},
-		[
-			insertEventWithOrigin,
-			events.length,
-			pendingInsertIndex,
-			onPlanSaved,
-		],
+		[insertEventWithOrigin, events.length, pendingInsertIndex, onPlanSaved],
 	);
 
 	const confirmAddToRoute = useCallback(
@@ -505,7 +493,11 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 													</Text>
 												</View>
 												<View style={styles.metaItem}>
-													<Feather name="navigation" size={14} color="#6b7280" />
+													<Feather
+														name="navigation"
+														size={14}
+														color="#6b7280"
+													/>
 													<Text style={styles.metaText}>
 														{item.distanceMeters < 1000
 															? `${item.distanceMeters} м`
@@ -513,7 +505,9 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 													</Text>
 												</View>
 											</View>
-											<Text style={styles.cardTapHint}>Нажмите для подробностей →</Text>
+											<Text style={styles.cardTapHint}>
+												Нажмите для подробностей →
+											</Text>
 										</TouchableOpacity>
 
 										<TouchableOpacity
@@ -729,7 +723,10 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 											}}
 										>
 											<Feather name="globe" size={18} color="#2563eb" />
-											<Text style={styles.detailModalLinkText} numberOfLines={2}>
+											<Text
+												style={styles.detailModalLinkText}
+												numberOfLines={2}
+											>
 												{extractPlaceWebsite(detailModalPlace)}
 											</Text>
 										</TouchableOpacity>
@@ -776,9 +773,7 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 				}
 				defaultDurationMinutes={60}
 				minArrivalMinutes={timeModalTiming?.minArrivalMinutes ?? 0}
-				blockingEventTitle={
-					timeModalTiming?.blockingLabel ?? "начала дня"
-				}
+				blockingEventTitle={timeModalTiming?.blockingLabel ?? "начала дня"}
 				openingHoursRaw={timeModalPlace?.openingHoursRaw}
 				planningDate={planningDate}
 			/>

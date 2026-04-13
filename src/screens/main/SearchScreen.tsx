@@ -5,7 +5,11 @@ import React, {
 	useRef,
 	useCallback,
 } from "react";
-import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/native";
+import {
+	useRoute,
+	useNavigation,
+	useFocusEffect,
+} from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import type { MainTabParamList } from "../../navigation/types";
@@ -154,7 +158,6 @@ export const SearchScreen = () => {
 	).current;
 
 	const openFilters = () => {
-		// Снапшот текущих примененных категорий в черновики.
 		setDraftCategoryIds(selectedCategoryIds);
 		setDraftSubCategoryIds(selectedSubCategoryIds);
 		setDraftSearchBudgetMax(searchBudgetMax);
@@ -268,13 +271,13 @@ export const SearchScreen = () => {
 		if (deviceCoords) return deviceCoords;
 		const p = profile?.defaultStartPoint;
 		const c =
-			p && "coordinates" in p && (p as { coordinates?: { lat: number; lng: number } }).coordinates;
+			p &&
+			"coordinates" in p &&
+			(p as { coordinates?: { lat: number; lng: number } }).coordinates;
 		if (c) return { lat: c.lat, lng: c.lng };
 		return { lat: 55.75, lng: 37.62 };
 	}, [deviceCoords, profile?.defaultStartPoint]);
 
-	// Draft-выбор фильтров (применяем только по кнопке “Подтвердить”),
-	// чтобы не триггерить Overpass на каждый тап в категориях.
 	const [draftCategoryIds, setDraftCategoryIds] = useState<string[]>([]);
 	const [draftSubCategoryIds, setDraftSubCategoryIds] = useState<string[]>([]);
 	const [expandedCategoryIdInModal, setExpandedCategoryIdInModal] = useState<
@@ -330,7 +333,6 @@ export const SearchScreen = () => {
 			} catch (e: any) {
 				const status = e?.status;
 				if (status === 429 || status === 504) {
-					// Ошибки 429/504 не показываем пользователю: OSMService уже делает ретраи.
 					setLoadError(null);
 				} else {
 					setLoadError(e?.message || "Ошибка загрузки мест");
@@ -522,83 +524,83 @@ export const SearchScreen = () => {
 					activeOpacity={0.85}
 					onPress={() => setSelectedPlace(place)}
 				>
-				<View style={styles.placeImagePlaceholder}>
-					<Text style={styles.placeImageEmoji}>
-						{categoryForIcon?.icon || "Imgg"}
-					</Text>
-				</View>
-				<View style={styles.placeInfo}>
-					<Text style={styles.placeName}>{place.title}</Text>
-					{place.address ? (
-						<Text
-							style={styles.placeAddress}
-							numberOfLines={1}
-							ellipsizeMode="tail"
-						>
-							<Feather name="map-pin" size={12} color="#6b7280" />{" "}
-							{place.address}
+					<View style={styles.placeImagePlaceholder}>
+						<Text style={styles.placeImageEmoji}>
+							{categoryForIcon?.icon || "Imgg"}
 						</Text>
-					) : null}
-					<Text style={styles.placeCaptionLine} numberOfLines={2}>
-						🕐 {getOpeningSummaryToday(place)}
-					</Text>
-					{untilClose != null && untilClose > 0 ? (
-						<Text style={styles.placeClosingHint}>
-							До закрытия ~{untilClose} мин
-						</Text>
-					) : null}
-					<Text style={styles.placeCaptionLine} numberOfLines={2}>
-						💳 {formatOsmBudgetCaption(place)}
-					</Text>
-
-					<View style={styles.placeMeta}>
-						<View style={styles.metaItem}>
-							<Feather name="star" size={14} color="#f59e0b" />
-							<Text style={styles.metaText}>{place.rating.toFixed(2)}</Text>
-						</View>
-						<View style={styles.metaItem}>
-							<Feather name="navigation" size={14} color="#6b7280" />
-							<Text style={styles.metaText}>
-								{distanceMeters < 1000
-									? `${distanceMeters} м`
-									: `${(distanceMeters / 1000).toFixed(1)} км`}
-								{"\n"}~{durationMinutes} мин
+					</View>
+					<View style={styles.placeInfo}>
+						<Text style={styles.placeName}>{place.title}</Text>
+						{place.address ? (
+							<Text
+								style={styles.placeAddress}
+								numberOfLines={1}
+								ellipsizeMode="tail"
+							>
+								<Feather name="map-pin" size={12} color="#6b7280" />{" "}
+								{place.address}
 							</Text>
+						) : null}
+						<Text style={styles.placeCaptionLine} numberOfLines={2}>
+							🕐 {getOpeningSummaryToday(place)}
+						</Text>
+						{untilClose != null && untilClose > 0 ? (
+							<Text style={styles.placeClosingHint}>
+								До закрытия ~{untilClose} мин
+							</Text>
+						) : null}
+						<Text style={styles.placeCaptionLine} numberOfLines={2}>
+							💳 {formatOsmBudgetCaption(place)}
+						</Text>
+
+						<View style={styles.placeMeta}>
+							<View style={styles.metaItem}>
+								<Feather name="star" size={14} color="#f59e0b" />
+								<Text style={styles.metaText}>{place.rating.toFixed(2)}</Text>
+							</View>
+							<View style={styles.metaItem}>
+								<Feather name="navigation" size={14} color="#6b7280" />
+								<Text style={styles.metaText}>
+									{distanceMeters < 1000
+										? `${distanceMeters} м`
+										: `${(distanceMeters / 1000).toFixed(1)} км`}
+									{"\n"}~{durationMinutes} мин
+								</Text>
+							</View>
+						</View>
+						<View style={styles.placeTags}>
+							{place.accessibility.wheelchairAccessible && (
+								<View style={styles.tag}>
+									<Text style={styles.tagText}>♿</Text>
+								</View>
+							)}
+							{place.accessibility.elevatorOrRamp && (
+								<View style={styles.tag}>
+									<Text style={styles.tagText}>⬆</Text>
+								</View>
+							)}
+							{place.accessibility.stepFreeEntrance && (
+								<View style={styles.tag}>
+									<Text style={styles.tagText}>🚪</Text>
+								</View>
+							)}
+							{place.accessibility.accessibleToilet && (
+								<View style={styles.tag}>
+									<Text style={styles.tagText}>🚻</Text>
+								</View>
+							)}
+							{place.accessibility.parkingNearby && (
+								<View style={styles.tag}>
+									<Text style={styles.tagText}>🅿</Text>
+								</View>
+							)}
+							{place.accessibility.publicTransportNearby && (
+								<View style={styles.tag}>
+									<Text style={styles.tagText}>🚌</Text>
+								</View>
+							)}
 						</View>
 					</View>
-					<View style={styles.placeTags}>
-						{place.accessibility.wheelchairAccessible && (
-							<View style={styles.tag}>
-								<Text style={styles.tagText}>♿</Text>
-							</View>
-						)}
-						{place.accessibility.elevatorOrRamp && (
-							<View style={styles.tag}>
-								<Text style={styles.tagText}>⬆</Text>
-							</View>
-						)}
-						{place.accessibility.stepFreeEntrance && (
-							<View style={styles.tag}>
-								<Text style={styles.tagText}>🚪</Text>
-							</View>
-						)}
-						{place.accessibility.accessibleToilet && (
-							<View style={styles.tag}>
-								<Text style={styles.tagText}>🚻</Text>
-							</View>
-						)}
-						{place.accessibility.parkingNearby && (
-							<View style={styles.tag}>
-								<Text style={styles.tagText}>🅿</Text>
-							</View>
-						)}
-						{place.accessibility.publicTransportNearby && (
-							<View style={styles.tag}>
-								<Text style={styles.tagText}>🚌</Text>
-							</View>
-						)}
-					</View>
-				</View>
 				</TouchableOpacity>
 			</View>
 		);
@@ -674,7 +676,6 @@ export const SearchScreen = () => {
 							style={styles.categoryModalContent}
 							activeOpacity={1}
 							onPress={(e) => {
-								// Чтобы клик внутри не закрывал модалку
 								(e as any)?.stopPropagation?.();
 							}}
 						>
@@ -780,7 +781,6 @@ export const SearchScreen = () => {
 																	if (prev.includes(cat.id)) return prev;
 																	return [...prev, cat.id];
 																});
-																// “вся категория” обнуляет индивидуальные подкатегории
 																setDraftSubCategoryIds((prev) =>
 																	prev.filter((id) => !subIds.includes(id)),
 																);
@@ -998,47 +998,47 @@ export const SearchScreen = () => {
 										</TouchableOpacity>
 									</View>
 								</View>
-						{loading ? (
-							<View style={styles.emptyState}>
-								<ActivityIndicator size="large" color="#3b82f6" />
-								<Text style={styles.emptyStateText}>Загрузка мест...</Text>
-								<Text style={styles.emptyStateSubtext}>
-									Пожалуйста, подождите
-								</Text>
-							</View>
-						) : displayPlaces.length === 0 ? (
-							<View style={styles.emptyState}>
-								<Feather name="search" size={48} color="#d1d5db" />
-								<Text style={styles.emptyStateText}>Ничего не найдено</Text>
-								<Text style={styles.emptyStateSubtext}>
-									Попробуйте изменить параметры поиска
-								</Text>
-							</View>
-						) : (
-							<FlatList
-								data={displayPlaces}
-								keyExtractor={(item) => item.place.id}
-								renderItem={({ item }) => <PlaceCard item={item} />}
-								contentContainerStyle={styles.placesListContent}
-								onEndReached={fetchMore}
-								onEndReachedThreshold={0.4}
-								ListFooterComponent={
-									loadingMore ? (
-										<View style={styles.listFooter}>
-											<Text style={styles.listFooterText}>Загрузка...</Text>
-										</View>
-									) : !hasMore ? (
-										<View style={styles.listFooter}>
-											<Text style={styles.listFooterText}>
-												Больше нет результатов
-											</Text>
-										</View>
-									) : (
-										<View style={{ height: 24 }} />
-									)
-								}
-							/>
-						)}
+								{loading ? (
+									<View style={styles.emptyState}>
+										<ActivityIndicator size="large" color="#3b82f6" />
+										<Text style={styles.emptyStateText}>Загрузка мест...</Text>
+										<Text style={styles.emptyStateSubtext}>
+											Пожалуйста, подождите
+										</Text>
+									</View>
+								) : displayPlaces.length === 0 ? (
+									<View style={styles.emptyState}>
+										<Feather name="search" size={48} color="#d1d5db" />
+										<Text style={styles.emptyStateText}>Ничего не найдено</Text>
+										<Text style={styles.emptyStateSubtext}>
+											Попробуйте изменить параметры поиска
+										</Text>
+									</View>
+								) : (
+									<FlatList
+										data={displayPlaces}
+										keyExtractor={(item) => item.place.id}
+										renderItem={({ item }) => <PlaceCard item={item} />}
+										contentContainerStyle={styles.placesListContent}
+										onEndReached={fetchMore}
+										onEndReachedThreshold={0.4}
+										ListFooterComponent={
+											loadingMore ? (
+												<View style={styles.listFooter}>
+													<Text style={styles.listFooterText}>Загрузка...</Text>
+												</View>
+											) : !hasMore ? (
+												<View style={styles.listFooter}>
+													<Text style={styles.listFooterText}>
+														Больше нет результатов
+													</Text>
+												</View>
+											) : (
+												<View style={{ height: 24 }} />
+											)
+										}
+									/>
+								)}
 							</>
 						)}
 					</View>
@@ -1250,8 +1250,6 @@ export const SearchScreen = () => {
 					</View>
 				</Animated.View>
 			)}
-
-
 
 			{/* Детали выбранного места — карточка как метка на карте / элемент списка */}
 			{selectedPlace && (
@@ -1894,7 +1892,7 @@ const styles = StyleSheet.create({
 	categoryCountText: {
 		fontSize: 14,
 		fontWeight: "700",
-		color: "#6b7280", // тёмно-серый
+		color: "#6b7280",
 		marginRight: 2,
 	},
 	subcategoryList: {

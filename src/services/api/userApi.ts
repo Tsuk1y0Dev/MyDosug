@@ -1,238 +1,172 @@
-/**
- * API для работы с пользователем и профилем
- * Моковые запросы, готовые для замены на реальные
- */
+import { apiClient, mockRequest, ApiResponse } from "./client";
 
-import { apiClient, mockRequest, ApiResponse } from './client';
-
-// Типы для пользователя
 export interface UserProfile {
-  id: number;
-  email: string;
-  name: string;
-  avatar_url?: string;
-  max_walking_minutes: number;
-  preferred_transport: 'walking' | 'car' | 'public';
-  dietary_restrictions: string[];
-  accessibility_needs: string[];
-  budget_preference: 'low' | 'medium' | 'high';
-  has_children: boolean;
-  children_ages: number[];
-  default_start_location_type: 'home' | 'work' | 'current' | 'custom';
+	id: number;
+	email: string;
+	name: string;
+	avatar_url?: string;
+	max_walking_minutes: number;
+	preferred_transport: "walking" | "car" | "public";
+	dietary_restrictions: string[];
+	accessibility_needs: string[];
+	budget_preference: "low" | "medium" | "high";
+	has_children: boolean;
+	children_ages: number[];
+	default_start_location_type: "home" | "work" | "current" | "custom";
 }
 
 export interface UpdateProfileRequest {
-  name?: string;
-  avatar_url?: string;
-  max_walking_minutes?: number;
-  preferred_transport?: 'walking' | 'car' | 'public';
-  dietary_restrictions?: string[];
-  accessibility_needs?: string[];
-  budget_preference?: 'low' | 'medium' | 'high';
-  has_children?: boolean;
-  children_ages?: number[];
-  default_start_location_type?: 'home' | 'work' | 'current' | 'custom';
+	name?: string;
+	avatar_url?: string;
+	max_walking_minutes?: number;
+	preferred_transport?: "walking" | "car" | "public";
+	dietary_restrictions?: string[];
+	accessibility_needs?: string[];
+	budget_preference?: "low" | "medium" | "high";
+	has_children?: boolean;
+	children_ages?: number[];
+	default_start_location_type?: "home" | "work" | "current" | "custom";
 }
 
 export interface SavedLocation {
-  id: number;
-  user_id: number;
-  name: string;
-  type: 'home' | 'work' | 'study' | 'gym' | 'custom';
-  address: string;
-  latitude: number;
-  longitude: number;
-  icon?: string;
-  is_default_start: boolean;
+	id: number;
+	user_id: number;
+	name: string;
+	type: "home" | "work" | "study" | "gym" | "custom";
+	address: string;
+	latitude: number;
+	longitude: number;
+	icon?: string;
+	is_default_start: boolean;
 }
 
 export interface CreateSavedLocationRequest {
-  name: string;
-  type: 'home' | 'work' | 'study' | 'gym' | 'custom';
-  address: string;
-  latitude: number;
-  longitude: number;
-  icon?: string;
-  is_default_start?: boolean;
+	name: string;
+	type: "home" | "work" | "study" | "gym" | "custom";
+	address: string;
+	latitude: number;
+	longitude: number;
+	icon?: string;
+	is_default_start?: boolean;
 }
 
-// --- User-created locations (own places) ---
-// Требование снаружи: POST /user/locations/add|update|remove
-// payload (body): { token, data } (или { token, id, data } / { token, id })
 export interface UserLocationAddData {
-  lat: number;
-  long: number;
-  name: string;
-  description?: string;
+	lat: number;
+	long: number;
+	name: string;
+	description?: string;
 }
 
-export type UserLocationUpdateData = Partial<Omit<UserLocationAddData, "lat" | "long" | "name">> & {
-  lat: number;
-  long: number;
-  name?: string;
+export type UserLocationUpdateData = Partial<
+	Omit<UserLocationAddData, "lat" | "long" | "name">
+> & {
+	lat: number;
+	long: number;
+	name?: string;
 };
 
-// Моковые данные
 let mockProfile: UserProfile | null = null;
 const mockSavedLocations: SavedLocation[] = [];
 let mockLocationIdCounter = 1;
 
 export const userApi = {
-  /**
-   * Получить профиль пользователя
-   * GET /api/user/profile
-   */
-  async getProfile(): Promise<ApiResponse<UserProfile>> {
-    // Моковая реализация
-    if (!mockProfile) {
-      mockProfile = {
-        id: 1,
-        email: 'user@example.com',
-        name: 'Пользователь',
-        max_walking_minutes: 15,
-        preferred_transport: 'walking',
-        dietary_restrictions: [],
-        accessibility_needs: [],
-        budget_preference: 'medium',
-        has_children: false,
-        children_ages: [],
-        default_start_location_type: 'current',
-      };
-    }
+	async getProfile(): Promise<ApiResponse<UserProfile>> {
+		if (!mockProfile) {
+			mockProfile = {
+				id: 1,
+				email: "user@example.com",
+				name: "Пользователь",
+				max_walking_minutes: 15,
+				preferred_transport: "walking",
+				dietary_restrictions: [],
+				accessibility_needs: [],
+				budget_preference: "medium",
+				has_children: false,
+				children_ages: [],
+				default_start_location_type: "current",
+			};
+		}
 
-    return mockRequest<UserProfile>(mockProfile);
+		return mockRequest<UserProfile>(mockProfile);
+	},
 
-    // Реальная реализация (раскомментировать когда бэкенд готов):
-    // return apiClient.get<UserProfile>('/user/profile');
-  },
+	async updateProfile(
+		data: UpdateProfileRequest,
+	): Promise<ApiResponse<UserProfile>> {
+		if (!mockProfile) {
+			await this.getProfile();
+		}
 
-  /**
-   * Обновить профиль пользователя
-   * PUT /api/user/profile
-   */
-  async updateProfile(data: UpdateProfileRequest): Promise<ApiResponse<UserProfile>> {
-    // Моковая реализация
-    if (!mockProfile) {
-      await this.getProfile();
-    }
+		if (mockProfile) {
+			mockProfile = { ...mockProfile, ...data };
+		}
 
-    if (mockProfile) {
-      mockProfile = { ...mockProfile, ...data };
-    }
+		return mockRequest<UserProfile>(mockProfile!);
+	},
 
-    return mockRequest<UserProfile>(mockProfile!);
+	async getSavedLocations(): Promise<ApiResponse<SavedLocation[]>> {
+		return mockRequest<SavedLocation[]>(mockSavedLocations);
+	},
 
-    // Реальная реализация (раскомментировать когда бэкенд готов):
-    // return apiClient.put<UserProfile>('/user/profile', data);
-  },
+	async createSavedLocation(
+		data: CreateSavedLocationRequest,
+	): Promise<ApiResponse<SavedLocation>> {
+		const newLocation: SavedLocation = {
+			id: mockLocationIdCounter++,
+			user_id: 1,
+			...data,
+			is_default_start: data.is_default_start ?? false,
+		};
 
-  /**
-   * Получить сохраненные локации пользователя
-   * GET /api/user/locations
-   */
-  async getSavedLocations(): Promise<ApiResponse<SavedLocation[]>> {
-    // Моковая реализация
-    return mockRequest<SavedLocation[]>(mockSavedLocations);
+		mockSavedLocations.push(newLocation);
 
-    // Реальная реализация (раскомментировать когда бэкенд готов):
-    // return apiClient.get<SavedLocation[]>('/user/locations');
-  },
+		return mockRequest<SavedLocation>(newLocation);
+	},
 
-  /**
-   * Создать сохраненную локацию
-   * POST /api/user/locations
-   */
-  async createSavedLocation(data: CreateSavedLocationRequest): Promise<ApiResponse<SavedLocation>> {
-    // Моковая реализация
-    const newLocation: SavedLocation = {
-      id: mockLocationIdCounter++,
-      user_id: 1,
-      ...data,
-      is_default_start: data.is_default_start ?? false,
-    };
+	async updateSavedLocation(
+		id: number,
+		data: Partial<CreateSavedLocationRequest>,
+	): Promise<ApiResponse<SavedLocation>> {
+		const index = mockSavedLocations.findIndex((loc) => loc.id === id);
+		if (index === -1) {
+			throw { message: "Локация не найдена", code: "NOT_FOUND", status: 404 };
+		}
 
-    mockSavedLocations.push(newLocation);
+		mockSavedLocations[index] = { ...mockSavedLocations[index], ...data };
 
-    return mockRequest<SavedLocation>(newLocation);
+		return mockRequest<SavedLocation>(mockSavedLocations[index]);
+	},
 
-    // Реальная реализация (раскомментировать когда бэкенд готов):
-    // return apiClient.post<SavedLocation>('/user/locations', data);
-  },
+	async deleteSavedLocation(id: number): Promise<ApiResponse<void>> {
+		const index = mockSavedLocations.findIndex((loc) => loc.id === id);
+		if (index === -1) {
+			throw { message: "Локация не найдена", code: "NOT_FOUND", status: 404 };
+		}
 
-  /**
-   * Обновить сохраненную локацию
-   * PUT /api/user/locations/{id}
-   */
-  async updateSavedLocation(
-    id: number,
-    data: Partial<CreateSavedLocationRequest>
-  ): Promise<ApiResponse<SavedLocation>> {
-    // Моковая реализация
-    const index = mockSavedLocations.findIndex(loc => loc.id === id);
-    if (index === -1) {
-      throw { message: 'Локация не найдена', code: 'NOT_FOUND', status: 404 };
-    }
+		mockSavedLocations.splice(index, 1);
 
-    mockSavedLocations[index] = { ...mockSavedLocations[index], ...data };
+		return mockRequest<void>(undefined);
+	},
 
-    return mockRequest<SavedLocation>(mockSavedLocations[index]);
+	async addUserLocation(
+		token: string,
+		data: UserLocationAddData,
+	): Promise<ApiResponse<any>> {
+		return apiClient.post<any>("/user/locations/add", { token, data });
+	},
 
-    // Реальная реализация (раскомментировать когда бэкенд готов):
-    // return apiClient.put<SavedLocation>(`/user/locations/${id}`, data);
-  },
+	async updateUserLocation(
+		token: string,
+		id: number,
+		data: UserLocationAddData,
+	): Promise<ApiResponse<any>> {
+		return apiClient.post<any>("/user/locations/update", { token, id, data });
+	},
 
-  /**
-   * Удалить сохраненную локацию
-   * DELETE /api/user/locations/{id}
-   */
-  async deleteSavedLocation(id: number): Promise<ApiResponse<void>> {
-    // Моковая реализация
-    const index = mockSavedLocations.findIndex(loc => loc.id === id);
-    if (index === -1) {
-      throw { message: 'Локация не найдена', code: 'NOT_FOUND', status: 404 };
-    }
-
-    mockSavedLocations.splice(index, 1);
-
-    return mockRequest<void>(undefined);
-
-    // Реальная реализация (раскомментировать когда бэкенд готов):
-    // return apiClient.delete<void>(`/user/locations/${id}`);
-  },
-
-  /**
-   * POST /api/user/locations/add
-   * Body: { token, data: { lat, long, name, description? } }
-   */
-  async addUserLocation(
-    token: string,
-    data: UserLocationAddData,
-  ): Promise<ApiResponse<any>> {
-    // Токен продублирован в body (как в требовании), но apiClient также может поставить Bearer.
-    return apiClient.post<any>('/user/locations/add', { token, data });
-  },
-
-  /**
-   * POST /api/user/locations/update
-   * Body: { token, id, data }
-   */
-  async updateUserLocation(
-    token: string,
-    id: number,
-    data: UserLocationAddData,
-  ): Promise<ApiResponse<any>> {
-    return apiClient.post<any>('/user/locations/update', { token, id, data });
-  },
-
-  /**
-   * POST /api/user/locations/remove
-   * Body: { token, id }
-   */
-  async removeUserLocation(
-    token: string,
-    id: number,
-  ): Promise<ApiResponse<void>> {
-    return apiClient.post<void>('/user/locations/remove', { token, id });
-  },
+	async removeUserLocation(
+		token: string,
+		id: number,
+	): Promise<ApiResponse<void>> {
+		return apiClient.post<void>("/user/locations/remove", { token, id });
+	},
 };
-

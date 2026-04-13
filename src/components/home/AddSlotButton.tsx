@@ -13,7 +13,6 @@ export const AddSlotButton: React.FC<AddSlotButtonProps> = ({
 	slot,
 	onPress,
 }) => {
-	// Конвертируем пиксели в минуты (80px = 1 час = 60 минут)
 	const HOUR_HEIGHT = 80;
 	const formatDuration = (durationPixels: number) => {
 		const durationMinutes = Math.round((durationPixels / HOUR_HEIGHT) * 60);
@@ -31,7 +30,7 @@ export const AddSlotButton: React.FC<AddSlotButtonProps> = ({
 			style={[
 				styles.addSlotButton,
 				{
-					top: slot.startTime, // теперь number
+					top: slot.startTime,
 					height: slot.duration,
 				},
 			]}
@@ -72,4 +71,3 @@ const styles = StyleSheet.create({
 		fontWeight: "500",
 	},
 });
-

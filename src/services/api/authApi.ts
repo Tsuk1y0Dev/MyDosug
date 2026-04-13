@@ -31,7 +31,6 @@ export interface RefreshTokenResponse {
 	refreshToken: string;
 }
 
-// Регистрация
 export const authApi = {
 	async register(data: RegisterRequest): Promise<ApiResponse<AuthResponse>> {
 		return apiClient.post<AuthResponse>("/auth/register", data);

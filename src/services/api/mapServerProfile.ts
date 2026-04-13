@@ -1,13 +1,12 @@
 import type { StartPoint } from "../../types/planner";
 import type { Place } from "../../types/planner";
-import type { UserProfile, SavedLocation } from '../../types/userProfile';
+import type { UserProfile, SavedLocation } from "../../types/userProfile";
 import type { TimelineEvent } from "../../types/timeline";
 import {
 	parseTimelineEventsField,
 	prunePastTimelineEvents,
 } from "../timeline/timelineStorage";
 
-/** Минимальная Place из id OSM для избранного с сервера. */
 export function placeStubFromOsmId(id: string): Place {
 	return {
 		id,
@@ -51,26 +50,30 @@ export function placeStubFromOsmId(id: string): Place {
 }
 
 function parseJsonField(raw: unknown): any {
-	if (raw == null) return undefined;
-	if (typeof raw === "object") return raw;
-	if (typeof raw === "string") {
-		const t = raw.trim();
+	let current: unknown = raw;
+	for (let i = 0; i < 3; i += 1) {
+		if (current == null) return undefined;
+		if (typeof current === "object") return current;
+		if (typeof current !== "string") return undefined;
+		const t = current.trim();
 		if (!t) return undefined;
 		try {
-			return JSON.parse(t);
+			current = JSON.parse(t);
 		} catch {
 			return undefined;
 		}
 	}
-	return undefined;
+	return typeof current === "object" ? current : undefined;
 }
 
 function isTruthySetting(v: unknown): boolean {
 	return String(v) === "true" || v === true;
 }
 
-/** По умолчанию false, если ключа нет или не «true». */
-function settingBoolFalseByDefault(settings: Record<string, unknown>, keys: string[]): boolean {
+function settingBoolFalseByDefault(
+	settings: Record<string, unknown>,
+	keys: string[],
+): boolean {
 	for (const k of keys) {
 		const v = settings[k];
 		if (v === undefined || v === null) continue;
@@ -80,7 +83,6 @@ function settingBoolFalseByDefault(settings: Record<string, unknown>, keys: stri
 	return false;
 }
 
-/** Уведомления: по умолчанию true, пока явно не «false». */
 function notificationsFromSettings(settings: Record<string, unknown>): boolean {
 	for (const k of ["notificationsEnabled", "notifications"]) {
 		const v = settings[k];
@@ -129,6 +131,12 @@ function parseFavoriteIds(root: any, server: any): string[] {
 	if (typeof favRaw === "string") {
 		const p = parseJsonField(favRaw);
 		if (Array.isArray(p)) return p.map((x) => String(x));
+		if (favRaw.includes(",")) {
+			return favRaw
+				.split(",")
+				.map((s) => s.trim())
+				.filter(Boolean);
+		}
 	}
 	return [];
 }
@@ -138,7 +146,12 @@ function defaultStartPointFromSettings(
 ): StartPoint {
 	const raw = settings.defaultStartPoint;
 	const parsed = parseJsonField(raw);
-	if (parsed && typeof parsed === "object" && parsed !== null && "type" in parsed) {
+	if (
+		parsed &&
+		typeof parsed === "object" &&
+		parsed !== null &&
+		"type" in parsed
+	) {
 		return parsed as StartPoint;
 	}
 	return {
@@ -148,9 +161,6 @@ function defaultStartPointFromSettings(
 	} as StartPoint;
 }
 
-/**
- * Ответ GET /user/profile: обычно { data: { email, name, settings (строка JSON), saved_locations (строка), ... } }.
- */
 export function mapServerProfileToUserProfile(
 	server: any,
 	fallbackEmail: string,
@@ -174,10 +184,14 @@ export function mapServerProfileToUserProfile(
 	const favoriteIds = parseFavoriteIds(root, server);
 
 	const teRaw = root?.timeline_events ?? server?.timeline_events;
-	const timelineEvents = prunePastTimelineEvents(parseTimelineEventsField(teRaw));
+	const timelineEvents = prunePastTimelineEvents(
+		parseTimelineEventsField(teRaw),
+	);
 
-	const vegetarian =
-		settingBoolFalseByDefault(settings, ["vegan", "vegetarian"]);
+	const vegetarian = settingBoolFalseByDefault(settings, [
+		"vegan",
+		"vegetarian",
+	]);
 	const wheelchairAccessible = settingBoolFalseByDefault(settings, [
 		"wheelchair",
 		"wheelchairAccessible",
@@ -218,17 +232,18 @@ export function mapServerProfileToUserProfile(
 	return { profile, favoriteIds, timelineEvents };
 }
 
-/**
- * Все пользовательские настройки — строки (как ждёт json_decode + хранение в БД).
- */
-export function buildSettingsObject(profile: UserProfile): Record<string, string> {
+export function buildSettingsObject(
+	profile: UserProfile,
+): Record<string, string> {
 	const base: Record<string, string> = {
 		vegetarian: profile.vegetarian ? "true" : "false",
 		vegan: profile.vegetarian ? "true" : "false",
 		wheelchairAccessible: profile.wheelchairAccessible ? "true" : "false",
 		wheelchair: profile.wheelchairAccessible ? "true" : "false",
 		needsRamp: profile.accessibilitySettings.needsRamp ? "true" : "false",
-		needsElevator: profile.accessibilitySettings.needsElevator ? "true" : "false",
+		needsElevator: profile.accessibilitySettings.needsElevator
+			? "true"
+			: "false",
 		notificationsEnabled: profile.notificationsEnabled ? "true" : "false",
 		notifications: profile.notificationsEnabled ? "true" : "false",
 		transport: profile.defaultTransportMode,
@@ -238,16 +253,30 @@ export function buildSettingsObject(profile: UserProfile): Record<string, string
 	return base;
 }
 
-/** Тело поля `data` для POST /user/profile (favorites и timeline — JSON-строки для PHP/MySQL). */
 export function buildProfilePostPayload(
 	profile: UserProfile,
 	favoriteIds: string[],
 	timelineEvents: TimelineEvent[],
 ): Record<string, unknown> {
+	const favoritesPayload = favoriteIds
+		.map((raw) => String(raw || "").trim())
+		.filter(Boolean)
+		.map((id) => {
+			if (id.startsWith("osm_") || id.startsWith("u_")) return id;
+			if (id.startsWith("place-") || id.startsWith("custom-")) return `u_${id}`;
+			return `osm_${id}`;
+		});
+	const savedLocationsPayload = (profile.savedLocations ?? []).map((loc) => ({
+		name: loc.name,
+		lat: Number(loc.coords.lat),
+		long: Number(loc.coords.lng),
+		...(loc.description?.trim() ? { description: loc.description.trim() } : {}),
+	}));
 	return {
 		name: profile.name,
 		settings: JSON.stringify(buildSettingsObject(profile)),
-		favorites: JSON.stringify(favoriteIds),
+		favorites: JSON.stringify(favoritesPayload),
+		saved_locations: JSON.stringify(savedLocationsPayload),
 		timeline_events: JSON.stringify(timelineEvents),
 	};
 }

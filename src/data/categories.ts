@@ -36,12 +36,6 @@ export const activityCategories: Category[] = [
 				icon: "🍔",
 				description: "Бургерные, пиццерии, быстрого питания",
 			},
-			//      {
-			//        id: 'buriat',
-			//        name: 'Позные / бурятская кухня',
-			//        icon: '🥟',
-			//        description: 'Позные, буузы и бурятская кухня',
-			//      },
 			{
 				id: "bar",
 				name: "Бары и пабы",

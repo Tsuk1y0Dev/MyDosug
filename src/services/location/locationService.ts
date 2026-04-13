@@ -2,9 +2,6 @@ import * as Location from "expo-location";
 
 export type Coordinates = { lat: number; lng: number };
 
-/**
- * Текущие координаты устройства или null (нет прав / ошибка).
- */
 export async function getCurrentCoordinates(): Promise<Coordinates | null> {
 	try {
 		const { status } = await Location.requestForegroundPermissionsAsync();
