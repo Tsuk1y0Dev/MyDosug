@@ -10,7 +10,7 @@
 
 | Главный экран | Настройки |
 | :---: | :---: |
-| [!(./images/Screenshot_20260413_184916_MyDosug.jpg)] | [!(./images/Screenshot_20260413_185350_MyDosug.jpg)] |
+| ![HomeScreenshot](./images/Screenshot_20260413_184916_MyDosug.jpg) | ![ProfileScreenshot](./images/Screenshot_20260413_185350_MyDosug.jpg) |
 
 ## Стек технологий
 
