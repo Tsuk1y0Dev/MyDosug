@@ -12,7 +12,7 @@
 - Язык: TypeScript / JavaScript
 - Сторонние API: Yandex Maps API, Overpass API
 - Навигация: React Navigation
-- Web-демонстрация интерфейса: ![Web demo](https://mydosug-test--ff7oxgu3zn.expo.app)
+- Web-демонстрация интерфейса: <https://mydosug-test--ff7oxgu3zn.expo.app>
 
 ## Готовые сборки (Артефакты)
 
