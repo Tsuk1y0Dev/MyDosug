@@ -29,7 +29,11 @@ export interface OSMPlace {
 }
 
 const PUBLIC_OVERPASS_URL = "https://overpass-api.de/api/interpreter";
-const LOCAL_OVERPASS_URL = "http://192.168.1.186:54321/api/interpreter";
+// const PUBLIC_OVERPASS_URL = "http://192.168.2.171:54321/api/interpreter";
+//const PUBLIC_OVERPASS_URL = "http://192.168.1.186:54321/api/interpreter";
+// const LOCAL_OVERPASS_URL = "http://192.168.1.186:54321/api/interpreter";
+// const LOCAL_OVERPASS_URL = "http://127.0.0.1:54321/api/interpreter";
+const LOCAL_OVERPASS_URL = PUBLIC_OVERPASS_URL;
 
 let lastOverpassRequestAt = 0;
 const MIN_OVERPASS_INTERVAL_MS = 700;
@@ -53,7 +57,7 @@ async function probeLocalOverpass(): Promise<boolean> {
 		localProbe = { available, checkedAt: Date.now() };
 		return available;
 	};
-	const probeQuery = `[out:json][timeout:5];node(0,0,0,0);out ids 1;`;
+	const probeQuery = `[out:json][timeout:15];node(0,0,0,0);out ids 1;`;
 	try {
 		if (canUseAbortController) {
 			const controller = new AbortController();

@@ -25,8 +25,6 @@
 
 Для запуска проекта в режиме разработки выполните следующие действия:
 
-### 1. Клонирование репозитория
-
 ```bash
 git clone https://github.com/Tsuk1y0Dev/MyDosug.git
 cd MyDosug 

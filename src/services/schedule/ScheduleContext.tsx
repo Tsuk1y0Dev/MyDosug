@@ -1,4 +1,5 @@
-import React, { createContext, useState, useContext, ReactNode } from "react";
+import React, { createContext, useState, useContext, ReactNode, useEffect } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Activity } from "../../types/schedule";
 import { PlannedActivity } from "../../types/planner";
 
@@ -25,6 +26,35 @@ export const ScheduleProvider = ({ children }: ScheduleProviderProps) => {
 	const [plannedActivities, setPlannedActivities] = useState<PlannedActivity[]>(
 		[],
 	);
+
+	const STORAGE_KEY = "@mydosug_schedule_v1";
+
+	useEffect(() => {
+		let cancelled = false;
+		(async () => {
+			try {
+				const raw = await AsyncStorage.getItem(STORAGE_KEY);
+				if (!raw || cancelled) return;
+				const parsed = JSON.parse(raw) as {
+					schedule?: Activity[];
+					plannedActivities?: PlannedActivity[];
+				};
+				if (Array.isArray(parsed.schedule)) setSchedule(parsed.schedule);
+				if (Array.isArray(parsed.plannedActivities))
+					setPlannedActivities(parsed.plannedActivities);
+			} catch {}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+
+	useEffect(() => {
+		void AsyncStorage.setItem(
+			STORAGE_KEY,
+			JSON.stringify({ schedule, plannedActivities }),
+		);
+	}, [schedule, plannedActivities]);
 
 	const addActivity = (activity: Activity) => {
 		setSchedule((prev) => [...prev, activity]);

@@ -3,6 +3,7 @@ import React, {
 	useMemo,
 	useCallback,
 	useEffect,
+	useLayoutEffect,
 	useRef,
 } from "react";
 import {
@@ -18,6 +19,7 @@ import {
 	Modal,
 	ScrollView,
 	Linking,
+	TextInput,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { usePlanner } from "../../services/planner/PlannerContext";
@@ -51,6 +53,7 @@ import {
 	extractPlacePhone,
 	extractPlaceWebsite,
 } from "../../utils/openingHoursRu";
+import { fuzzyIncludes } from "../../utils/fuzzy";
 
 const { height: winHeight } = Dimensions.get("window");
 
@@ -127,6 +130,7 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 	const [loading, setLoading] = useState(false);
 	const [loadError, setLoadError] = useState<string | null>(null);
 	const [sortMode, setSortMode] = useState<"distance" | "rating">("distance");
+	const [searchQuery, setSearchQuery] = useState("");
 
 	const planningDayFloorMinutes = useMemo(() => {
 		return isSameLocalCalendarDay(planningDate, new Date())
@@ -153,31 +157,41 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 		planningDayFloorMinutes,
 	]);
 
+	useLayoutEffect(() => {
+		if (!searchCriteria) {
+			setLoading(false);
+			return;
+		}
+		setLoading(true);
+	}, [searchCriteria]);
+
 	useEffect(() => {
-		const load = async () => {
-			if (!searchCriteria) return;
-			setLoading(true);
-			setLoadError(null);
-			setSelectedPlace(null);
+		if (!searchCriteria) return;
 
-			setRadius(INITIAL_RADIUS);
-			setHasMore(INITIAL_RADIUS < MAX_RADIUS);
-			setLoadingMore(false);
-			setPlaces([]);
-			placesSeenIdsRef.current = new Set();
+		let cancelled = false;
+		setLoadError(null);
+		setSelectedPlace(null);
+		setRadius(INITIAL_RADIUS);
+		setHasMore(INITIAL_RADIUS < MAX_RADIUS);
+		setLoadingMore(false);
+		setPlaces([]);
+		placesSeenIdsRef.current = new Set();
 
+		(async () => {
 			try {
 				const data = await OSMService.searchAround(
 					searchCriteria.startCoords,
 					INITIAL_RADIUS,
 					searchCriteria,
 				);
+				if (cancelled) return;
 				const filtered = data.filter((p) =>
 					matchesFilters(p, searchCriteria.filters ?? {}),
 				);
 				filtered.forEach((p) => placesSeenIdsRef.current.add(p.id));
 				setPlaces(filtered);
 			} catch (e: any) {
+				if (cancelled) return;
 				const status = e?.status;
 				if (status === 429 || status === 504) {
 					setLoadError(null);
@@ -185,17 +199,29 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 					setLoadError(e?.message || "Ошибка загрузки мест");
 				}
 			} finally {
-				setLoading(false);
+				if (!cancelled) setLoading(false);
 			}
+		})();
+
+		return () => {
+			cancelled = true;
 		};
-		load();
 	}, [searchCriteria]);
 
 	const filteredWithDistance = useMemo(() => {
 		if (!searchCriteria) return [];
 		const start = searchCriteria.startCoords;
-		const items = filterOsmPlaces(places)
+		let items = filterOsmPlaces(places)
 			.filter((place) => matchesExtendedSearchCriteria(place, searchCriteria))
+			.filter((place) => {
+				const q = searchQuery.trim();
+				if (!q) return true;
+				return (
+					fuzzyIncludes(q, place.title) ||
+					fuzzyIncludes(q, place.description) ||
+					(place.address ? fuzzyIncludes(q, place.address) : false)
+				);
+			})
 			.map((place) => {
 				const distanceKm = haversineKm(
 					start.lat,
@@ -222,7 +248,7 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 			});
 
 		return items;
-	}, [searchCriteria, places, sortMode]);
+	}, [searchCriteria, places, sortMode, searchQuery]);
 
 	const fetchMore = useCallback(async () => {
 		if (!searchCriteria) return;
@@ -307,7 +333,7 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 			}
 			Alert.alert(
 				"Первое место",
-				"Построить маршрут от вашей геолокации до этой точки?",
+				"Построить маршрут от вашей стартовой точки до этой точки?",
 				[
 					{
 						text: "Нет, только точки плана",
@@ -322,15 +348,16 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 					{
 						text: "Да, от меня",
 						onPress: () => {
-							if (deviceCoords) {
+							const startCoords = origin?.coords ?? deviceCoords;
+							if (startCoords) {
 								finishAdd(event, {
 									id: "default",
 									label: "Вы здесь",
-									coords: deviceCoords,
+									coords: startCoords,
 								});
 							} else {
 								Alert.alert(
-									"Геолокация",
+									"Стартовая точка",
 									"Не удалось получить координаты. Маршрут начнётся с первой точки.",
 									[
 										{
@@ -350,7 +377,7 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 				],
 			);
 		},
-		[timeModalPlace, events.length, deviceCoords, finishAdd],
+		[timeModalPlace, events.length, deviceCoords, origin?.coords, finishAdd],
 	);
 
 	if (!searchCriteria) {
@@ -386,13 +413,22 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 				>
 					<Feather name="arrow-left" size={24} color="#374151" />
 				</TouchableOpacity>
-				<Text style={styles.title}>
-					{loading
-						? "Загрузка..."
-						: loadError
-							? loadError
-							: `Найдено: ${filteredWithDistance.length}`}
-				</Text>
+				<View style={styles.headerTitleWrap}>
+					<Text style={styles.title}>
+						{loading
+							? "Загрузка..."
+							: loadError
+								? loadError
+								: `Найдено: ${filteredWithDistance.length}`}
+					</Text>
+					<TextInput
+						style={styles.searchInput}
+						placeholder="Поиск по результатам"
+						placeholderTextColor="#9ca3af"
+						value={searchQuery}
+						onChangeText={setSearchQuery}
+					/>
+				</View>
 				<View style={styles.toggleRow}>
 					<TouchableOpacity
 						style={[
@@ -804,6 +840,21 @@ const styles = StyleSheet.create({
 		fontSize: 18,
 		fontWeight: "600",
 		color: "#374151",
+	},
+	headerTitleWrap: {
+		flex: 1,
+		paddingRight: 10,
+	},
+	searchInput: {
+		marginTop: 8,
+		borderWidth: 1,
+		borderColor: "#e5e7eb",
+		borderRadius: 12,
+		paddingHorizontal: 12,
+		paddingVertical: 10,
+		fontSize: 14,
+		color: "#111827",
+		backgroundColor: "#f8fafc",
 	},
 	placeholder: {
 		width: 40,

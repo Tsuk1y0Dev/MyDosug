@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
 	View,
 	Text,
@@ -8,16 +8,24 @@ import {
 	SafeAreaView,
 	TextInput,
 	Switch,
+	Modal,
 	Alert,
 	Platform,
 } from "react-native";
 import { useAuth } from "../../services/auth/AuthContext";
 import { Feather } from "@expo/vector-icons";
 import { useUser } from "../../context/UserContext";
+import { useDeviceCoords } from "../../hooks/useDeviceCoords";
+import { YandexMap } from "../../components/maps/YandexMap";
+import type { StartPoint } from "../../types/planner";
+import { PrivacyPolicyContent } from "../../components/legal/PrivacyPolicyContent";
+import { TermsOfUseContent } from "../../components/legal/TermsOfUseContent";
+import { SupportContent } from "../../components/legal/SupportContent";
 
 export const ProfileScreen = () => {
 	const { user, logout } = useAuth();
 	const { profile, updateProfile, updateAccessibilitySettings } = useUser();
+	const deviceCoords = useDeviceCoords();
 	const [settings, setSettings] = useState<{
 		defaultTransportMode: "walking" | "car" | "public";
 		notificationsEnabled: boolean;
@@ -35,19 +43,38 @@ export const ProfileScreen = () => {
 	const [walkingTimeInput, setWalkingTimeInput] = useState(
 		settings.averageWalkingTime.toString(),
 	);
+	const lastSyncedPrefsKey = useRef("");
+
+	const [legalModalType, setLegalModalType] = useState<
+		"privacy" | "terms" | "support" | null
+	>(null);
+	const [customPointPickerVisible, setCustomPointPickerVisible] =
+		useState(false);
+	const [customPointDraft, setCustomPointDraft] = useState<{
+		lat: number;
+		lng: number;
+	} | null>(null);
 
 	useEffect(() => {
-		if (profile) {
-			setSettings((prev) => ({
-				...prev,
-				defaultTransportMode: profile.defaultTransportMode,
-				notificationsEnabled: profile.notificationsEnabled,
-				vegetarian: profile.vegetarian,
-				wheelchairAccessible: profile.wheelchairAccessible,
-				averageWalkingTime: profile.averageWalkingTime,
-			}));
-			setWalkingTimeInput(String(profile.averageWalkingTime));
-		}
+		if (!profile) return;
+		const prefsKey = JSON.stringify({
+			defaultTransportMode: profile.defaultTransportMode,
+			notificationsEnabled: profile.notificationsEnabled,
+			vegetarian: profile.vegetarian,
+			wheelchairAccessible: profile.wheelchairAccessible,
+			averageWalkingTime: profile.averageWalkingTime,
+		});
+		if (prefsKey === lastSyncedPrefsKey.current) return;
+		lastSyncedPrefsKey.current = prefsKey;
+		setSettings((prev) => ({
+			...prev,
+			defaultTransportMode: profile.defaultTransportMode,
+			notificationsEnabled: profile.notificationsEnabled,
+			vegetarian: profile.vegetarian,
+			wheelchairAccessible: profile.wheelchairAccessible,
+			averageWalkingTime: profile.averageWalkingTime,
+		}));
+		setWalkingTimeInput(String(profile.averageWalkingTime));
 	}, [profile]);
 
 	const handleLogout = async () => {
@@ -72,6 +99,43 @@ export const ProfileScreen = () => {
 		} else {
 			Alert.alert("Ошибка", "Введите корректное значение (1-120 минут)");
 		}
+	};
+
+	const currentStartPointType = profile?.defaultStartPoint?.type ?? "current";
+	const currentCustomCoords =
+		profile?.defaultStartPoint?.type === "custom"
+			? profile?.defaultStartPoint?.coordinates
+			: undefined;
+
+	const setStartPointCurrent = () => {
+		const sp: StartPoint = {
+			type: "current",
+			address: "",
+			label: "Вы здесь",
+		};
+		updateProfile({ defaultStartPoint: sp });
+	};
+
+	const openCustomPointPicker = () => {
+		const fallback = { lat: 55.75, lng: 37.62 };
+		const initial =
+			currentCustomCoords ??
+			(deviceCoords ? { lat: deviceCoords.lat, lng: deviceCoords.lng } : null) ??
+			fallback;
+		setCustomPointDraft(initial);
+		setCustomPointPickerVisible(true);
+	};
+
+	const saveCustomPointPicker = () => {
+		if (!customPointDraft) return;
+		const sp: StartPoint = {
+			type: "custom",
+			address: "",
+			label: "Точка на карте",
+			coordinates: customPointDraft,
+		};
+		updateProfile({ defaultStartPoint: sp });
+		setCustomPointPickerVisible(false);
 	};
 
 	if (!user) {
@@ -277,6 +341,33 @@ export const ProfileScreen = () => {
 					/>
 				</View>
 
+				{/* Стартовая точка */}
+				<View style={styles.section}>
+					<Text style={styles.sectionTitle}>Стартовая точка</Text>
+
+					<SettingRow
+						label="Геолокация"
+						value={
+							currentStartPointType === "current"
+								? "Используется"
+								: "Использовать"
+						}
+						icon="navigation"
+						onPress={setStartPointCurrent}
+					/>
+
+					<SettingRow
+						label="Кастомная точка на карте"
+						value={
+							currentStartPointType === "custom" && currentCustomCoords
+								? `${currentCustomCoords.lat.toFixed(4)}, ${currentCustomCoords.lng.toFixed(4)}`
+								: "Выбрать на карте"
+						}
+						icon="map"
+						onPress={openCustomPointPicker}
+					/>
+				</View>
+
 				{/* Характеристики пользователя */}
 				<View style={styles.section}>
 					<Text style={styles.sectionTitle}>Характеристики</Text>
@@ -331,19 +422,28 @@ export const ProfileScreen = () => {
 				<View style={styles.section}>
 					<Text style={styles.sectionTitle}>Дополнительно</Text>
 
-					<TouchableOpacity style={styles.actionButton}>
+					<TouchableOpacity
+						style={styles.actionButton}
+						onPress={() => setLegalModalType("support")}
+					>
 						<Feather name="help-circle" size={20} color="#3b82f6" />
 						<Text style={styles.actionButtonText}>Помощь и поддержка</Text>
 						<Feather name="chevron-right" size={20} color="#9ca3af" />
 					</TouchableOpacity>
 
-					<TouchableOpacity style={styles.actionButton}>
+					<TouchableOpacity
+						style={styles.actionButton}
+						onPress={() => setLegalModalType("terms")}
+					>
 						<Feather name="file-text" size={20} color="#3b82f6" />
 						<Text style={styles.actionButtonText}>Условия использования</Text>
 						<Feather name="chevron-right" size={20} color="#9ca3af" />
 					</TouchableOpacity>
 
-					<TouchableOpacity style={styles.actionButton}>
+					<TouchableOpacity
+						style={styles.actionButton}
+						onPress={() => setLegalModalType("privacy")}
+					>
 						<Feather name="shield" size={20} color="#3b82f6" />
 						<Text style={styles.actionButtonText}>
 							Политика конфиденциальности
@@ -362,6 +462,88 @@ export const ProfileScreen = () => {
 					<Text style={styles.footerText}>Версия 0.0.1</Text>
 				</View>
 			</ScrollView>
+
+			<Modal
+				visible={legalModalType != null}
+				animationType="slide"
+				onRequestClose={() => setLegalModalType(null)}
+			>
+				<SafeAreaView style={styles.container}>
+					<View style={styles.modalHeader}>
+						<Text style={styles.modalHeaderTitle}>
+							{legalModalType === "terms"
+								? "Условия использования"
+								: legalModalType === "support"
+									? "Помощь и поддержка"
+									: "Политика конфиденциальности"}
+						</Text>
+						<TouchableOpacity
+							onPress={() => setLegalModalType(null)}
+							style={styles.modalHeaderClose}
+						>
+							<Feather name="x" size={22} color="#374151" />
+						</TouchableOpacity>
+					</View>
+					{legalModalType === "terms" ? (
+						<TermsOfUseContent />
+					) : legalModalType === "support" ? (
+						<SupportContent />
+					) : (
+						<PrivacyPolicyContent />
+					)}
+				</SafeAreaView>
+			</Modal>
+
+			<Modal
+				visible={customPointPickerVisible}
+				transparent
+				animationType="fade"
+				onRequestClose={() => setCustomPointPickerVisible(false)}
+			>
+				<View style={styles.mapPickerOverlay}>
+					<View style={styles.mapPickerCard}>
+						<Text style={styles.mapPickerTitle}>Выберите кастомную точку</Text>
+						<View style={styles.mapPickerMap}>
+							<YandexMap
+								center={
+									customPointDraft ??
+									(profile?.defaultStartPoint?.type === "custom" &&
+									profile?.defaultStartPoint?.coordinates
+										? profile.defaultStartPoint.coordinates
+										: deviceCoords ?? { lat: 55.75, lng: 37.62 })
+								}
+								zoom={14}
+								markers={[]}
+								selectionMode
+								selectedPoint={customPointDraft ?? undefined}
+								onSelectPoint={(coords) => setCustomPointDraft(coords)}
+								height={260}
+								routingEnabled={false}
+							/>
+						</View>
+						<Text style={styles.mapPickerCoords}>
+							{customPointDraft
+								? `${customPointDraft.lat.toFixed(5)}, ${customPointDraft.lng.toFixed(5)}`
+								: "Нажмите на карту, чтобы выбрать точку"}
+						</Text>
+						<View style={styles.mapPickerButtons}>
+							<TouchableOpacity
+								style={styles.mapPickerCancel}
+								onPress={() => setCustomPointPickerVisible(false)}
+							>
+								<Text style={styles.mapPickerCancelText}>Отмена</Text>
+							</TouchableOpacity>
+							<TouchableOpacity
+								style={styles.mapPickerSave}
+								onPress={saveCustomPointPicker}
+								disabled={!customPointDraft}
+							>
+								<Text style={styles.mapPickerSaveText}>Сохранить</Text>
+							</TouchableOpacity>
+						</View>
+					</View>
+				</View>
+			</Modal>
 		</SafeAreaView>
 	);
 };
@@ -755,5 +937,25 @@ const styles = StyleSheet.create({
 		fontSize: 14,
 		color: "white",
 		fontWeight: "600",
+	},
+	modalHeader: {
+		flexDirection: "row",
+		alignItems: "center",
+		justifyContent: "space-between",
+		paddingHorizontal: 16,
+		paddingVertical: 12,
+		borderBottomWidth: 1,
+		borderBottomColor: "#f1f5f9",
+		backgroundColor: "white",
+	},
+	modalHeaderTitle: {
+		fontSize: 16,
+		fontWeight: "800",
+		color: "#111827",
+	},
+	modalHeaderClose: {
+		padding: 8,
+		borderRadius: 12,
+		backgroundColor: "#f1f5f9",
 	},
 });

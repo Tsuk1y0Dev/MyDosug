@@ -8,6 +8,7 @@ import React, {
 } from "react";
 import { Place } from "../../types/planner";
 import { RoutePlan } from "../../types/planner";
+import { normalizeFavoriteId } from "../api/mapServerProfile";
 
 interface FavoritesContextType {
 	favoritePlaces: Place[];
@@ -37,70 +38,51 @@ export const FavoritesProvider = ({ children }: FavoritesProviderProps) => {
 	const [userCreatedPlaces, setUserCreatedPlaces] = useState<Place[]>([]);
 	const [savedRoutes, setSavedRoutes] = useState<RoutePlan[]>([]);
 
-	const normalizePlaceId = useCallback((raw: string) => {
-		const id = String(raw || "").trim();
-		if (!id) return "";
-		if (id.startsWith("osm_")) return id.slice(4);
-		return id;
+	const favoriteIdSet = useMemo(
+		() => new Set(favoritePlaces.map((p) => normalizeFavoriteId(p.id))),
+		[favoritePlaces],
+	);
+
+	const addFavoritePlace = useCallback((place: Place) => {
+		setFavoritePlaces((prev) => {
+			const norm = normalizeFavoriteId(place.id);
+			if (!norm) return prev;
+			if (prev.some((p) => normalizeFavoriteId(p.id) === norm)) {
+				return prev;
+			}
+			return [...prev, place];
+		});
 	}, []);
 
-	const favoriteIdSet = useMemo(
-		() => new Set(favoritePlaces.map((p) => normalizePlaceId(p.id))),
-		[favoritePlaces, normalizePlaceId],
-	);
+	const removeFavoritePlace = useCallback((placeId: string) => {
+		const norm = normalizeFavoriteId(placeId);
+		setFavoritePlaces((prev) =>
+			prev.filter((p) => normalizeFavoriteId(p.id) !== norm),
+		);
+	}, []);
 
-	const addFavoritePlace = useCallback(
-		(place: Place) => {
-			setFavoritePlaces((prev) => {
-				const norm = normalizePlaceId(place.id);
-				if (!norm) return prev;
-				if (prev.some((p) => normalizePlaceId(p.id) === norm)) {
-					return prev;
-				}
-				return [...prev, place];
-			});
-		},
-		[normalizePlaceId],
-	);
+	const addUserCreatedPlace = useCallback((place: Place) => {
+		setUserCreatedPlaces((prev) => {
+			const norm = normalizeFavoriteId(place.id);
+			if (prev.some((p) => normalizeFavoriteId(p.id) === norm)) {
+				return prev;
+			}
+			return [...prev, place];
+		});
+	}, []);
 
-	const removeFavoritePlace = useCallback(
-		(placeId: string) => {
-			const norm = normalizePlaceId(placeId);
-			setFavoritePlaces((prev) =>
-				prev.filter((p) => normalizePlaceId(p.id) !== norm),
-			);
-		},
-		[normalizePlaceId],
-	);
-
-	const addUserCreatedPlace = useCallback(
-		(place: Place) => {
-			setUserCreatedPlaces((prev) => {
-				const norm = normalizePlaceId(place.id);
-				if (prev.some((p) => normalizePlaceId(p.id) === norm)) {
-					return prev;
-				}
-				return [...prev, place];
-			});
-		},
-		[normalizePlaceId],
-	);
-
-	const removeUserCreatedPlace = useCallback(
-		(placeId: string) => {
-			const norm = normalizePlaceId(placeId);
-			setUserCreatedPlaces((prev) =>
-				prev.filter((p) => normalizePlaceId(p.id) !== norm),
-			);
-		},
-		[normalizePlaceId],
-	);
+	const removeUserCreatedPlace = useCallback((placeId: string) => {
+		const norm = normalizeFavoriteId(placeId);
+		setUserCreatedPlaces((prev) =>
+			prev.filter((p) => normalizeFavoriteId(p.id) !== norm),
+		);
+	}, []);
 
 	const isFavorite = useCallback(
 		(placeId: string): boolean => {
-			return favoriteIdSet.has(normalizePlaceId(placeId));
+			return favoriteIdSet.has(normalizeFavoriteId(placeId));
 		},
-		[favoriteIdSet, normalizePlaceId],
+		[favoriteIdSet],
 	);
 
 	const addSavedRoute = (route: RoutePlan) => {

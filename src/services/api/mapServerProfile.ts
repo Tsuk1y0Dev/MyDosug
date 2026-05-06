@@ -7,10 +7,19 @@ import {
 	prunePastTimelineEvents,
 } from "../timeline/timelineStorage";
 
-export function placeStubFromOsmId(id: string): Place {
+function favoriteStubDisplayName(canonicalId: string): string {
+	const raw = canonicalId.replace(/^u_/, "").replace(/^osm_/, "");
+	const m = /^(node|way|relation)-(\d+)$/i.exec(raw);
+	if (m) return `Место на карте (${m[1]} ${m[2]})`;
+	if (raw && raw !== canonicalId) return raw;
+	return canonicalId || "Избранное";
+}
+
+export function placeStubFromOsmId(rawId: string): Place {
+	const id = normalizeFavoriteId(rawId);
 	return {
 		id,
-		name: id,
+		name: favoriteStubDisplayName(id),
 		type: "walking",
 		address: "",
 		description: "",
@@ -47,6 +56,14 @@ export function placeStubFromOsmId(id: string): Place {
 		},
 		coordinates: { lat: 0, lng: 0 },
 	};
+}
+
+export function normalizeFavoriteId(rawId: string): string {
+	const id = String(rawId || "").trim();
+	if (!id) return "";
+	if (id.startsWith("osm_") || id.startsWith("u_")) return id;
+	if (id.startsWith("place-") || id.startsWith("custom-")) return `u_${id}`;
+	return `osm_${id}`;
 }
 
 function parseJsonField(raw: unknown): any {
@@ -188,14 +205,19 @@ export function mapServerProfileToUserProfile(
 		parseTimelineEventsField(teRaw),
 	);
 
-	const vegetarian = settingBoolFalseByDefault(settings, [
-		"vegan",
-		"vegetarian",
-	]);
-	const wheelchairAccessible = settingBoolFalseByDefault(settings, [
-		"wheelchair",
-		"wheelchairAccessible",
-	]);
+	const dietRestrict = String(settings.diet_restrict ?? "").toLowerCase();
+	const vegetarian =
+		dietRestrict.includes("vegetarian") ||
+		dietRestrict.includes("vegan") ||
+		settingBoolFalseByDefault(settings, ["vegan", "vegetarian"]);
+
+	const accessNeeds = String(settings.access_needs ?? "").toLowerCase();
+	const wheelchairAccessible =
+		accessNeeds.includes("wheelchair") ||
+		settingBoolFalseByDefault(settings, [
+			"wheelchair",
+			"wheelchairAccessible",
+		]);
 
 	const locSource =
 		root?.saved_locations ??
@@ -204,11 +226,12 @@ export function mapServerProfileToUserProfile(
 		server?.locations;
 	const savedLocations = mapServerLocations(locSource);
 
-	const transportRaw = settings.transport;
+	const transportRaw = settings.pref_transport ?? settings.transport;
+	const pref = String(transportRaw ?? "walking").toLowerCase();
 	const defaultTransportMode: UserProfile["defaultTransportMode"] =
-		transportRaw === "car"
+		pref === "car" || pref === "driving"
 			? "car"
-			: transportRaw === "public"
+			: pref === "public" || pref === "transit"
 				? "public"
 				: "walking";
 
@@ -216,67 +239,85 @@ export function mapServerProfileToUserProfile(
 		id: String(root?.id ?? fallbackId),
 		name,
 		email,
-		defaultStartPoint: defaultStartPointFromSettings(settings),
+		defaultStartPoint: (() => {
+			const base = defaultStartPointFromSettings(settings);
+			const t = String(settings.default_start_loc_type ?? "").toLowerCase();
+			if (t === "current") return { ...base, type: "current" as const };
+			if (t === "address" || t === "saved" || t === "custom")
+				return { ...base, type: "custom" as const };
+			return base;
+		})(),
 		defaultTransportMode,
 		notificationsEnabled: notificationsFromSettings(settings),
 		vegetarian,
 		wheelchairAccessible,
-		averageWalkingTime: Number(settings.averageWalkingTime ?? 15) || 15,
+		averageWalkingTime:
+			Number(settings.max_walk_time ?? settings.averageWalkingTime ?? 15) ||
+			15,
 		savedLocations,
 		accessibilitySettings: {
-			needsRamp: settingBoolFalseByDefault(settings, ["needsRamp"]),
-			needsElevator: settingBoolFalseByDefault(settings, ["needsElevator"]),
+			needsRamp:
+				accessNeeds.includes("ramp") ||
+				settingBoolFalseByDefault(settings, ["needsRamp"]),
+			needsElevator:
+				accessNeeds.includes("elevator") ||
+				settingBoolFalseByDefault(settings, ["needsElevator"]),
 		},
 	};
 
 	return { profile, favoriteIds, timelineEvents };
 }
 
-export function buildSettingsObject(
+/**
+ * Settings object for POST /user/profile `data.settings` — keys must match
+ * UserHandler.php::$settingsKeys (PHP validates these keys).
+ */
+export function buildServerApiSettings(
 	profile: UserProfile,
 ): Record<string, string> {
-	const base: Record<string, string> = {
-		vegetarian: profile.vegetarian ? "true" : "false",
-		vegan: profile.vegetarian ? "true" : "false",
-		wheelchairAccessible: profile.wheelchairAccessible ? "true" : "false",
-		wheelchair: profile.wheelchairAccessible ? "true" : "false",
-		needsRamp: profile.accessibilitySettings.needsRamp ? "true" : "false",
-		needsElevator: profile.accessibilitySettings.needsElevator
-			? "true"
-			: "false",
-		notificationsEnabled: profile.notificationsEnabled ? "true" : "false",
-		notifications: profile.notificationsEnabled ? "true" : "false",
-		transport: profile.defaultTransportMode,
-		averageWalkingTime: String(profile.averageWalkingTime),
-		defaultStartPoint: JSON.stringify(profile.defaultStartPoint),
+	const sp = profile.defaultStartPoint;
+	const startType =
+		sp?.type === "current" ? "current" : "saved";
+
+	const transport =
+		profile.defaultTransportMode === "car"
+			? "car"
+			: profile.defaultTransportMode === "public"
+				? "public"
+				: "walking";
+
+	const needs: string[] = [];
+	if (profile.wheelchairAccessible) needs.push("wheelchair");
+	if (profile.accessibilitySettings.needsRamp) needs.push("ramp");
+	if (profile.accessibilitySettings.needsElevator) needs.push("elevator");
+	const accessNeeds = needs.length ? needs.join(",") : "none";
+
+	/** Только поля профиля для `users.settings` (не бюджет планировщика и т.п.). */
+	return {
+		max_walk_time: String(
+			Math.max(1, Math.min(180, profile.averageWalkingTime || 15)),
+		),
+		pref_transport: transport,
+		diet_restrict: profile.vegetarian ? "vegetarian" : "none",
+		access_needs: accessNeeds,
+		default_start_loc_type: startType,
 	};
-	return base;
 }
 
+/** Body `data` for POST /user/profile (updSettings): only `name` + `settings` per PHP). */
 export function buildProfilePostPayload(
 	profile: UserProfile,
-	favoriteIds: string[],
-	timelineEvents: TimelineEvent[],
+	_favoriteIds: string[],
+	_timelineEvents: TimelineEvent[],
 ): Record<string, unknown> {
-	const favoritesPayload = favoriteIds
-		.map((raw) => String(raw || "").trim())
-		.filter(Boolean)
-		.map((id) => {
-			if (id.startsWith("osm_") || id.startsWith("u_")) return id;
-			if (id.startsWith("place-") || id.startsWith("custom-")) return `u_${id}`;
-			return `osm_${id}`;
-		});
-	const savedLocationsPayload = (profile.savedLocations ?? []).map((loc) => ({
-		name: loc.name,
-		lat: Number(loc.coords.lat),
-		long: Number(loc.coords.lng),
-		...(loc.description?.trim() ? { description: loc.description.trim() } : {}),
-	}));
+	return buildProfileSettingsPayload(profile);
+}
+
+export function buildProfileSettingsPayload(
+	profile: UserProfile,
+): Record<string, unknown> {
 	return {
 		name: profile.name,
-		settings: JSON.stringify(buildSettingsObject(profile)),
-		favorites: JSON.stringify(favoritesPayload),
-		saved_locations: JSON.stringify(savedLocationsPayload),
-		timeline_events: JSON.stringify(timelineEvents),
+		settings: buildServerApiSettings(profile),
 	};
 }

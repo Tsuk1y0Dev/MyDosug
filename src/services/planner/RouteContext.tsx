@@ -8,6 +8,7 @@ import React, {
 	useEffect,
 	useRef,
 } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
 	DayRouteState,
 	RouteEvent,
@@ -16,6 +17,7 @@ import {
 	TravelMode,
 } from "../../types/route";
 import { YandexRoutingService } from "../yandex/YandexRoutingService";
+import type { RoutingMode } from "../yandex/YandexRoutingService";
 import { localRouteDayKey } from "../../utils/timingUtils";
 
 interface RouteContextType extends DayRouteState {
@@ -34,6 +36,10 @@ interface RouteContextType extends DayRouteState {
 	pendingInsertIndex: number | null;
 	setPendingInsertIndex: (index: number | null) => void;
 	syncPlanCalendarDay: (date: Date) => void;
+	getRoutesByDaySnapshot: () => Record<
+		string,
+		{ origin: RouteOrigin | null; events: RouteEvent[] }
+	>;
 }
 
 const RouteContext = createContext<RouteContextType | undefined>(undefined);
@@ -182,6 +188,62 @@ export const RouteProvider = ({ children }: RouteProviderProps) => {
 		Record<string, { origin: RouteOrigin | null; events: RouteEvent[] }>
 	>({});
 	const activeDayKeyRef = useRef(localRouteDayKey(new Date()));
+
+	const STORAGE_KEY = "@mydosug_routes_by_day_v1";
+
+	useEffect(() => {
+		let cancelled = false;
+		(async () => {
+			try {
+				const raw = await AsyncStorage.getItem(STORAGE_KEY);
+				if (!raw || cancelled) return;
+				const parsed = JSON.parse(raw) as Record<
+					string,
+					{ origin: RouteOrigin | null; events: RouteEvent[] }
+				>;
+				if (!parsed || typeof parsed !== "object") return;
+				routesByDayRef.current = parsed;
+				const saved = parsed[activeDayKeyRef.current];
+				if (saved) {
+					setState((prev) => ({
+						...prev,
+						origin: saved.origin ?? null,
+						events: Array.isArray(saved.events) ? saved.events : [],
+						segments: [],
+						cachedPolyline: null,
+					}));
+				}
+			} catch {}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+
+	const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	useEffect(() => {
+		const key = activeDayKeyRef.current;
+		routesByDayRef.current[key] = { origin: state.origin, events: state.events };
+		if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+		persistTimerRef.current = setTimeout(() => {
+			void AsyncStorage.setItem(
+				STORAGE_KEY,
+				JSON.stringify(routesByDayRef.current),
+			);
+		}, 250);
+		return () => {
+			if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+		};
+	}, [state.origin, state.events]);
+
+	const getRoutesByDaySnapshot = useCallback(() => {
+		const cur = stateRef.current;
+		const key = activeDayKeyRef.current;
+		return {
+			...routesByDayRef.current,
+			[key]: { origin: cur.origin, events: cur.events },
+		};
+	}, []);
 
 	const syncPlanCalendarDay = useCallback((date: Date) => {
 		const newKey = localRouteDayKey(date);
@@ -357,15 +419,73 @@ export const RouteProvider = ({ children }: RouteProviderProps) => {
 				return;
 			}
 
-			const routing = await YandexRoutingService.getRoute(points, "driving");
+			const modeForLeg = (fromIndex: number): RoutingMode => {
+				const tm: TravelMode =
+					fromIndex >= 0 && fromIndex < events.length
+						? events[fromIndex].travelModeToNext
+						: "driving";
+				if (tm === "walking") return "walking";
+				if (tm === "transit") return "transit";
+				return "driving";
+			};
+
+			const legPairs: Array<{
+				from: { lat: number; lng: number };
+				to: { lat: number; lng: number };
+				mode: RoutingMode;
+			}> = [];
+
+			if (useOriginLeg && origin) {
+				legPairs.push({
+					from: origin.coords,
+					to: events[0].coords,
+					mode: modeForLeg(0),
+				});
+			}
+			for (let i = 1; i < events.length; i += 1) {
+				legPairs.push({
+					from: events[i - 1].coords,
+					to: events[i].coords,
+					mode: modeForLeg(i - 1),
+				});
+			}
+
+			const allSameMode =
+				legPairs.length > 0 &&
+				legPairs.every((x) => x.mode === legPairs[0].mode);
+
+			const routingAll = allSameMode
+				? await YandexRoutingService.getRoute(points, legPairs[0].mode)
+				: null;
+
+			const legRoutings = routingAll
+				? routingAll.legs
+				: await Promise.all(
+						legPairs.map(async (lp) => {
+							const r = await YandexRoutingService.getRoute(
+								[lp.from, lp.to],
+								lp.mode,
+							);
+							return r?.legs?.[0] ?? null;
+						}),
+					);
 
 			let segments: RouteSegment[] = [];
 
-			if (routing && routing.legs.length >= points.length - 1) {
+			if (
+				(routingAll && Array.isArray(routingAll.legs)) ||
+				legRoutings.some((x) => x != null)
+			) {
 				let legIndex = 0;
+				const readLeg = () => {
+					const leg = (legRoutings as any[])[legIndex++];
+					return leg && typeof leg.distanceMeters === "number"
+						? leg
+						: { distanceMeters: 0, durationSeconds: 0 };
+				};
 
 				if (useOriginLeg) {
-					const firstLeg = routing.legs[legIndex++];
+					const firstLeg = readLeg();
 					segments.push({
 						fromEventId: "origin",
 						toEventId: events[0].id,
@@ -374,7 +494,12 @@ export const RouteProvider = ({ children }: RouteProviderProps) => {
 							1,
 							Math.round(firstLeg.durationSeconds / 60),
 						),
-						travelMode: "driving",
+						travelMode:
+							modeForLeg(0) === "walking"
+								? "walking"
+								: modeForLeg(0) === "transit"
+									? "transit"
+									: "driving",
 						geometry: { polyline: "" },
 					});
 				}
@@ -382,10 +507,7 @@ export const RouteProvider = ({ children }: RouteProviderProps) => {
 				for (let i = 1; i < events.length; i += 1) {
 					const from = events[i - 1];
 					const to = events[i];
-					const leg = routing.legs[legIndex++] || {
-						distanceMeters: 0,
-						durationSeconds: 0,
-					};
+					const leg = readLeg();
 					segments.push({
 						fromEventId: from.id,
 						toEventId: to.id,
@@ -480,6 +602,7 @@ export const RouteProvider = ({ children }: RouteProviderProps) => {
 			pendingInsertIndex,
 			setPendingInsertIndex,
 			syncPlanCalendarDay,
+			getRoutesByDaySnapshot,
 		}),
 		[
 			state,
@@ -494,6 +617,7 @@ export const RouteProvider = ({ children }: RouteProviderProps) => {
 			pendingInsertIndex,
 			setPendingInsertIndex,
 			syncPlanCalendarDay,
+			getRoutesByDaySnapshot,
 		],
 	);
 

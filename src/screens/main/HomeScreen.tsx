@@ -36,8 +36,17 @@ import { useDeviceCoords } from "../../hooks/useDeviceCoords";
 import { useAuth } from "../../services/auth/AuthContext";
 import { useFavorites } from "../../services/favorites/FavoritesContext";
 import { routeEventToPlace } from "../../utils/placeConverters";
+import { timelineEventsToRouteEvents } from "../../utils/routeToTimeline";
+import citiesRaw from "../../data/cities.json";
+import { fuzzyIncludes } from "../../utils/fuzzy";
 
 type ViewMode = "split" | "map" | "timeline";
+type StartSource = "gps" | "city" | "custom";
+type CityItem = { name: string; lat: number; lon: number; pop?: number };
+
+const CITY_LIST: CityItem[] = Array.isArray(citiesRaw)
+	? (citiesRaw as CityItem[])
+	: [];
 
 function formatPlanDate(d: Date): string {
 	const today = new Date();
@@ -65,8 +74,14 @@ export const HomeScreen = () => {
 		updateTravelMode,
 		setPendingInsertIndex,
 		syncPlanCalendarDay,
+		getRoutesByDaySnapshot,
 	} = useRoute();
-	const { profile, syncRouteDayToTimeline } = useUser();
+	const {
+		profile,
+		syncFullRoutePlanToTimeline,
+		getTimelineEventsByDate,
+		timelineEvents,
+	} = useUser();
 	const { user } = useAuth();
 	const { addFavoritePlace, removeFavoritePlace, isFavorite } = useFavorites();
 	const deviceCoords = useDeviceCoords();
@@ -77,6 +92,15 @@ export const HomeScreen = () => {
 		lng: number;
 	} | null>(null);
 	const [routeSummaryVisible, setRouteSummaryVisible] = useState(false);
+	const [startPointPickerVisible, setStartPointPickerVisible] = useState(false);
+	const [startPointDraft, setStartPointDraft] = useState<{
+		lat: number;
+		lng: number;
+	} | null>(null);
+	const [startSourceModalVisible, setStartSourceModalVisible] = useState(false);
+	const [startSource, setStartSource] = useState<StartSource>("gps");
+	const [cityQuery, setCityQuery] = useState("");
+	const [citySelected, setCitySelected] = useState<CityItem | null>(null);
 	const [selectedDate, setSelectedDate] = useState(() =>
 		startOfLocalDay(new Date()),
 	);
@@ -97,9 +121,110 @@ export const HomeScreen = () => {
 		setShowDatePicker(true);
 	};
 
+	const openStartPointPicker = () => {
+		const fallback = { lat: 55.75, lng: 37.62 };
+		const initial =
+			(origin?.coords && origin.id !== "from_first_stop"
+				? origin.coords
+				: null) ??
+			deviceCoords ??
+			fallback;
+		setStartPointDraft(initial);
+		setStartPointPickerVisible(true);
+	};
+
+	const saveStartPointPicker = () => {
+		if (!startPointDraft) return;
+		const next = {
+			id: "user_pin" as const,
+			label: "Старт (выбрано на карте)",
+			coords: startPointDraft,
+		};
+		setOrigin(next);
+		setMapCenter(startPointDraft);
+		setStartPointPickerVisible(false);
+	};
+
+	const filteredCities = useMemo(() => {
+		const q = cityQuery.trim();
+		if (!q) return CITY_LIST.slice(0, 120);
+		const out: CityItem[] = [];
+		// cities.json already sorted by population: scan top-down.
+		for (let i = 0; i < CITY_LIST.length; i += 1) {
+			const c = CITY_LIST[i];
+			if (fuzzyIncludes(q, c.name)) out.push(c);
+			if (out.length >= 120) break;
+		}
+		return out;
+	}, [cityQuery]);
+
+	const applyStartSource = () => {
+		if (startSource === "gps") {
+			if (!deviceCoords) {
+				Alert.alert(
+					"Геолокация",
+					"Не удалось получить геолокацию. Выберите город или точку на карте.",
+				);
+				return;
+			}
+			const next = {
+				id: "origin_gps" as const,
+				label: "Вы здесь",
+				coords: deviceCoords,
+			};
+			setOrigin(next);
+			setMapCenter(next.coords);
+			setStartSourceModalVisible(false);
+			return;
+		}
+		if (startSource === "city") {
+			if (!citySelected) {
+				Alert.alert("Город", "Выберите город из списка.");
+				return;
+			}
+			const next = {
+				id: `origin_city_${citySelected.name}` as const,
+				label: `Центр: ${citySelected.name}`,
+				coords: { lat: citySelected.lat, lng: citySelected.lon },
+			};
+			setOrigin(next);
+			setMapCenter(next.coords);
+			setStartSourceModalVisible(false);
+			return;
+		}
+		// custom
+		setStartSourceModalVisible(false);
+		openStartPointPicker();
+	};
+
 	useEffect(() => {
 		syncPlanCalendarDay(selectedDate);
 	}, [selectedDate.getTime(), syncPlanCalendarDay]);
+
+	const timelineSeedDoneRef = useRef<Record<string, boolean>>({});
+	useEffect(() => {
+		if (!user) {
+			timelineSeedDoneRef.current = {};
+			return;
+		}
+		const dayKey = localRouteDayKey(selectedDate);
+		if (events.length > 0) {
+			timelineSeedDoneRef.current[dayKey] = true;
+			return;
+		}
+		if (timelineSeedDoneRef.current[dayKey]) return;
+		const tl = getTimelineEventsByDate(selectedDate);
+		if (tl.length === 0) return;
+		setEvents(timelineEventsToRouteEvents(tl));
+		timelineSeedDoneRef.current[dayKey] = true;
+	}, [
+		user,
+		selectedDate.getTime(),
+		events.length,
+		timelineEvents,
+		getTimelineEventsByDate,
+		setEvents,
+	]);
 
 	const routeHadStopsByDayRef = useRef<Record<string, boolean>>({});
 	const routeSyncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -119,12 +244,18 @@ export const HomeScreen = () => {
 		}
 		if (routeSyncTimer.current) clearTimeout(routeSyncTimer.current);
 		routeSyncTimer.current = setTimeout(() => {
-			void syncRouteDayToTimeline(events, selectedDate);
+			void syncFullRoutePlanToTimeline(getRoutesByDaySnapshot());
 		}, 900);
 		return () => {
 			if (routeSyncTimer.current) clearTimeout(routeSyncTimer.current);
 		};
-	}, [events, selectedDate.getTime(), user, syncRouteDayToTimeline]);
+	}, [
+		events,
+		selectedDate.getTime(),
+		user,
+		syncFullRoutePlanToTimeline,
+		getRoutesByDaySnapshot,
+	]);
 	const [plannerVisible, setPlannerVisible] = useState(false);
 	const [plannerInitialTimeSlot, setPlannerInitialTimeSlot] = useState<{
 		startTime: string;
@@ -259,14 +390,31 @@ export const HomeScreen = () => {
 	};
 
 	useEffect(() => {
-		if (deviceCoords) {
-			setMapCenter(deviceCoords);
-			return;
-		}
 		if (events.length > 0) {
 			setMapCenter(events[0].coords);
+			return;
 		}
-	}, [deviceCoords, events]);
+		if (origin?.coords) {
+			setMapCenter(origin.coords);
+			return;
+		}
+		if (deviceCoords) {
+			setMapCenter(deviceCoords);
+		}
+	}, [deviceCoords, events, origin]);
+
+	useEffect(() => {
+		if (!origin) return;
+		if (origin.id.startsWith("origin_city_")) {
+			setStartSource("city");
+			return;
+		}
+		if (origin.id === "user_pin") {
+			setStartSource("custom");
+			return;
+		}
+		setStartSource("gps");
+	}, [origin?.id]);
 
 	useEffect(() => {
 		if (events.length > 0) return;
@@ -453,6 +601,14 @@ export const HomeScreen = () => {
 		() => events.reduce((sum, e) => sum + e.duration, 0),
 		[events],
 	);
+
+	const routeTimeRange = useMemo(() => {
+		if (events.length === 0) return null;
+		const first = events[0];
+		const last = events[events.length - 1];
+		const end = calculateEndTime(last.arrivalTime, last.duration);
+		return { start: first.arrivalTime, end };
+	}, [events]);
 
 	const handleAddBetween = (index: number) => {
 		openPlannerWithAutoSlot(index);
@@ -722,11 +878,17 @@ export const HomeScreen = () => {
 				</TouchableOpacity>
 				<TouchableOpacity
 					style={styles.planDayButton}
-					onPress={() => setPlannerVisible(true)}
+					onPress={() => setStartSourceModalVisible(true)}
 				>
-					<Feather name="plus-circle" size={18} color="white" />
+					<Feather name="crosshair" size={18} color="white" />
 					<Text style={styles.planDayButtonText} numberOfLines={1}>
-						Спланировать
+						{startSource === "city"
+							? citySelected
+								? citySelected.name
+								: "Выбрать город"
+							: startSource === "custom"
+								? "Точка на карте"
+								: "Геолокация"}
 					</Text>
 				</TouchableOpacity>
 			</View>
@@ -943,9 +1105,8 @@ export const HomeScreen = () => {
 										{calculateEndTime(
 											detailEvent.arrivalTime,
 											detailEvent.duration,
-										)}
-										{" · "}
-										на месте {detailEvent.duration} мин
+										)}{" "}
+										{" · "} на месте {detailEvent.duration} мин
 									</Text>
 									{detailInboundLeg ? (
 										<>
@@ -1126,35 +1287,38 @@ export const HomeScreen = () => {
 							onPress={() => {}}
 						>
 							<Text style={styles.modalTitle}>Сводка маршрута</Text>
-							<View style={styles.modalRow}>
-								<Text style={styles.modalLabel}>Точек:</Text>
-								<Text style={styles.modalValue}>{events.length}</Text>
-							</View>
-							<View style={styles.modalRow}>
-								<Text style={styles.modalLabel}>В пути:</Text>
-								<Text style={styles.modalValue}>
-									{Math.floor(totalTravelMinutes / 60)} ч{" "}
-									{totalTravelMinutes % 60} мин
+							<View style={styles.summaryBadge}>
+								<Text style={styles.summaryBadgeText}>
+									{routeTimeRange
+										? `${routeTimeRange.start} – ${routeTimeRange.end}`
+										: "Время не задано"}
 								</Text>
 							</View>
-							<View style={styles.modalRow}>
-								<Text style={styles.modalLabel}>На месте:</Text>
-								<Text style={styles.modalValue}>
-									{Math.floor(totalActivityMinutes / 60)} ч{" "}
-									{totalActivityMinutes % 60} мин
-								</Text>
-							</View>
-							<View style={styles.modalRow}>
-								<Text style={styles.modalLabel}>Расстояние:</Text>
-								<Text style={styles.modalValue}>
-									{totalDistance >= 1000
-										? `${(totalDistance / 1000).toFixed(1)} км`
-										: `${totalDistance} м`}
-								</Text>
-							</View>
-							<View style={styles.modalRow}>
-								<Text style={styles.modalLabel}>Бюджет:</Text>
-								<Text style={styles.modalValue}>—</Text>
+							<View style={styles.summaryGrid}>
+								<View style={styles.summaryTile}>
+									<Text style={styles.summaryTileLabel}>Точки</Text>
+									<Text style={styles.summaryTileValue}>{events.length}</Text>
+								</View>
+								<View style={styles.summaryTile}>
+									<Text style={styles.summaryTileLabel}>В пути</Text>
+									<Text style={styles.summaryTileValue}>
+										{Math.floor(totalTravelMinutes / 60)}ч {totalTravelMinutes % 60}м
+									</Text>
+								</View>
+								<View style={styles.summaryTile}>
+									<Text style={styles.summaryTileLabel}>На месте</Text>
+									<Text style={styles.summaryTileValue}>
+										{Math.floor(totalActivityMinutes / 60)}ч {totalActivityMinutes % 60}м
+									</Text>
+								</View>
+								<View style={styles.summaryTile}>
+									<Text style={styles.summaryTileLabel}>Дистанция</Text>
+									<Text style={styles.summaryTileValue}>
+										{totalDistance >= 1000
+											? `${(totalDistance / 1000).toFixed(1)} км`
+											: `${totalDistance} м`}
+									</Text>
+								</View>
 							</View>
 							<TouchableOpacity
 								style={styles.modalCloseButton}
@@ -1164,6 +1328,177 @@ export const HomeScreen = () => {
 							</TouchableOpacity>
 						</TouchableOpacity>
 					</ScrollView>
+				</View>
+			</Modal>
+
+			<Modal
+				visible={startSourceModalVisible}
+				transparent
+				animationType="fade"
+				onRequestClose={() => setStartSourceModalVisible(false)}
+			>
+				<View style={styles.modalOverlay}>
+					<Pressable
+						style={StyleSheet.absoluteFill}
+						onPress={() => setStartSourceModalVisible(false)}
+					/>
+					<View style={styles.startSourceCard}>
+						<Text style={styles.modalTitle}>Источник стартовой точки</Text>
+						<Text style={styles.startSourceHint}>
+							Выберите, откуда брать старт маршрута и центр карты.
+						</Text>
+						<View style={styles.startSourceOptions}>
+							{([
+								{ id: "gps", label: "Геолокация пользователя" },
+								{ id: "city", label: "Центр города из списка" },
+								{ id: "custom", label: "Точка на карте (custom)" },
+							] as const).map((opt) => (
+								<TouchableOpacity
+									key={opt.id}
+									style={[
+										styles.startSourceOption,
+										startSource === opt.id && styles.startSourceOptionActive,
+									]}
+									onPress={() => setStartSource(opt.id)}
+								>
+									<Feather
+										name={startSource === opt.id ? "check-circle" : "circle"}
+										size={18}
+										color={startSource === opt.id ? "#2563eb" : "#9ca3af"}
+									/>
+									<Text
+										style={[
+											styles.startSourceOptionText,
+											startSource === opt.id &&
+												styles.startSourceOptionTextActive,
+										]}
+									>
+										{opt.label}
+									</Text>
+								</TouchableOpacity>
+							))}
+						</View>
+						{startSource === "city" ? (
+							<>
+								<TextInput
+									style={styles.startSourceCityInput}
+									placeholder="Поиск города"
+									placeholderTextColor="#9ca3af"
+									value={cityQuery}
+									onChangeText={setCityQuery}
+								/>
+								<ScrollView style={styles.startSourceCityList}>
+									{filteredCities.map((c) => {
+										const selected = citySelected?.name === c.name;
+										return (
+											<TouchableOpacity
+												key={`${c.name}_${c.lat}_${c.lon}`}
+												style={[
+													styles.startSourceCityRow,
+													selected && styles.startSourceCityRowActive,
+												]}
+												onPress={() => setCitySelected(c)}
+											>
+												<Text
+													style={[
+														styles.startSourceCityText,
+														selected && styles.startSourceCityTextActive,
+													]}
+												>
+													{c.name}
+												</Text>
+												<Text style={styles.startSourceCityMeta}>
+													{c.lat.toFixed(2)}, {c.lon.toFixed(2)}
+												</Text>
+											</TouchableOpacity>
+										);
+									})}
+								</ScrollView>
+							</>
+						) : null}
+						<View style={styles.startSourceBtns}>
+							<TouchableOpacity
+								style={styles.startSourceCancel}
+								onPress={() => setStartSourceModalVisible(false)}
+							>
+								<Text style={styles.startSourceCancelText}>Отмена</Text>
+							</TouchableOpacity>
+							<TouchableOpacity
+								style={styles.startSourceApply}
+								onPress={applyStartSource}
+							>
+								<Text style={styles.startSourceApplyText}>
+									{startSource === "custom" ? "Далее" : "Применить"}
+								</Text>
+							</TouchableOpacity>
+						</View>
+					</View>
+				</View>
+			</Modal>
+
+			<Modal
+				visible={startPointPickerVisible}
+				transparent
+				animationType="fade"
+				onRequestClose={() => setStartPointPickerVisible(false)}
+			>
+				<View style={styles.modalOverlay}>
+					<Pressable
+						style={StyleSheet.absoluteFill}
+						onPress={() => setStartPointPickerVisible(false)}
+					/>
+					<View style={styles.startPointModalCard}>
+						<View style={styles.startPointModalHeader}>
+							<Text style={styles.startPointModalTitle}>Точка старта</Text>
+							<TouchableOpacity
+								onPress={() => setStartPointPickerVisible(false)}
+								style={styles.startPointModalClose}
+							>
+								<Feather name="x" size={20} color="#374151" />
+							</TouchableOpacity>
+						</View>
+						<Text style={styles.startPointModalHint}>
+							Нажмите на карту, чтобы выбрать точку. Она станет центром карты и
+							стартом маршрута.
+						</Text>
+						<View style={styles.startPointMapWrap}>
+							<YandexMap
+								center={startPointDraft ?? { lat: 55.75, lng: 37.62 }}
+								zoom={14}
+								markers={[]}
+								selectionMode
+								selectedPoint={startPointDraft ?? undefined}
+								onSelectPoint={(coords) => setStartPointDraft(coords)}
+								height={280}
+								routingEnabled={false}
+								userLocation={
+									deviceCoords
+										? { lat: deviceCoords.lat, lng: deviceCoords.lng }
+										: undefined
+								}
+							/>
+						</View>
+						<Text style={styles.startPointModalCoords}>
+							{startPointDraft
+								? `${startPointDraft.lat.toFixed(5)}, ${startPointDraft.lng.toFixed(5)}`
+								: "Не выбрано"}
+						</Text>
+						<View style={styles.startPointModalBtns}>
+							<TouchableOpacity
+								style={styles.startPointModalCancel}
+								onPress={() => setStartPointPickerVisible(false)}
+							>
+								<Text style={styles.startPointModalCancelText}>Отмена</Text>
+							</TouchableOpacity>
+							<TouchableOpacity
+								style={styles.startPointModalSave}
+								onPress={saveStartPointPicker}
+								disabled={!startPointDraft}
+							>
+								<Text style={styles.startPointModalSaveText}>Сохранить</Text>
+							</TouchableOpacity>
+						</View>
+					</View>
 				</View>
 			</Modal>
 		</SafeAreaView>
@@ -1337,6 +1672,98 @@ const styles = StyleSheet.create({
 		color: "#1d4ed8",
 		fontWeight: "600",
 		flexShrink: 0,
+	},
+	startPointButton: {
+		flexDirection: "row",
+		alignItems: "center",
+		paddingHorizontal: 8,
+		paddingVertical: 8,
+		gap: 4,
+		backgroundColor: "#ecfeff",
+		borderRadius: 12,
+		borderWidth: 1,
+		borderColor: "#a5f3fc",
+		flexShrink: 0,
+		minWidth: 84,
+	},
+	startPointButtonText: {
+		fontSize: 13,
+		color: "#0369a1",
+		fontWeight: "700",
+	},
+	startPointModalCard: {
+		marginHorizontal: 16,
+		marginTop: 48,
+		backgroundColor: "white",
+		borderRadius: 18,
+		padding: 14,
+		borderWidth: 1,
+		borderColor: "#e5e7eb",
+	},
+	startPointModalHeader: {
+		flexDirection: "row",
+		alignItems: "center",
+		justifyContent: "space-between",
+	},
+	startPointModalTitle: {
+		fontSize: 16,
+		fontWeight: "800",
+		color: "#111827",
+	},
+	startPointModalClose: {
+		padding: 8,
+		borderRadius: 12,
+		backgroundColor: "#f1f5f9",
+	},
+	startPointModalHint: {
+		marginTop: 8,
+		fontSize: 13,
+		color: "#6b7280",
+		lineHeight: 18,
+	},
+	startPointMapWrap: {
+		marginTop: 10,
+		borderRadius: 12,
+		overflow: "hidden",
+		borderWidth: 1,
+		borderColor: "#e5e7eb",
+	},
+	startPointModalCoords: {
+		marginTop: 10,
+		fontSize: 13,
+		color: "#374151",
+		textAlign: "center",
+	},
+	startPointModalBtns: {
+		marginTop: 12,
+		flexDirection: "row",
+		gap: 12,
+	},
+	startPointModalCancel: {
+		flex: 1,
+		paddingVertical: 12,
+		borderRadius: 12,
+		borderWidth: 1,
+		borderColor: "#e5e7eb",
+		alignItems: "center",
+		backgroundColor: "white",
+	},
+	startPointModalCancelText: {
+		fontSize: 14,
+		color: "#374151",
+		fontWeight: "700",
+	},
+	startPointModalSave: {
+		flex: 1,
+		paddingVertical: 12,
+		borderRadius: 12,
+		alignItems: "center",
+		backgroundColor: "#0ea5e9",
+	},
+	startPointModalSaveText: {
+		fontSize: 14,
+		color: "white",
+		fontWeight: "800",
 	},
 	detailTimeChips: {
 		flexDirection: "row",
@@ -1725,8 +2152,46 @@ const styles = StyleSheet.create({
 		fontSize: 20,
 		fontWeight: "bold",
 		color: "#111827",
-		marginBottom: 20,
+		marginBottom: 14,
 		textAlign: "center",
+	},
+	summaryBadge: {
+		backgroundColor: "#eff6ff",
+		borderRadius: 12,
+		paddingVertical: 10,
+		paddingHorizontal: 12,
+		borderWidth: 1,
+		borderColor: "#bfdbfe",
+	},
+	summaryBadgeText: {
+		textAlign: "center",
+		color: "#1d4ed8",
+		fontWeight: "700",
+		fontSize: 14,
+	},
+	summaryGrid: {
+		marginTop: 14,
+		flexDirection: "row",
+		flexWrap: "wrap",
+		gap: 10,
+	},
+	summaryTile: {
+		width: "47%",
+		backgroundColor: "#f8fafc",
+		borderRadius: 12,
+		padding: 12,
+		borderWidth: 1,
+		borderColor: "#e2e8f0",
+	},
+	summaryTileLabel: {
+		fontSize: 12,
+		color: "#64748b",
+		marginBottom: 6,
+	},
+	summaryTileValue: {
+		fontSize: 16,
+		fontWeight: "800",
+		color: "#111827",
 	},
 	modalRow: {
 		flexDirection: "row",
@@ -1758,5 +2223,113 @@ const styles = StyleSheet.create({
 		fontSize: 16,
 		fontWeight: "600",
 		color: "white",
+	},
+	startSourceCard: {
+		backgroundColor: "white",
+		borderRadius: 16,
+		padding: 16,
+		width: "100%",
+		maxWidth: 380,
+		alignSelf: "center",
+	},
+	startSourceHint: {
+		fontSize: 13,
+		color: "#6b7280",
+		lineHeight: 18,
+		marginBottom: 10,
+	},
+	startSourceOptions: {
+		gap: 8,
+	},
+	startSourceOption: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 10,
+		paddingHorizontal: 12,
+		paddingVertical: 10,
+		borderRadius: 10,
+		borderWidth: 1,
+		borderColor: "#e5e7eb",
+		backgroundColor: "white",
+	},
+	startSourceOptionActive: {
+		backgroundColor: "#eff6ff",
+		borderColor: "#bfdbfe",
+	},
+	startSourceOptionText: {
+		fontSize: 14,
+		color: "#374151",
+		fontWeight: "600",
+	},
+	startSourceOptionTextActive: {
+		color: "#1d4ed8",
+	},
+	startSourceCityInput: {
+		marginTop: 12,
+		borderWidth: 1,
+		borderColor: "#e5e7eb",
+		borderRadius: 10,
+		paddingHorizontal: 12,
+		paddingVertical: 10,
+		fontSize: 14,
+		color: "#111827",
+		backgroundColor: "#f8fafc",
+	},
+	startSourceCityList: {
+		marginTop: 10,
+		maxHeight: 180,
+	},
+	startSourceCityRow: {
+		paddingVertical: 10,
+		paddingHorizontal: 10,
+		borderBottomWidth: 1,
+		borderBottomColor: "#f1f5f9",
+	},
+	startSourceCityRowActive: {
+		backgroundColor: "#eff6ff",
+		borderRadius: 8,
+	},
+	startSourceCityText: {
+		fontSize: 14,
+		color: "#111827",
+		fontWeight: "600",
+	},
+	startSourceCityTextActive: {
+		color: "#1d4ed8",
+	},
+	startSourceCityMeta: {
+		fontSize: 12,
+		color: "#6b7280",
+		marginTop: 2,
+	},
+	startSourceBtns: {
+		flexDirection: "row",
+		gap: 10,
+		marginTop: 14,
+	},
+	startSourceCancel: {
+		flex: 1,
+		borderWidth: 1,
+		borderColor: "#e5e7eb",
+		borderRadius: 10,
+		paddingVertical: 12,
+		alignItems: "center",
+	},
+	startSourceCancelText: {
+		fontSize: 14,
+		color: "#374151",
+		fontWeight: "700",
+	},
+	startSourceApply: {
+		flex: 1,
+		backgroundColor: "#3b82f6",
+		borderRadius: 10,
+		paddingVertical: 12,
+		alignItems: "center",
+	},
+	startSourceApplyText: {
+		fontSize: 14,
+		color: "white",
+		fontWeight: "700",
 	},
 });

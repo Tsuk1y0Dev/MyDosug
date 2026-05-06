@@ -85,7 +85,9 @@ export const ParametersStep = () => {
 	const [goal, setGoal] = useState<GoalType | null>(null);
 	const [filters, setFilters] = useState<SearchCriteriaFilters>({});
 
-	const startCoords = deviceCoords ?? MAP_FALLBACK_CENTER;
+	// Для поиска координаты старта должны совпадать с выбранной стартовой точкой маршрута,
+	// а не всегда с GPS.
+	const startCoords = origin?.coords ?? deviceCoords ?? MAP_FALLBACK_CENTER;
 
 	const planningDayFloorMinutes = useMemo(() => {
 		return isSameLocalCalendarDay(planningDate, new Date())
@@ -236,35 +238,6 @@ export const ParametersStep = () => {
 				contentContainerStyle={styles.scrollContent}
 				showsVerticalScrollIndicator={false}
 			>
-				{favoritePlaces.length > 0 && (
-					<View style={styles.section}>
-						<Text style={styles.sectionTitle}>Быстро из избранного</Text>
-						<Text style={styles.favHint}>
-							Добавьте сохранённое место в дневной маршрут (время можно
-							изменить)
-						</Text>
-						<ScrollView
-							horizontal
-							showsHorizontalScrollIndicator={false}
-							contentContainerStyle={styles.favScroll}
-						>
-							{favoritePlaces.map((p) => (
-								<TouchableOpacity
-									key={p.id}
-									style={styles.favChip}
-									onPress={() => setFavModalPlace(p)}
-									activeOpacity={0.85}
-								>
-									<Feather name="heart" size={16} color="#ef4444" />
-									<Text style={styles.favChipText} numberOfLines={1}>
-										{p.name}
-									</Text>
-								</TouchableOpacity>
-							))}
-						</ScrollView>
-					</View>
-				)}
-
 				<View style={styles.section}>
 					<Text style={styles.sectionTitle}>Категория</Text>
 					{activityCategories.map((cat) => {
@@ -608,35 +581,6 @@ const styles = StyleSheet.create({
 		fontSize: 15,
 		color: "#6b7280",
 		lineHeight: 22,
-	},
-	favHint: {
-		fontSize: 13,
-		color: "#6b7280",
-		marginBottom: 10,
-		lineHeight: 18,
-	},
-	favScroll: {
-		gap: 8,
-		paddingVertical: 4,
-	},
-	favChip: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: 8,
-		maxWidth: 220,
-		paddingHorizontal: 14,
-		paddingVertical: 10,
-		backgroundColor: "#fef2f2",
-		borderRadius: 12,
-		borderWidth: 1,
-		borderColor: "#fecaca",
-		marginRight: 8,
-	},
-	favChipText: {
-		flex: 1,
-		fontSize: 14,
-		fontWeight: "600",
-		color: "#991b1b",
 	},
 	section: {
 		marginBottom: 20,

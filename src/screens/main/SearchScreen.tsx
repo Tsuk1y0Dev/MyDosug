@@ -2,6 +2,7 @@ import React, {
 	useState,
 	useMemo,
 	useEffect,
+	useLayoutEffect,
 	useRef,
 	useCallback,
 } from "react";
@@ -41,6 +42,7 @@ import { useUser } from "../../context/UserContext";
 import { useAuth } from "../../services/auth/AuthContext";
 import { useFavorites } from "../../services/favorites/FavoritesContext";
 import { osmPlaceToPlace } from "../../utils/placeConverters";
+import { fuzzyIncludes } from "../../utils/fuzzy";
 import type { GoalType, SearchCriteria } from "../../types/searchCriteria";
 import {
 	filterOsmPlaces,
@@ -205,6 +207,7 @@ export const SearchScreen = () => {
 		setSearchBudgetMax(draftSearchBudgetMax);
 		setSearchGoal(draftSearchGoal);
 
+		setLoading(true);
 		setReadyToFetch(true);
 		setShowCategoryModal(false);
 		setExpandedCategoryIdInModal(null);
@@ -214,6 +217,7 @@ export const SearchScreen = () => {
 	useFocusEffect(
 		useCallback(() => {
 			if (route.params?.allowFullSearch) {
+				setLoading(true);
 				setReadyToFetch(true);
 				navigation.setParams({ allowFullSearch: undefined });
 			}
@@ -268,13 +272,12 @@ export const SearchScreen = () => {
 	const [sortMode, setSortMode] = useState<"distance" | "rating">("distance");
 
 	const centerCoords = useMemo(() => {
-		if (deviceCoords) return deviceCoords;
 		const p = profile?.defaultStartPoint;
-		const c =
-			p &&
-			"coordinates" in p &&
-			(p as { coordinates?: { lat: number; lng: number } }).coordinates;
-		if (c) return { lat: c.lat, lng: c.lng };
+		// Если выбрана кастомная стартовая точка — используем её вместо GPS.
+		if (p && p.type !== "current" && p.coordinates) {
+			return { lat: p.coordinates.lat, lng: p.coordinates.lng };
+		}
+		if (deviceCoords) return deviceCoords;
 		return { lat: 55.75, lng: 37.62 };
 	}, [deviceCoords, profile?.defaultStartPoint]);
 
@@ -305,32 +308,39 @@ export const SearchScreen = () => {
 		searchGoal,
 	]);
 
-	useEffect(() => {
+	useLayoutEffect(() => {
 		if (!readyToFetch) {
 			setLoading(false);
 			return;
 		}
+		setLoading(true);
+	}, [readyToFetch, osmCriteria]);
 
-		const load = async () => {
-			setLoading(true);
-			setLoadError(null);
-			setSelectedPlace(null);
-			setRadius(INITIAL_RADIUS);
-			setHasMore(INITIAL_RADIUS < MAX_RADIUS);
-			setPlaces([]);
-			placesSeenIdsRef.current = new Set();
+	useEffect(() => {
+		if (!readyToFetch) return;
+
+		let cancelled = false;
+		setLoadError(null);
+		setSelectedPlace(null);
+		setRadius(INITIAL_RADIUS);
+		setHasMore(INITIAL_RADIUS < MAX_RADIUS);
+		setPlaces([]);
+		placesSeenIdsRef.current = new Set();
+
+		(async () => {
 			try {
 				const result = await OSMService.searchAround(
 					centerCoords,
 					INITIAL_RADIUS,
 					osmCriteria,
 				);
+				if (cancelled) return;
 				const toAdd = result.filter((p) => !placesSeenIdsRef.current.has(p.id));
 				toAdd.forEach((p) => placesSeenIdsRef.current.add(p.id));
 				setPlaces(toAdd);
-
 				setHasMore(INITIAL_RADIUS < MAX_RADIUS);
 			} catch (e: any) {
+				if (cancelled) return;
 				const status = e?.status;
 				if (status === 429 || status === 504) {
 					setLoadError(null);
@@ -338,18 +348,14 @@ export const SearchScreen = () => {
 					setLoadError(e?.message || "Ошибка загрузки мест");
 				}
 			} finally {
-				setLoading(false);
+				if (!cancelled) setLoading(false);
 			}
-		};
+		})();
 
-		load();
-	}, [
-		readyToFetch,
-		centerCoords.lat,
-		centerCoords.lng,
-		selectedCategoryIds,
-		selectedSubCategoryIds,
-	]);
+		return () => {
+			cancelled = true;
+		};
+	}, [readyToFetch, osmCriteria, centerCoords]);
 
 	const lastFetchMoreAtRef = useRef(0);
 
@@ -414,6 +420,7 @@ export const SearchScreen = () => {
 						setSelectedSubCategoryIds([]);
 						setDraftCategoryIds([]);
 						setDraftSubCategoryIds([]);
+						setLoading(true);
 						setReadyToFetch(true);
 					},
 				},
@@ -430,9 +437,9 @@ export const SearchScreen = () => {
 		if (q) {
 			results = results.filter(
 				(p) =>
-					p.title.toLowerCase().includes(q) ||
-					p.description.toLowerCase().includes(q) ||
-					(p.address && p.address.toLowerCase().includes(q)),
+					fuzzyIncludes(q, p.title) ||
+					fuzzyIncludes(q, p.description) ||
+					(p.address ? fuzzyIncludes(q, p.address) : false),
 			);
 		}
 
@@ -509,17 +516,17 @@ export const SearchScreen = () => {
 					selectedPlace?.id === place.id && styles.placeCardSelected,
 				]}
 			>
-				<TouchableOpacity
+				<Pressable
 					style={styles.placeFavoriteBtn}
 					onPress={toggleFavorite}
-					hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+					hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
 				>
 					<Feather
 						name="heart"
 						size={22}
 						color={favorite ? "#ef4444" : "#cbd5e1"}
 					/>
-				</TouchableOpacity>
+				</Pressable>
 				<TouchableOpacity
 					activeOpacity={0.85}
 					onPress={() => setSelectedPlace(place)}
@@ -1705,10 +1712,11 @@ const styles = StyleSheet.create({
 		position: "absolute",
 		top: 10,
 		right: 10,
-		zIndex: 2,
+		zIndex: 20,
 		padding: 8,
 		backgroundColor: "rgba(255,255,255,0.95)",
 		borderRadius: 22,
+		elevation: 10,
 	},
 	placeCard: {
 		backgroundColor: "white",

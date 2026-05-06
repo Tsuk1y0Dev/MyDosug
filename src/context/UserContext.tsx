@@ -21,20 +21,34 @@ import { useFavorites } from "../services/favorites/FavoritesContext";
 import {
 	fetchUserProfile,
 	postUserProfile,
+	postUserEventAdd,
+	postUserEventUpdate,
+	postUserEventRemove,
+	postUserFavoriteAdd,
+	postUserFavoriteRemove,
+	postUserLocationsAdd,
+	postUserLocationRemove,
+	postUserLocationUpdate,
 } from "../services/api/userProfileApi";
 import {
 	mapServerProfileToUserProfile,
 	placeStubFromOsmId,
-	buildProfilePostPayload,
+	buildProfileSettingsPayload,
+	normalizeFavoriteId,
 } from "../services/api/mapServerProfile";
 import {
 	getEventsByDate,
 	prunePastTimelineEvents,
 	sortTimelineEvents,
+	timelineEventToServerEventPayload,
 } from "../services/timeline/timelineStorage";
 import type { RouteEvent } from "../types/route";
 import { mergeRouteIntoTimeline } from "../utils/routeToTimeline";
 import { savedLocationToPlace } from "../utils/placeConverters";
+import {
+	enableDailyReminder,
+	disableReminders,
+} from "../services/notifications/notificationService";
 
 export type {
 	SavedLocationType,
@@ -63,14 +77,22 @@ interface UserContextType {
 	addTimelineEvent: (newEvent: TimelineEvent) => Promise<void>;
 	deleteTimelineEvent: (timestamp: number, id: string) => Promise<void>;
 	getTimelineEventsByDate: (date: Date) => TimelineEvent[];
-	syncRouteDayToTimeline: (
-		routeEvents: RouteEvent[],
-		day: Date,
+	syncFullRoutePlanToTimeline: (
+		routesByDay: Record<string, { events: RouteEvent[] }>,
 	) => Promise<void>;
 }
 
 const STORAGE_KEY = "@mydosug_user_profile";
 const STORAGE_TOKEN_KEY = "@mydosug_token";
+
+const timelineEventKey = (e: TimelineEvent) =>
+	`${e.id}__${Math.floor(e.timestamp)}`;
+const timelineEventDataEqual = (a: TimelineEvent, b: TimelineEvent) =>
+	a.id === b.id &&
+	Math.floor(a.timestamp) === Math.floor(b.timestamp) &&
+	(a.title ?? "") === (b.title ?? "") &&
+	(a.note ?? "") === (b.note ?? "") &&
+	Math.floor(a.duration ?? 0) === Math.floor(b.duration ?? 0);
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
@@ -93,12 +115,20 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
 	const timelineEventsRef = useRef(timelineEvents);
 	timelineEventsRef.current = timelineEvents;
 	const lastPostedProfilePayloadRef = useRef<string>("");
-	const lastPostedTimelinePayloadRef = useRef<string>("");
+	/** After local edits, short window where GET /profile must not overwrite toggles with stale server rows. */
+	const lastLocalProfilePreferenceTouchRef = useRef(0);
 
 	const prevHadUserRef = useRef(false);
+	const timelineServerRef = useRef<TimelineEvent[]>([]);
+	const favoriteServerIdsRef = useRef<string[]>([]);
+	const notificationSyncRef = useRef<boolean | null>(null);
 	const timelineSyncRef = useRef<{
 		inFlight: boolean;
 		queued: TimelineEvent[] | null;
+	}>({ inFlight: false, queued: null });
+	const favoriteSyncRef = useRef<{
+		inFlight: boolean;
+		queued: string[] | null;
 	}>({ inFlight: false, queued: null });
 
 	useEffect(() => {
@@ -139,14 +169,74 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
 		try {
 			const raw = await fetchUserProfile(token);
 			const {
-				profile: remoteProfile,
+				profile: remoteProfileBase,
 				favoriteIds,
 				timelineEvents: serverTl,
 			} = mapServerProfileToUserProfile(raw, user.email, user.id);
+			const prevLocal = profileRef.current;
+			const mergePrefsMs = 5000;
+			const touchAt = lastLocalProfilePreferenceTouchRef.current;
+			const mergePrefs =
+				prevLocal != null &&
+				touchAt > 0 &&
+				Date.now() - touchAt < mergePrefsMs;
+			let remoteProfile =
+				mergePrefs && prevLocal
+					? {
+							...remoteProfileBase,
+							vegetarian: prevLocal.vegetarian,
+							wheelchairAccessible: prevLocal.wheelchairAccessible,
+							notificationsEnabled: prevLocal.notificationsEnabled,
+							defaultTransportMode: prevLocal.defaultTransportMode,
+							averageWalkingTime: prevLocal.averageWalkingTime,
+							defaultStartPoint: prevLocal.defaultStartPoint,
+							accessibilitySettings: prevLocal.accessibilitySettings,
+						}
+					: remoteProfileBase;
+
+			// Сервер не хранит координаты `defaultStartPoint.custom`, поэтому закрепляем
+			// локально выбранную кастомную точку на карте.
+			if (
+				prevLocal?.defaultStartPoint?.type === "custom" &&
+				prevLocal.defaultStartPoint.coordinates
+			) {
+				remoteProfile = {
+					...remoteProfile,
+					defaultStartPoint: {
+						...(remoteProfile.defaultStartPoint ?? prevLocal.defaultStartPoint),
+						...prevLocal.defaultStartPoint,
+					},
+				};
+			}
+
 			setProfile(remoteProfile);
 			await persist(remoteProfile);
 			setTimelineEvents(serverTl);
-			replaceFavoritePlaces(favoriteIds.map(placeStubFromOsmId));
+			timelineServerRef.current = serverTl;
+			favoriteServerIdsRef.current = favoriteIds
+				.map(normalizeFavoriteId)
+				.filter(Boolean);
+			if (
+				!favoriteSyncRef.current.inFlight &&
+				!favoriteSyncRef.current.queued
+			) {
+				const serverNorm = new Set(
+					favoriteIds.map(normalizeFavoriteId).filter(Boolean),
+				);
+				const localPlaces = favoritePlacesRef.current;
+				const localNorm = new Set(
+					localPlaces.map((p) => normalizeFavoriteId(p.id)),
+				);
+				const merged = new Set([...serverNorm, ...localNorm]);
+				replaceFavoritePlaces(
+					[...merged].map((id) => {
+						const p = localPlaces.find(
+							(x) => normalizeFavoriteId(x.id) === id,
+						);
+						return p ?? placeStubFromOsmId(id);
+					}),
+				);
+			}
 			replaceUserCreatedPlaces(
 				(remoteProfile.savedLocations ?? []).map(savedLocationToPlace),
 			);
@@ -180,6 +270,8 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
 				await AsyncStorage.removeItem(STORAGE_KEY);
 				setProfile(null);
 				setTimelineEvents([]);
+				timelineServerRef.current = [];
+				favoriteServerIdsRef.current = [];
 				replaceFavoritePlaces([]);
 				replaceUserCreatedPlaces([]);
 			})();
@@ -193,30 +285,43 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
 	]);
 
 	useEffect(() => {
-		if (authLoading || remoteBusy || !user || !profile) return;
+		if (authLoading || !user || !profile) return;
 		const t = setTimeout(() => {
 			void (async () => {
 				const token = await AsyncStorage.getItem(STORAGE_TOKEN_KEY);
 				if (!token || !profileRef.current) return;
 				const p = profileRef.current;
 				try {
-					const favIds = favoritePlacesRef.current.map((pl) => pl.id);
-					const payload = buildProfilePostPayload(
-						p,
-						favIds,
-						prunePastTimelineEvents(timelineEventsRef.current),
-					);
+					const payload = buildProfileSettingsPayload(p);
 					const payloadKey = JSON.stringify(payload);
 					if (payloadKey === lastPostedProfilePayloadRef.current) return;
 					await postUserProfile(token, payload);
 					lastPostedProfilePayloadRef.current = payloadKey;
+					lastLocalProfilePreferenceTouchRef.current = 0;
+					await hydrateFromServer();
 				} catch (e) {
 					console.warn("Profile POST sync failed:", e);
 				}
 			})();
 		}, 500);
 		return () => clearTimeout(t);
-	}, [authLoading, remoteBusy, user, profile, favoritePlaces]);
+	}, [authLoading, user, profile, hydrateFromServer]);
+
+	useEffect(() => {
+		const enabled = Boolean(profile?.notificationsEnabled);
+		if (notificationSyncRef.current === enabled) return;
+		notificationSyncRef.current = enabled;
+		void (async () => {
+			if (enabled) {
+				const ok = await enableDailyReminder();
+				if (!ok) {
+					console.warn("Notifications permission denied or unavailable");
+				}
+			} else {
+				await disableReminders();
+			}
+		})();
+	}, [profile?.notificationsEnabled]);
 
 	const pushTimelineToServer = useCallback(
 		async (nextTimeline: TimelineEvent[]) => {
@@ -228,30 +333,112 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
 			if (timelineSyncRef.current.inFlight) return;
 
 			timelineSyncRef.current.inFlight = true;
+			let timelinePushOk = false;
 			try {
 				while (timelineSyncRef.current.queued) {
 					const candidate = timelineSyncRef.current.queued;
 					timelineSyncRef.current.queued = null;
-					const payload = buildProfilePostPayload(
-						profileRef.current,
-						favoritePlacesRef.current.map((pl) => pl.id),
-						candidate,
+					const prev = [...timelineServerRef.current];
+					const prevMap = new Map(
+						prev.map((e) => [timelineEventKey(e), e]),
 					);
-					const payloadKey = JSON.stringify(payload);
-					if (payloadKey === lastPostedTimelinePayloadRef.current) {
-						continue;
+					const nextMap = new Map(
+						candidate.map((e) => [timelineEventKey(e), e]),
+					);
+					const prevIndexMap = new Map(
+						prev.map((e, idx) => [timelineEventKey(e), idx]),
+					);
+
+					const removedWithIdx: { idx: number }[] = [];
+					for (const [k] of prevMap) {
+						if (!nextMap.has(k)) {
+							const idx = prevIndexMap.get(k);
+							if (typeof idx === "number") removedWithIdx.push({ idx });
+						}
 					}
-					await postUserProfile(token, payload);
-					lastPostedTimelinePayloadRef.current = payloadKey;
+					removedWithIdx.sort((a, b) => b.idx - a.idx);
+					const simulated = [...prev];
+					for (const { idx } of removedWithIdx) {
+						await postUserEventRemove(token, idx);
+						simulated.splice(idx, 1);
+					}
+
+					const simIndexMap = new Map(
+						simulated.map((e, i) => [timelineEventKey(e), i]),
+					);
+
+					for (const [k, nextEv] of nextMap) {
+						const oldEv = prevMap.get(k);
+						if (!oldEv || !simIndexMap.has(k)) continue;
+						if (!timelineEventDataEqual(oldEv, nextEv)) {
+							const idx = simIndexMap.get(k);
+							if (typeof idx === "number") {
+								await postUserEventUpdate(
+									token,
+									idx,
+									timelineEventToServerEventPayload(nextEv),
+								);
+							}
+						}
+					}
+
+					for (const [k, nextEv] of nextMap) {
+						if (!prevMap.has(k)) {
+							await postUserEventAdd(
+								token,
+								timelineEventToServerEventPayload(nextEv),
+							);
+						}
+					}
+
+					timelineServerRef.current = candidate;
 				}
+				timelinePushOk = true;
 			} catch (e) {
 				console.warn("Timeline POST failed:", e);
 			} finally {
 				timelineSyncRef.current.inFlight = false;
 			}
+			if (timelinePushOk) await hydrateFromServer();
+		},
+		[user, hydrateFromServer],
+	);
+
+	const pushFavoritesToServer = useCallback(
+		async (rawIds: string[]) => {
+			const token = await AsyncStorage.getItem(STORAGE_TOKEN_KEY);
+			if (!token || !user) return;
+			const normalized = rawIds.map(normalizeFavoriteId).filter(Boolean);
+			favoriteSyncRef.current.queued = normalized;
+			if (favoriteSyncRef.current.inFlight) return;
+			favoriteSyncRef.current.inFlight = true;
+			try {
+				while (favoriteSyncRef.current.queued) {
+					const nextIds = favoriteSyncRef.current.queued;
+					favoriteSyncRef.current.queued = null;
+					const prevSet = new Set(favoriteServerIdsRef.current);
+					const nextSet = new Set(nextIds);
+					for (const id of prevSet) {
+						if (!nextSet.has(id)) await postUserFavoriteRemove(token, id);
+					}
+					for (const id of nextSet) {
+						if (!prevSet.has(id)) await postUserFavoriteAdd(token, id);
+					}
+					favoriteServerIdsRef.current = nextIds;
+				}
+			} catch (e) {
+				console.warn("Favorite sync failed:", e);
+			} finally {
+				favoriteSyncRef.current.inFlight = false;
+			}
 		},
 		[user],
 	);
+
+	useEffect(() => {
+		if (authLoading || !user) return;
+		void pushFavoritesToServer(favoritePlacesRef.current.map((p) => p.id));
+	}, [authLoading, user, favoritePlaces, pushFavoritesToServer]);
 
 	const addTimelineEvent = useCallback(
 		async (newEvent: TimelineEvent) => {
@@ -297,14 +484,21 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
 		[timelineEvents],
 	);
 
-	const syncRouteDayToTimeline = useCallback(
-		async (routeEvents: RouteEvent[], day: Date) => {
+	const syncFullRoutePlanToTimeline = useCallback(
+		async (routesByDay: Record<string, { events: RouteEvent[] }>) => {
 			if (!user || !profileRef.current) return;
-			const merged = mergeRouteIntoTimeline(
-				timelineEventsRef.current,
-				routeEvents,
-				day,
-			);
+			let merged = timelineEventsRef.current;
+			const dayKeys = Object.keys(routesByDay).sort();
+			for (const dayKey of dayKeys) {
+				const parts = dayKey.split("-").map(Number);
+				const y = parts[0];
+				const m = parts[1];
+				const d = parts[2];
+				if (!y || !m || !d) continue;
+				const day = new Date(y, m - 1, d);
+				const evs = routesByDay[dayKey]?.events ?? [];
+				merged = mergeRouteIntoTimeline(merged, evs, day);
+			}
 			await pushTimelineToServer(merged);
 		},
 		[user, pushTimelineToServer],
@@ -312,6 +506,7 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
 
 	const updateProfile = useCallback(
 		async (updates: Partial<UserProfile>) => {
+			lastLocalProfilePreferenceTouchRef.current = Date.now();
 			setProfile((prev) => {
 				const base: UserProfile = prev || {
 					id: `profile_${Date.now()}`,
@@ -335,7 +530,8 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
 				};
 
 				const next = { ...base, ...updates };
-				persist(next);
+				profileRef.current = next;
+				void persist(next);
 				return next;
 			});
 		},
@@ -344,6 +540,25 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
 
 	const addSavedLocation = useCallback(
 		async (location: Omit<SavedLocation, "id">) => {
+			const token = await AsyncStorage.getItem(STORAGE_TOKEN_KEY);
+			if (token && user) {
+				try {
+					await postUserLocationsAdd(token, [
+						{
+							name: location.name,
+							lat: location.coords.lat,
+							long: location.coords.lng,
+							...(location.description?.trim()
+								? { description: location.description.trim() }
+								: {}),
+						},
+					]);
+					await hydrateFromServer();
+					return;
+				} catch (e) {
+					console.warn("addSavedLocation failed:", e);
+				}
+			}
 			setProfile((prev) => {
 				if (!prev) return prev;
 				const next: UserProfile = {
@@ -360,11 +575,32 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
 				return next;
 			});
 		},
-		[persist],
+		[persist, user, hydrateFromServer],
 	);
 
 	const removeSavedLocation = useCallback(
 		async (id: string) => {
+			const token = await AsyncStorage.getItem(STORAGE_TOKEN_KEY);
+			if (token && user) {
+				let serverIndex = profileRef.current?.savedLocations.find(
+					(l) => l.id === id,
+				)?.serverIndex;
+				if (typeof serverIndex !== "number") {
+					await hydrateFromServer();
+					serverIndex = profileRef.current?.savedLocations.find(
+						(l) => l.id === id,
+					)?.serverIndex;
+				}
+				if (typeof serverIndex === "number") {
+					try {
+						await postUserLocationRemove(token, serverIndex);
+						await hydrateFromServer();
+						return;
+					} catch (e) {
+						console.warn("removeSavedLocation failed:", e);
+					}
+				}
+			}
 			setProfile((prev) => {
 				if (!prev) return prev;
 				const next: UserProfile = {
@@ -375,7 +611,7 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
 				return next;
 			});
 		},
-		[persist],
+		[persist, user, hydrateFromServer],
 	);
 
 	const updateSavedLocation = useCallback(
@@ -385,6 +621,26 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
 				Pick<SavedLocation, "name" | "coords" | "description" | "type" | "icon">
 			>,
 		) => {
+			const current = profileRef.current?.savedLocations.find(
+				(l) => l.id === id,
+			);
+			const token = await AsyncStorage.getItem(STORAGE_TOKEN_KEY);
+			if (token && user && current && typeof current.serverIndex === "number") {
+				const mergedServer = { ...current, ...updates };
+				try {
+					await postUserLocationUpdate(token, current.serverIndex, {
+						name: mergedServer.name,
+						lat: mergedServer.coords.lat,
+						long: mergedServer.coords.lng,
+						...(mergedServer.description?.trim()
+							? { description: mergedServer.description.trim() }
+							: {}),
+					});
+					await hydrateFromServer();
+				} catch (e) {
+					console.warn("updateSavedLocation failed:", e);
+				}
+			}
 			setProfile((prev) => {
 				if (!prev) return prev;
 				const current = prev.savedLocations.find((l) => l.id === id);
@@ -396,15 +652,17 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
 						l.id === id ? merged : l,
 					),
 				};
+				profileRef.current = next;
 				persist(next);
 				return next;
 			});
 		},
-		[persist],
+		[persist, user, hydrateFromServer],
 	);
 
 	const updateAccessibilitySettings = useCallback(
 		async (updates: Partial<AccessibilitySettings>) => {
+			lastLocalProfilePreferenceTouchRef.current = Date.now();
 			setProfile((prev) => {
 				if (!prev) return prev;
 				const next: UserProfile = {
@@ -414,7 +672,8 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
 						...updates,
 					},
 				};
-				persist(next);
+				profileRef.current = next;
+				void persist(next);
 				return next;
 			});
 		},
@@ -434,7 +693,7 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
 			addTimelineEvent,
 			deleteTimelineEvent,
 			getTimelineEventsByDate,
-			syncRouteDayToTimeline,
+			syncFullRoutePlanToTimeline,
 		}),
 		[
 			profile,
@@ -448,7 +707,7 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
 			addTimelineEvent,
 			deleteTimelineEvent,
 			getTimelineEventsByDate,
-			syncRouteDayToTimeline,
+			syncFullRoutePlanToTimeline,
 		],
 	);
 

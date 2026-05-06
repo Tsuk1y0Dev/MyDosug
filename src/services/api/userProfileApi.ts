@@ -1,6 +1,22 @@
 const API_BASE =
 	process.env.EXPO_PUBLIC_API_URL || "https://chess.electroscope.ru/api";
 
+const FETCH_TIMEOUT_MS = 25000;
+
+async function fetchWithTimeout(
+	url: string,
+	init: RequestInit,
+	timeoutMs = FETCH_TIMEOUT_MS,
+): Promise<Response> {
+	const ctrl = new AbortController();
+	const t = setTimeout(() => ctrl.abort(), timeoutMs);
+	try {
+		return await fetch(url, { ...init, signal: ctrl.signal });
+	} finally {
+		clearTimeout(t);
+	}
+}
+
 function buildUrl(path: string, query?: Record<string, string>): string {
 	const base = API_BASE.replace(/\/$/, "");
 	const p = path.startsWith("/") ? path : `/${path}`;
@@ -30,7 +46,7 @@ async function parseJsonResponse(res: Response): Promise<any> {
 
 export async function fetchUserProfile(token: string): Promise<any> {
 	const url = buildUrl("/user/profile", { token });
-	const res = await fetch(url, { method: "GET" });
+	const res = await fetchWithTimeout(url, { method: "GET" });
 	const body = await parseJsonResponse(res);
 	if (!res.ok) {
 		throw new Error(body?.message || body?.error || `HTTP ${res.status}`);
@@ -47,7 +63,7 @@ export async function postUserProfile(
 	body.set("token", token);
 	body.set("data", JSON.stringify(dataPayload));
 
-	const res = await fetch(url, {
+	const res = await fetchWithTimeout(url, {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
@@ -59,6 +75,78 @@ export async function postUserProfile(
 		throw new Error(json?.message || json?.error || `HTTP ${res.status}`);
 	}
 	return json;
+}
+
+type UserActionResponse = { message?: string; error?: string };
+
+async function postUserAction(
+	path: string,
+	token: string,
+	params: Record<string, string>,
+): Promise<UserActionResponse> {
+	const url = buildUrl(path);
+	const body = new URLSearchParams();
+	body.set("token", token);
+	for (const [k, v] of Object.entries(params)) body.set(k, v);
+	const res = await fetchWithTimeout(url, {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+		},
+		body: body.toString(),
+	});
+	const json = await parseJsonResponse(res);
+	if (!res.ok) {
+		throw new Error(json?.message || json?.error || `HTTP ${res.status}`);
+	}
+	return json;
+}
+
+export async function postUserEventAdd(
+	token: string,
+	event: Record<string, unknown>,
+): Promise<UserActionResponse> {
+	return postUserAction("/user/events/add", token, {
+		data: JSON.stringify(event),
+	});
+}
+
+export async function postUserEventUpdate(
+	token: string,
+	id: number,
+	event: Record<string, unknown>,
+): Promise<UserActionResponse> {
+	return postUserAction("/user/events/update", token, {
+		id: String(id),
+		data: JSON.stringify(event),
+	});
+}
+
+export async function postUserEventRemove(
+	token: string,
+	id: number,
+): Promise<UserActionResponse> {
+	return postUserAction("/user/events/remove", token, {
+		id: String(id),
+	});
+}
+
+export async function postUserFavoriteAdd(
+	token: string,
+	pid: string,
+): Promise<UserActionResponse> {
+	return postUserAction("/user/favorite/add", token, {
+		pid,
+	});
+}
+
+export async function postUserFavoriteRemove(
+	token: string,
+	pid: string,
+): Promise<UserActionResponse> {
+	return postUserAction("/user/favorite/remove", token, {
+		pid,
+	});
 }
 
 export type ServerLocationInput = {
@@ -77,7 +165,7 @@ export async function postUserLocationsAdd(
 	body.set("token", token);
 	body.set("data", JSON.stringify(locations));
 
-	const res = await fetch(url, {
+	const res = await fetchWithTimeout(url, {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
@@ -100,7 +188,7 @@ export async function postUserLocationRemove(
 	body.set("token", token);
 	body.set("id", String(index));
 
-	const res = await fetch(url, {
+	const res = await fetchWithTimeout(url, {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
@@ -125,7 +213,7 @@ export async function postUserLocationUpdate(
 	body.set("id", String(index));
 	body.set("data", JSON.stringify(location));
 
-	const res = await fetch(url, {
+	const res = await fetchWithTimeout(url, {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",

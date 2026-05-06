@@ -50,3 +50,28 @@ export function mergeRouteIntoTimeline(
 	const fromRoute = routeEventsToTimelineEvents(routeEvents, day);
 	return sortTimelineEvents([...kept, ...fromRoute]);
 }
+
+/** Build planner stops from server/user timeline rows for a calendar day. */
+export function timelineEventsToRouteEvents(
+	events: TimelineEvent[],
+): RouteEvent[] {
+	return events.map((e, index) => {
+		const d = new Date(Math.floor(e.timestamp) * 1000);
+		const hh = String(d.getHours()).padStart(2, "0");
+		const mm = String(d.getMinutes()).padStart(2, "0");
+		const durMin = Math.max(
+			1,
+			Math.round((Number(e.duration ?? 3600) || 3600) / 60),
+		);
+		return {
+			id: `tl_${Math.floor(e.timestamp)}_${String(e.id).replace(/[^a-zA-Z0-9_-]/g, "_")}_${index}`,
+			placeId: e.id,
+			customTitle: e.title,
+			coords: { lat: 0, lng: 0 },
+			arrivalTime: `${hh}:${mm}`,
+			duration: durMin,
+			travelModeToNext: "walking",
+			...(e.note?.trim() ? { description: e.note.trim() } : {}),
+		};
+	});
+}

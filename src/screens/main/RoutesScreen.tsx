@@ -5,12 +5,14 @@ import {
 	StyleSheet,
 	ScrollView,
 	TouchableOpacity,
+	Pressable,
 	SafeAreaView,
 	Image,
 	Alert,
 	Modal,
 } from "react-native";
 import { useFavorites } from "../../services/favorites/FavoritesContext";
+import { useUser } from "../../context/UserContext";
 import { useSchedule } from "../../services/schedule/ScheduleContext";
 import { Feather } from "@expo/vector-icons";
 import { RoutePlan, Place } from "../../types/planner";
@@ -19,6 +21,7 @@ import { PlannerProvider } from "../../services/planner/PlannerContext";
 import { CustomActivityStep } from "../../components/planner/CustomActivityStep";
 
 export const RoutesScreen = () => {
+	const { removeSavedLocation } = useUser();
 	const {
 		favoritePlaces,
 		userCreatedPlaces,
@@ -27,6 +30,11 @@ export const RoutesScreen = () => {
 		removeUserCreatedPlace,
 		removeSavedRoute,
 	} = useFavorites();
+
+	const removeCreatedPlace = (placeId: string) => {
+		removeUserCreatedPlace(placeId);
+		void removeSavedLocation(placeId);
+	};
 	const { schedule } = useSchedule();
 	const [activeTab, setActiveTab] = useState<"routes" | "favorites">("routes");
 	const [createPlaceOpen, setCreatePlaceOpen] = useState(false);
@@ -187,7 +195,7 @@ export const RoutesScreen = () => {
 		};
 
 		return (
-			<TouchableOpacity style={styles.favoriteCard}>
+			<View style={styles.favoriteCard}>
 				{place.image ? (
 					<Image source={{ uri: place.image }} style={styles.favoriteImage} />
 				) : (
@@ -223,13 +231,14 @@ export const RoutesScreen = () => {
 						)}
 					</View>
 				</View>
-				<TouchableOpacity
+				<Pressable
 					style={styles.removeFavoriteButton}
 					onPress={handleRemove}
+					hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
 				>
 					<Feather name="x" size={18} color="#ef4444" />
-				</TouchableOpacity>
-			</TouchableOpacity>
+				</Pressable>
+			</View>
 		);
 	};
 
@@ -350,7 +359,7 @@ export const RoutesScreen = () => {
 										<FavoriteCard
 											key={place.id}
 											place={place}
-											onRemove={removeUserCreatedPlace}
+											onRemove={removeCreatedPlace}
 											removeTitle="Удалить место"
 										/>
 									))}
@@ -577,6 +586,7 @@ const styles = StyleSheet.create({
 		position: "absolute",
 		top: 8,
 		right: 8,
+		zIndex: 20,
 		padding: 6,
 		backgroundColor: "white",
 		borderRadius: 16,
@@ -584,7 +594,7 @@ const styles = StyleSheet.create({
 		shadowOffset: { width: 0, height: 2 },
 		shadowOpacity: 0.1,
 		shadowRadius: 4,
-		elevation: 4,
+		elevation: 8,
 	},
 	emptyState: {
 		flex: 1,
