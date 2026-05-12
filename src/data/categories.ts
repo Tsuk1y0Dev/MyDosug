@@ -524,16 +524,10 @@ export const activityCategories: Category[] = [
 	},
 ];
 
-/**
- * Получить категорию по ID
- */
 export const getCategoryById = (id: string): Category | undefined => {
 	return activityCategories.find((cat) => cat.id === id);
 };
 
-/**
- * Получить подкатегорию по ID категории и подкатегории
- */
 export const getSubcategoryById = (
 	categoryId: string,
 	subcategoryId: string,
@@ -542,9 +536,6 @@ export const getSubcategoryById = (
 	return category?.subcategories.find((sub) => sub.id === subcategoryId);
 };
 
-/**
- * Получить все подкатегории для категории
- */
 export const getSubcategoriesByCategory = (
 	categoryId: string,
 ): Subcategory[] => {

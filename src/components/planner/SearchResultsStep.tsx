@@ -108,7 +108,7 @@ export const SearchResultsStep: React.FC<SearchResultsStepProps> = ({
 		origin,
 		segments,
 	} = useRoute();
-	const deviceCoords = useDeviceCoords();
+	const { coords: deviceCoords } = useDeviceCoords();
 
 	const [viewMode, setViewMode] = useState<"list" | "map">("list");
 	const [selectedPlace, setSelectedPlace] = useState<OSMPlace | null>(null);

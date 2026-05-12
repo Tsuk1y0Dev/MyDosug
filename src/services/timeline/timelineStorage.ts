@@ -1,6 +1,5 @@
 import type { TimelineEvent } from "../../types/timeline";
 
-/** Appended to `description` on POST so GET can restore id + unix day. */
 export const TIMELINE_SERVER_META = "\n__MDT__:";
 
 function tryParseJsonArray(raw: string): unknown[] | null {
@@ -19,7 +18,6 @@ function tryParseJsonArray(raw: string): unknown[] | null {
 	return Array.isArray(current) ? current : null;
 }
 
-/** Payload for POST /user/events/add (matches UserHandler::$eventKeys). */
 export function timelineEventToServerEventPayload(
 	e: TimelineEvent,
 ): Record<string, string | number> {
@@ -111,7 +109,6 @@ export function normalizeTimelineRow(
 					sidFromMeta = meta.sid.trim();
 				}
 			} catch {
-				/* ignore */
 			}
 		}
 		let calendarDay = fallbackCalendarDay;

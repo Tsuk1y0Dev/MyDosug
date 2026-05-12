@@ -32,12 +32,7 @@ interface YandexMapProps {
 	selectionMode?: boolean;
 	selectedPoint?: { lat: number; lng: number };
 	onSelectPoint?: (coords: { lat: number; lng: number }) => void;
-	/**
-	 * Включает построение маршрута между точками (MultiRoute) и связанные визуализации.
-	 * Для режима поиска/результатов планирования оставляем `false`, чтобы не рисовать "дорогу".
-	 */
 	routingEnabled?: boolean;
-	/** Текущее GPS; отдельная метка «Вы здесь», если заметно отличается от origin */
 	userLocation?: { lat: number; lng: number };
 }
 

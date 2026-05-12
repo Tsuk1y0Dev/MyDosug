@@ -62,7 +62,7 @@ export const CustomActivityStep: React.FC<CustomActivityStepProps> = ({
 	const { insertEventWithOrigin, events, pendingInsertIndex } = useDayRoute();
 	const { addUserCreatedPlace } = useFavorites();
 	const { addSavedLocation } = useUser();
-	const deviceCoords = useDeviceCoords();
+	const { coords: deviceCoords } = useDeviceCoords();
 
 	const [customActivity, setCustomActivity] = useState({
 		title: "",

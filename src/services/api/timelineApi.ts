@@ -4,9 +4,9 @@ import { Activity } from "../../types/schedule";
 export interface TimelineEvent {
 	id: number;
 	user_id: number;
-	event_date: string; // YYYY-MM-DD
-	start_time: string; // HH:mm
-	end_time: string; // HH:mm
+	event_date: string;
+	start_time: string;
+	end_time: string;
 	event_type: "place" | "custom" | "transport" | "break" | "buffer";
 	place_id?: number;
 	custom_name?: string;
@@ -15,8 +15,8 @@ export interface TimelineEvent {
 	custom_latitude?: number;
 	custom_longitude?: number;
 	transport_type?: "walking" | "cycling" | "car" | "public";
-	transport_duration?: number; // минуты
-	transport_distance?: number; // метры
+	transport_duration?: number;
+	transport_distance?: number;
 	transport_polyline?: string;
 	from_event_id?: number;
 	to_event_id?: number;
@@ -30,10 +30,10 @@ export interface TimelineEvent {
 }
 
 export interface CreateTimelineEventRequest {
-	event_date: string; // YYYY-MM-DD
+	event_date: string;
 	event_type: "place" | "custom" | "transport" | "break" | "buffer";
-	start_time?: string; // HH:mm
-	end_time?: string; // HH:mm
+	start_time?: string;
+	end_time?: string;
 	place_id?: number;
 	preferred_time?: "auto" | string;
 	people_count?: number;
@@ -53,7 +53,7 @@ export interface UpdateTimelineEventRequest
 }
 
 export interface OptimizeTimelineRequest {
-	event_date: string; // YYYY-MM-DD
+	event_date: string;
 	optimize_by?: "time" | "distance" | "cost";
 }
 

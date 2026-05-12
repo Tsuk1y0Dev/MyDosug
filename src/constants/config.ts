@@ -8,13 +8,13 @@ export const config = {
 	},
 
 	search: {
-		defaultRadius: 5000, // метры
+		defaultRadius: 5000,
 		defaultLimit: 20,
 	},
 
 	routes: {
 		defaultTransportType: "walking" as const,
-		walkingSpeed: 5, // км/ч
+		walkingSpeed: 5,
 		cyclingSpeed: 15,
 		carSpeed: 50,
 		publicTransportSpeed: 30,

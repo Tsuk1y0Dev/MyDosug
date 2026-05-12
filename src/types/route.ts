@@ -8,8 +8,8 @@ export interface RouteEvent {
 		lat: number;
 		lng: number;
 	};
-	arrivalTime: string; // HH:mm
-	duration: number; // minutes
+	arrivalTime: string;
+	duration: number;
 	travelModeToNext: TravelMode;
 	lockTimes?: boolean;
 	description?: string;

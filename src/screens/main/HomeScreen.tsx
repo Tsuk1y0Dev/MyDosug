@@ -8,7 +8,7 @@ import {
 	Pressable,
 	SafeAreaView,
 	Modal,
-	Dimensions,
+	useWindowDimensions,
 	Platform,
 	TextInput,
 	Alert,
@@ -84,7 +84,23 @@ export const HomeScreen = () => {
 	} = useUser();
 	const { user } = useAuth();
 	const { addFavoritePlace, removeFavoritePlace, isFavorite } = useFavorites();
-	const deviceCoords = useDeviceCoords();
+	const {
+		coords: deviceCoords,
+		refresh: refreshDeviceLocation,
+		refreshing: deviceLocationRefreshing,
+	} = useDeviceCoords();
+	const { width: layoutWidth, height: layoutHeight } = useWindowDimensions();
+	const aspectRatio = layoutHeight / Math.max(layoutWidth, 1);
+	const isTallAspect = aspectRatio > 2.05;
+	const isNarrowWidth = layoutWidth < 360;
+	const splitMapHeight = Math.round(
+		Math.min(isTallAspect ? 212 : 244, Math.max(176, layoutWidth * 0.5)),
+	);
+	const mapFullHeightReserve = isTallAspect ? 100 : 120;
+	const startPointMapHeight = Math.min(
+		300,
+		Math.max(200, Math.round(layoutHeight * 0.28)),
+	);
 
 	const [viewMode, setViewMode] = useState<ViewMode>("timeline");
 	const [mapCenter, setMapCenter] = useState<{
@@ -149,7 +165,6 @@ export const HomeScreen = () => {
 		const q = cityQuery.trim();
 		if (!q) return CITY_LIST.slice(0, 120);
 		const out: CityItem[] = [];
-		// cities.json already sorted by population: scan top-down.
 		for (let i = 0; i < CITY_LIST.length; i += 1) {
 			const c = CITY_LIST[i];
 			if (fuzzyIncludes(q, c.name)) out.push(c);
@@ -192,7 +207,6 @@ export const HomeScreen = () => {
 			setStartSourceModalVisible(false);
 			return;
 		}
-		// custom
 		setStartSourceModalVisible(false);
 		openStartPointPicker();
 	};
@@ -404,6 +418,7 @@ export const HomeScreen = () => {
 	}, [deviceCoords, events, origin]);
 
 	useEffect(() => {
+		if (startSourceModalVisible) return;
 		if (!origin) return;
 		if (origin.id.startsWith("origin_city_")) {
 			setStartSource("city");
@@ -414,11 +429,20 @@ export const HomeScreen = () => {
 			return;
 		}
 		setStartSource("gps");
-	}, [origin?.id]);
+	}, [origin?.id, startSourceModalVisible]);
 
 	useEffect(() => {
 		if (events.length > 0) return;
 		if (origin?.id === "from_first_stop") return;
+
+		if (
+			origin &&
+			(origin.id.startsWith("origin_city_") ||
+				origin.id === "user_pin" ||
+				origin.id === "origin_gps")
+		) {
+			return;
+		}
 
 		const coordsEqual = (
 			a: { lat: number; lng: number },
@@ -673,7 +697,7 @@ export const HomeScreen = () => {
 		events[0]?.coords ?? { lat: 55.75, lng: 37.62 };
 
 	const mapSection = (
-		<View style={styles.mapWrapper}>
+		<View style={[styles.mapWrapper, { height: splitMapHeight }]}>
 			<YandexMap
 				center={mapViewCenter}
 				zoom={14}
@@ -699,7 +723,9 @@ export const HomeScreen = () => {
 					if (ev) setMapCenter(ev.coords);
 				}}
 				height={
-					viewMode === "map" ? Dimensions.get("window").height - 120 : 240
+					viewMode === "map"
+						? layoutHeight - mapFullHeightReserve
+						: splitMapHeight
 				}
 				fitAllMarkers={true}
 			/>
@@ -863,7 +889,13 @@ export const HomeScreen = () => {
 
 	return (
 		<SafeAreaView style={styles.container}>
-			<View style={styles.dateRow}>
+			<View
+				style={[
+					styles.dateRow,
+					isNarrowWidth && styles.dateRowCompact,
+					isTallAspect && styles.dateRowTallAspect,
+				]}
+			>
 				<Text style={styles.dateRowLabel}>План на</Text>
 				<TouchableOpacity style={styles.dateChip} onPress={openPlanCalendar}>
 					<Feather name="calendar" size={18} color="#3b82f6" />
@@ -877,7 +909,10 @@ export const HomeScreen = () => {
 					<Feather name="chevron-down" size={16} color="#6b7280" />
 				</TouchableOpacity>
 				<TouchableOpacity
-					style={styles.planDayButton}
+					style={[
+						styles.planDayButton,
+						isNarrowWidth && styles.planDayButtonNarrow,
+					]}
 					onPress={() => setStartSourceModalVisible(true)}
 				>
 					<Feather name="crosshair" size={18} color="white" />
@@ -1050,7 +1085,7 @@ export const HomeScreen = () => {
 						onPress={() => setDetailEvent(null)}
 					/>
 					<ScrollView
-						style={styles.detailScroll}
+						style={[styles.detailScroll, { maxHeight: layoutHeight * 0.88 }]}
 						contentContainerStyle={styles.detailScrollContent}
 						keyboardShouldPersistTaps="handled"
 						showsVerticalScrollIndicator={false}
@@ -1277,7 +1312,10 @@ export const HomeScreen = () => {
 						onPress={() => setRouteSummaryVisible(false)}
 					/>
 					<ScrollView
-						style={styles.routeSummaryScroll}
+						style={[
+							styles.routeSummaryScroll,
+							{ maxHeight: layoutHeight * 0.75 },
+						]}
 						contentContainerStyle={styles.routeSummaryScrollContent}
 						keyboardShouldPersistTaps="handled"
 					>
@@ -1378,6 +1416,32 @@ export const HomeScreen = () => {
 								</TouchableOpacity>
 							))}
 						</View>
+						{startSource === "gps" ? (
+							<View style={styles.startSourceGpsRefreshRow}>
+								<TouchableOpacity
+									style={styles.startSourceGpsRefreshBtn}
+									onPress={() => void refreshDeviceLocation()}
+									disabled={deviceLocationRefreshing}
+									accessibilityRole="button"
+									accessibilityLabel="Обновить геолокацию"
+								>
+									<Feather
+										name="refresh-ccw"
+										size={15}
+										color={deviceLocationRefreshing ? "#9ca3af" : "#2563eb"}
+									/>
+									<Text
+										style={[
+											styles.startSourceGpsRefreshText,
+											deviceLocationRefreshing &&
+												styles.startSourceGpsRefreshTextMuted,
+										]}
+									>
+										{deviceLocationRefreshing ? "Обновление…" : "Обновить GPS"}
+									</Text>
+								</TouchableOpacity>
+							</View>
+						) : null}
 						{startSource === "city" ? (
 							<>
 								<TextInput
@@ -1469,7 +1533,7 @@ export const HomeScreen = () => {
 								selectionMode
 								selectedPoint={startPointDraft ?? undefined}
 								onSelectPoint={(coords) => setStartPointDraft(coords)}
-								height={280}
+								height={startPointMapHeight}
 								routingEnabled={false}
 								userLocation={
 									deviceCoords
@@ -1562,6 +1626,12 @@ const styles = StyleSheet.create({
 		fontSize: 14,
 		fontWeight: "600",
 		color: "white",
+	},
+	planDayButtonNarrow: {
+		paddingHorizontal: 10,
+		maxWidth: "100%",
+		flexShrink: 1,
+		minWidth: 0,
 	},
 	datePickerOverlay: {
 		flex: 1,
@@ -1792,8 +1862,37 @@ const styles = StyleSheet.create({
 		flex: 1,
 	},
 	mapWrapper: {
-		height: 240,
 		backgroundColor: "#e5e7eb",
+	},
+	dateRowCompact: {
+		paddingHorizontal: 10,
+		gap: 8,
+	},
+	dateRowTallAspect: {
+		paddingVertical: 10,
+	},
+	startSourceGpsRefreshRow: {
+		marginTop: 10,
+		alignItems: "flex-end",
+	},
+	startSourceGpsRefreshBtn: {
+		flexDirection: "row",
+		alignItems: "center",
+		gap: 6,
+		paddingVertical: 6,
+		paddingHorizontal: 10,
+		borderRadius: 10,
+		backgroundColor: "#f8fafc",
+		borderWidth: 1,
+		borderColor: "#e2e8f0",
+	},
+	startSourceGpsRefreshText: {
+		fontSize: 12,
+		fontWeight: "600",
+		color: "#1d4ed8",
+	},
+	startSourceGpsRefreshTextMuted: {
+		color: "#94a3b8",
 	},
 	fullMapContainer: {
 		flex: 1,
@@ -2080,7 +2179,6 @@ const styles = StyleSheet.create({
 	},
 	detailScroll: {
 		width: "100%",
-		maxHeight: Dimensions.get("window").height * 0.88,
 	},
 	detailScrollContent: {
 		paddingVertical: 20,
@@ -2089,7 +2187,6 @@ const styles = StyleSheet.create({
 	},
 	routeSummaryScroll: {
 		width: "100%",
-		maxHeight: Dimensions.get("window").height * 0.75,
 	},
 	routeSummaryScrollContent: {
 		paddingVertical: 16,

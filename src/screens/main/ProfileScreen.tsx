@@ -25,16 +25,14 @@ import { SupportContent } from "../../components/legal/SupportContent";
 export const ProfileScreen = () => {
 	const { user, logout } = useAuth();
 	const { profile, updateProfile, updateAccessibilitySettings } = useUser();
-	const deviceCoords = useDeviceCoords();
+	const { coords: deviceCoords } = useDeviceCoords();
 	const [settings, setSettings] = useState<{
 		defaultTransportMode: "walking" | "car" | "public";
-		notificationsEnabled: boolean;
 		vegetarian: boolean;
 		wheelchairAccessible: boolean;
 		averageWalkingTime: number;
 	}>({
 		defaultTransportMode: "walking" as "walking" | "car" | "public",
-		notificationsEnabled: true,
 		vegetarian: false,
 		wheelchairAccessible: false,
 		averageWalkingTime: 15,
@@ -59,7 +57,6 @@ export const ProfileScreen = () => {
 		if (!profile) return;
 		const prefsKey = JSON.stringify({
 			defaultTransportMode: profile.defaultTransportMode,
-			notificationsEnabled: profile.notificationsEnabled,
 			vegetarian: profile.vegetarian,
 			wheelchairAccessible: profile.wheelchairAccessible,
 			averageWalkingTime: profile.averageWalkingTime,
@@ -69,7 +66,6 @@ export const ProfileScreen = () => {
 		setSettings((prev) => ({
 			...prev,
 			defaultTransportMode: profile.defaultTransportMode,
-			notificationsEnabled: profile.notificationsEnabled,
 			vegetarian: profile.vegetarian,
 			wheelchairAccessible: profile.wheelchairAccessible,
 			averageWalkingTime: profile.averageWalkingTime,
@@ -206,7 +202,6 @@ export const ProfileScreen = () => {
 				showsVerticalScrollIndicator={false}
 				contentContainerStyle={styles.scrollContent}
 			>
-				{/* Профиль пользователя */}
 				<View style={styles.profileSection}>
 					<View style={styles.avatar}>
 						<Feather name="user" size={48} color="#3b82f6" />
@@ -234,7 +229,6 @@ export const ProfileScreen = () => {
 					)}
 				</View>
 
-				{/* Настройки по умолчанию */}
 				<View style={styles.section}>
 					<Text style={styles.sectionTitle}>Настройки по умолчанию</Text>
 
@@ -341,7 +335,6 @@ export const ProfileScreen = () => {
 					/>
 				</View>
 
-				{/* Стартовая точка */}
 				<View style={styles.section}>
 					<Text style={styles.sectionTitle}>Стартовая точка</Text>
 
@@ -368,7 +361,6 @@ export const ProfileScreen = () => {
 					/>
 				</View>
 
-				{/* Характеристики пользователя */}
 				<View style={styles.section}>
 					<Text style={styles.sectionTitle}>Характеристики</Text>
 
@@ -403,22 +395,6 @@ export const ProfileScreen = () => {
 					/>
 				</View>
 
-				{/* Уведомления */}
-				<View style={styles.section}>
-					<Text style={styles.sectionTitle}>Уведомления</Text>
-
-					<SwitchRow
-						label="Уведомления"
-						value={settings.notificationsEnabled}
-						onValueChange={(value) => {
-							setSettings((prev) => ({ ...prev, notificationsEnabled: value }));
-							updateProfile({ notificationsEnabled: value });
-						}}
-						icon="bell"
-					/>
-				</View>
-
-				{/* Дополнительные действия */}
 				<View style={styles.section}>
 					<Text style={styles.sectionTitle}>Дополнительно</Text>
 
@@ -452,7 +428,6 @@ export const ProfileScreen = () => {
 					</TouchableOpacity>
 				</View>
 
-				{/* Выход */}
 				<TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
 					<Feather name="log-out" size={20} color="#ef4444" />
 					<Text style={styles.logoutButtonText}>Выйти</Text>

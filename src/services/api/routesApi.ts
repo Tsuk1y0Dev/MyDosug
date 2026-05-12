@@ -13,16 +13,16 @@ export interface CalculateRouteRequest {
 }
 
 export interface RouteSegment {
-	distance: number; // метры
-	duration: number; // секунды
-	polyline: string; // полилиния от Яндекс.Карт
+	distance: number;
+	duration: number;
+	polyline: string;
 	instructions?: string[];
 }
 
 export interface CalculateRouteResponse {
 	segments: RouteSegment[];
-	total_distance: number; // метры
-	total_duration: number; // секунды
+	total_distance: number;
+	total_duration: number;
 	polyline: string;
 }
 
@@ -36,8 +36,8 @@ export interface RouteMatrixResponse {
 	matrix: Array<{
 		from_index: number;
 		to_index: number;
-		distance: number; // метры
-		duration: number; // секунды
+		distance: number;
+		duration: number;
 	}>;
 }
 
@@ -73,14 +73,14 @@ export const routesApi = {
 		const distance = R * c;
 
 		const speeds: Record<string, number> = {
-			walking: 5, // км/ч
+			walking: 5,
 			cycling: 15,
 			car: 50,
 			public: 30,
 		};
 
 		const speed = speeds[data.transport_type || "walking"] || 5;
-		const duration = (distance / 1000 / speed) * 3600; // секунды
+		const duration = (distance / 1000 / speed) * 3600;
 
 		const mockPolyline = `mock_polyline_${data.from.latitude}_${data.from.longitude}_${data.to.latitude}_${data.to.longitude}`;
 

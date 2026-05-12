@@ -100,16 +100,6 @@ function settingBoolFalseByDefault(
 	return false;
 }
 
-function notificationsFromSettings(settings: Record<string, unknown>): boolean {
-	for (const k of ["notificationsEnabled", "notifications"]) {
-		const v = settings[k];
-		if (v === undefined || v === null) continue;
-		if (String(v) === "false" || v === false) return false;
-		if (String(v) === "true" || v === true) return true;
-	}
-	return true;
-}
-
 function parseLocationsArray(raw: unknown): any[] {
 	if (Array.isArray(raw)) return raw;
 	if (typeof raw === "string") {
@@ -248,7 +238,6 @@ export function mapServerProfileToUserProfile(
 			return base;
 		})(),
 		defaultTransportMode,
-		notificationsEnabled: notificationsFromSettings(settings),
 		vegetarian,
 		wheelchairAccessible,
 		averageWalkingTime:
@@ -268,10 +257,6 @@ export function mapServerProfileToUserProfile(
 	return { profile, favoriteIds, timelineEvents };
 }
 
-/**
- * Settings object for POST /user/profile `data.settings` — keys must match
- * UserHandler.php::$settingsKeys (PHP validates these keys).
- */
 export function buildServerApiSettings(
 	profile: UserProfile,
 ): Record<string, string> {
@@ -292,7 +277,6 @@ export function buildServerApiSettings(
 	if (profile.accessibilitySettings.needsElevator) needs.push("elevator");
 	const accessNeeds = needs.length ? needs.join(",") : "none";
 
-	/** Только поля профиля для `users.settings` (не бюджет планировщика и т.п.). */
 	return {
 		max_walk_time: String(
 			Math.max(1, Math.min(180, profile.averageWalkingTime || 15)),
@@ -304,7 +288,6 @@ export function buildServerApiSettings(
 	};
 }
 
-/** Body `data` for POST /user/profile (updSettings): only `name` + `settings` per PHP). */
 export function buildProfilePostPayload(
 	profile: UserProfile,
 	_favoriteIds: string[],

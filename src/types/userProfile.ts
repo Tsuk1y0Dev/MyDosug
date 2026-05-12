@@ -26,7 +26,6 @@ export interface UserProfile {
 	email: string;
 	defaultStartPoint: StartPoint;
 	defaultTransportMode: "walking" | "car" | "public";
-	notificationsEnabled: boolean;
 	vegetarian: boolean;
 	wheelchairAccessible: boolean;
 	averageWalkingTime: number;

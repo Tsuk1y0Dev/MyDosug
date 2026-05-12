@@ -147,13 +147,12 @@ export const PlannerProvider = ({
 		return `activity-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 	}, []);
 
-	// Функция для расчета расстояния между двумя точками по координатам (формула гаверсинуса)
 	const calculateDistance = useCallback(
 		(
 			from: { lat: number; lng: number },
 			to: { lat: number; lng: number },
 		): number => {
-			const R = 6371; // Радиус Земли в км
+			const R = 6371;
 			const dLat = ((to.lat - from.lat) * Math.PI) / 180;
 			const dLon = ((to.lng - from.lng) * Math.PI) / 180;
 			const a =
@@ -163,8 +162,8 @@ export const PlannerProvider = ({
 					Math.sin(dLon / 2) *
 					Math.sin(dLon / 2);
 			const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-			const distance = R * c; // Расстояние в км
-			return Math.round(distance * 1000); // Переводим в метры
+			const distance = R * c;
+			return Math.round(distance * 1000);
 		},
 		[],
 	);

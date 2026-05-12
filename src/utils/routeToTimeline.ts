@@ -51,7 +51,6 @@ export function mergeRouteIntoTimeline(
 	return sortTimelineEvents([...kept, ...fromRoute]);
 }
 
-/** Build planner stops from server/user timeline rows for a calendar day. */
 export function timelineEventsToRouteEvents(
 	events: TimelineEvent[],
 ): RouteEvent[] {

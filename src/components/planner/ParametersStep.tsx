@@ -70,7 +70,7 @@ export const ParametersStep = () => {
 		origin,
 		segments,
 	} = useDayRoute();
-	const deviceCoords = useDeviceCoords();
+	const { coords: deviceCoords } = useDeviceCoords();
 	const [favModalPlace, setFavModalPlace] = useState<Place | null>(null);
 	const [savedPickerOpen, setSavedPickerOpen] = useState(false);
 
@@ -85,8 +85,6 @@ export const ParametersStep = () => {
 	const [goal, setGoal] = useState<GoalType | null>(null);
 	const [filters, setFilters] = useState<SearchCriteriaFilters>({});
 
-	// Для поиска координаты старта должны совпадать с выбранной стартовой точкой маршрута,
-	// а не всегда с GPS.
 	const startCoords = origin?.coords ?? deviceCoords ?? MAP_FALLBACK_CENTER;
 
 	const planningDayFloorMinutes = useMemo(() => {

@@ -97,7 +97,7 @@ function haversineMeters(
 
 export const SearchScreen = () => {
 	const { profile } = useUser();
-	const deviceCoords = useDeviceCoords();
+	const { coords: deviceCoords } = useDeviceCoords();
 	const { user } = useAuth();
 	const { addFavoritePlace, removeFavoritePlace, isFavorite } = useFavorites();
 	const route = useRoute<RouteProp<MainTabParamList, "Search">>();
@@ -122,7 +122,6 @@ export const SearchScreen = () => {
 		[openExternalUrl],
 	);
 
-	/** Не грузим Overpass при первом открытии экрана без явного действия пользователя */
 	const [readyToFetch, setReadyToFetch] = useState(false);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
@@ -273,7 +272,6 @@ export const SearchScreen = () => {
 
 	const centerCoords = useMemo(() => {
 		const p = profile?.defaultStartPoint;
-		// Если выбрана кастомная стартовая точка — используем её вместо GPS.
 		if (p && p.type !== "current" && p.coordinates) {
 			return { lat: p.coordinates.lat, lng: p.coordinates.lng };
 		}
@@ -615,7 +613,6 @@ export const SearchScreen = () => {
 
 	return (
 		<SafeAreaView style={styles.container}>
-			{/* Заголовок и поиск */}
 			<View style={styles.header}>
 				<View style={styles.searchContainer}>
 					<Feather
@@ -666,7 +663,6 @@ export const SearchScreen = () => {
 				</TouchableOpacity>
 			</View>
 
-			{/* Модальное окно выбора категорий (multi-select) — только для экрана поиска */}
 			{showCategoryModal && (
 				<Modal
 					visible={showCategoryModal}
@@ -768,7 +764,6 @@ export const SearchScreen = () => {
 
 											{isExpanded && (
 												<View style={styles.accordionBody}>
-													{/* Все в категории */}
 													<TouchableOpacity
 														style={[
 															styles.subcategoryRow,
@@ -853,7 +848,6 @@ export const SearchScreen = () => {
 				</Modal>
 			)}
 
-			{/* Контент */}
 			<View
 				style={[styles.content, showFilters && styles.contentWhenFiltersOpen]}
 				pointerEvents={showFilters ? "box-none" : "auto"}
@@ -1052,7 +1046,6 @@ export const SearchScreen = () => {
 				)}
 			</View>
 
-			{/* Затемнение и фильтры: подложка под панелью, чтобы контент не «всплывал» поверх */}
 			{filtersMounted && (
 				<Pressable
 					style={styles.filtersBackdrop}
@@ -1258,7 +1251,6 @@ export const SearchScreen = () => {
 				</Animated.View>
 			)}
 
-			{/* Детали выбранного места — карточка как метка на карте / элемент списка */}
 			{selectedPlace && (
 				<View style={styles.placeDetails}>
 					<TouchableOpacity

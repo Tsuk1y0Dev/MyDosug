@@ -7,7 +7,6 @@ function normalize(s: string): string {
 		.trim();
 }
 
-/** Damerau–Levenshtein with early exit at `maxDistance`. */
 function editDistanceMax(a: string, b: string, maxDistance: number): number {
 	if (a === b) return 0;
 	if (!a) return b.length;
@@ -67,10 +66,8 @@ export function fuzzyIncludes(queryRaw: string, targetRaw: string): boolean {
 	if (!t) return false;
 	if (t.includes(q)) return true;
 
-	// For short queries, avoid expensive edit distance.
 	if (q.length <= 2) return false;
 
-	// Token-level match with typo tolerance.
 	const qParts = q.split(" ");
 	const tParts = t.split(" ");
 

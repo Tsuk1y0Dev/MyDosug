@@ -29,10 +29,6 @@ export interface OSMPlace {
 }
 
 const PUBLIC_OVERPASS_URL = "https://overpass-api.de/api/interpreter";
-// const PUBLIC_OVERPASS_URL = "http://192.168.2.171:54321/api/interpreter";
-//const PUBLIC_OVERPASS_URL = "http://192.168.1.186:54321/api/interpreter";
-// const LOCAL_OVERPASS_URL = "http://192.168.1.186:54321/api/interpreter";
-// const LOCAL_OVERPASS_URL = "http://127.0.0.1:54321/api/interpreter";
 const LOCAL_OVERPASS_URL = PUBLIC_OVERPASS_URL;
 
 let lastOverpassRequestAt = 0;

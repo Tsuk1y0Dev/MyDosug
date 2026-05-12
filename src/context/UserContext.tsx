@@ -45,10 +45,6 @@ import {
 import type { RouteEvent } from "../types/route";
 import { mergeRouteIntoTimeline } from "../utils/routeToTimeline";
 import { savedLocationToPlace } from "../utils/placeConverters";
-import {
-	enableDailyReminder,
-	disableReminders,
-} from "../services/notifications/notificationService";
 
 export type {
 	SavedLocationType,
@@ -115,13 +111,11 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
 	const timelineEventsRef = useRef(timelineEvents);
 	timelineEventsRef.current = timelineEvents;
 	const lastPostedProfilePayloadRef = useRef<string>("");
-	/** After local edits, short window where GET /profile must not overwrite toggles with stale server rows. */
 	const lastLocalProfilePreferenceTouchRef = useRef(0);
 
 	const prevHadUserRef = useRef(false);
 	const timelineServerRef = useRef<TimelineEvent[]>([]);
 	const favoriteServerIdsRef = useRef<string[]>([]);
-	const notificationSyncRef = useRef<boolean | null>(null);
 	const timelineSyncRef = useRef<{
 		inFlight: boolean;
 		queued: TimelineEvent[] | null;
@@ -186,7 +180,6 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
 							...remoteProfileBase,
 							vegetarian: prevLocal.vegetarian,
 							wheelchairAccessible: prevLocal.wheelchairAccessible,
-							notificationsEnabled: prevLocal.notificationsEnabled,
 							defaultTransportMode: prevLocal.defaultTransportMode,
 							averageWalkingTime: prevLocal.averageWalkingTime,
 							defaultStartPoint: prevLocal.defaultStartPoint,
@@ -194,8 +187,6 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
 						}
 					: remoteProfileBase;
 
-			// Сервер не хранит координаты `defaultStartPoint.custom`, поэтому закрепляем
-			// локально выбранную кастомную точку на карте.
 			if (
 				prevLocal?.defaultStartPoint?.type === "custom" &&
 				prevLocal.defaultStartPoint.coordinates
@@ -306,22 +297,6 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
 		}, 500);
 		return () => clearTimeout(t);
 	}, [authLoading, user, profile, hydrateFromServer]);
-
-	useEffect(() => {
-		const enabled = Boolean(profile?.notificationsEnabled);
-		if (notificationSyncRef.current === enabled) return;
-		notificationSyncRef.current = enabled;
-		void (async () => {
-			if (enabled) {
-				const ok = await enableDailyReminder();
-				if (!ok) {
-					console.warn("Notifications permission denied or unavailable");
-				}
-			} else {
-				await disableReminders();
-			}
-		})();
-	}, [profile?.notificationsEnabled]);
 
 	const pushTimelineToServer = useCallback(
 		async (nextTimeline: TimelineEvent[]) => {
@@ -518,7 +493,6 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
 						label: "Текущая позиция",
 					} as StartPoint,
 					defaultTransportMode: "walking",
-					notificationsEnabled: true,
 					vegetarian: false,
 					wheelchairAccessible: false,
 					averageWalkingTime: 15,
